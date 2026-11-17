@@ -3380,13 +3380,17 @@ func TestPopulateV2TimeSeries_ExemplarCoalescing(t *testing.T) {
 		require.Empty(t, pendingData[3].Exemplars)
 		require.Len(t, pendingData[4].Histograms, 1)
 		require.Len(t, pendingData[4].Exemplars, 1)
-		require.Equal(t, float64(3), pendingData[4].Exemplars[0].Value)
+		gotHistEx, err := pendingData[4].Exemplars[0].ToExemplar(&b, symbolTable.Symbols())
+		require.NoError(t, err)
+		testutil.RequireEqual(t, exemplar.Exemplar{Labels: labels.FromStrings("trace_id", "ex_hist"), Value: 3, Ts: 200, HasTs: true}, gotHistEx)
 		require.Empty(t, pendingData[5].Exemplars)
 
 		// Live float histogram (6) has the coalesced exemplar; trailing stale float histogram (7) has none.
 		require.Len(t, pendingData[6].Histograms, 1)
 		require.Len(t, pendingData[6].Exemplars, 1)
-		require.Equal(t, float64(4), pendingData[6].Exemplars[0].Value)
+		gotFloatHistEx, err := pendingData[6].Exemplars[0].ToExemplar(&b, symbolTable.Symbols())
+		require.NoError(t, err)
+		testutil.RequireEqual(t, exemplar.Exemplar{Labels: labels.FromStrings("trace_id", "ex_fhist"), Value: 4, Ts: 300, HasTs: true}, gotFloatHistEx)
 		require.Empty(t, pendingData[7].Exemplars)
 
 		// Stale-only series at indices 8, 9, 10 must not carry exemplars.
@@ -3420,46 +3424,78 @@ func TestPopulateV2TimeSeries_ExemplarCoalescing(t *testing.T) {
 		require.Empty(t, pendingData[1].Exemplars)
 	})
 
-	t.Run("detached exemplar kept in WriteModeNone resets reused pendingData slices", func(t *testing.T) {
+	t.Run("WriteModeNone coalesces matching exemplars and keeps detached exemplars with reset slices", func(t *testing.T) {
 		symbolTable := writev2.NewSymbolTable()
 
-		meta := unique.Make(metadata.Metadata{Type: model.MetricTypeCounter, Unit: "requests", Help: "Total detached requests"})
+		expectedMeta := metadata.Metadata{Type: model.MetricTypeCounter, Unit: "requests", Help: "Total detached requests"}
+		meta := unique.Make(expectedMeta)
 		batch := []timeSeries{
 			{sType: tSample, seriesLabels: sCounter, value: 10, timestamp: 100},
+			{sType: tSample, seriesLabels: sStaleOnly, value: stale, timestamp: 150},
+			// Matching exemplar must coalesce onto live sCounter (index 0) even in WriteModeNone.
+			{sType: tExemplar, seriesLabels: sCounter, exemplarLabels: labels.FromStrings("trace_id", "coalesced_none"), value: 1, timestamp: 100},
+			// Detached exemplar with no matching series is emitted at index 2.
 			{sType: tExemplar, seriesLabels: sDetached, exemplarLabels: labels.FromStrings("trace_id", "kept_trace"), value: 5, timestamp: 200, metadata: meta},
+			// Exemplar on a stale-only series does not attach to stale index 1; emitted detached at index 3.
+			{sType: tExemplar, seriesLabels: sStaleOnly, exemplarLabels: labels.FromStrings("trace_id", "stale_detached"), value: 6, timestamp: 150},
 		}
 
-		// Pre-populate pendingData[1] with stale Samples, Histograms, and Exemplars to verify all three slices are reset.
+		// Pre-populate pendingData[2] with stale Samples, Histograms, Exemplars, LabelsRefs, and Metadata to verify full reset.
 		pendingData := []writev2.TimeSeries{
 			{},
+			{},
 			{
+				LabelsRefs: []uint32{999, 999},
 				Samples:    []writev2.Sample{{Value: 999, Timestamp: 1}},
 				Histograms: []writev2.Histogram{{Timestamp: 2}},
 				Exemplars:  []writev2.Exemplar{{Value: 888, Timestamp: 3}, {Value: 777, Timestamp: 4}},
+				Metadata:   writev2.Metadata{Type: writev2.Metadata_METRIC_TYPE_GAUGE, UnitRef: 999, HelpRef: 999},
 			},
+			{},
 		}
 		nSeries, nSamples, nExemplars, nHistograms, _, nDropped := populateV2TimeSeries(
 			&symbolTable, batch, pendingData, nil, true, true, false, remoteapi.WriteModeNone,
 		)
 
-		require.Equal(t, 2, nSeries)
-		require.Equal(t, 1, nSamples)
-		require.Equal(t, 1, nExemplars)
+		require.Equal(t, 4, nSeries)
+		require.Equal(t, 2, nSamples)
+		require.Equal(t, 3, nExemplars)
 		require.Equal(t, 0, nHistograms)
 		require.Equal(t, 0, nDropped)
 
-		require.Empty(t, pendingData[1].Samples)
-		require.Empty(t, pendingData[1].Histograms)
-		require.Len(t, pendingData[1].Exemplars, 1)
 		b := labels.NewScratchBuilder(0)
-		gotLbls, err := pendingData[1].ToLabels(&b, symbolTable.Symbols())
+		// Index 0 has live sCounter sample with coalesced exemplar; index 1 has stale sStaleOnly with no exemplars.
+		require.Len(t, pendingData[0].Samples, 1)
+		require.Len(t, pendingData[0].Exemplars, 1)
+		gotCoalescedEx, err := pendingData[0].Exemplars[0].ToExemplar(&b, symbolTable.Symbols())
+		require.NoError(t, err)
+		testutil.RequireEqual(t, exemplar.Exemplar{Labels: labels.FromStrings("trace_id", "coalesced_none"), Value: 1, Ts: 100, HasTs: true}, gotCoalescedEx)
+		require.Empty(t, pendingData[1].Exemplars)
+
+		// Index 2 is the detached sDetached exemplar with overwritten LabelsRefs, Metadata, and cleared Samples/Histograms.
+		require.Empty(t, pendingData[2].Samples)
+		require.Empty(t, pendingData[2].Histograms)
+		require.Len(t, pendingData[2].Exemplars, 1)
+		gotLbls, err := pendingData[2].ToLabels(&b, symbolTable.Symbols())
 		require.NoError(t, err)
 		testutil.RequireEqual(t, sDetached, gotLbls)
-		gotEx, err := pendingData[1].Exemplars[0].ToExemplar(&b, symbolTable.Symbols())
+		gotEx, err := pendingData[2].Exemplars[0].ToExemplar(&b, symbolTable.Symbols())
 		require.NoError(t, err)
 		testutil.RequireEqual(t, exemplar.Exemplar{Labels: labels.FromStrings("trace_id", "kept_trace"), Value: 5, Ts: 200, HasTs: true}, gotEx)
-		require.Equal(t, writev2.Metadata_METRIC_TYPE_COUNTER, pendingData[1].Metadata.Type)
-		require.Contains(t, symbolTable.Symbols(), "kept_trace")
+		gotMeta, err := pendingData[2].ToMetadata(symbolTable.Symbols())
+		require.NoError(t, err)
+		require.Equal(t, expectedMeta, gotMeta)
+
+		// Index 3 is the detached sStaleOnly exemplar with empty Metadata.
+		require.Empty(t, pendingData[3].Samples)
+		require.Empty(t, pendingData[3].Histograms)
+		require.Len(t, pendingData[3].Exemplars, 1)
+		gotStaleLbls, err := pendingData[3].ToLabels(&b, symbolTable.Symbols())
+		require.NoError(t, err)
+		testutil.RequireEqual(t, sStaleOnly, gotStaleLbls)
+		gotStaleMeta, err := pendingData[3].ToMetadata(symbolTable.Symbols())
+		require.NoError(t, err)
+		require.Equal(t, metadata.Metadata{Type: model.MetricTypeUnknown}, gotStaleMeta)
 	})
 
 	t.Run("hash collision fallback in findExemplarTargetIndex", func(t *testing.T) {
@@ -4754,7 +4790,10 @@ func TestQueueManager_RemoteWriteModes(t *testing.T) {
 			require.Equal(t, 3.0, client_testutil.ToFloat64(metrics.droppedHistogramsTotal.WithLabelValues(reasonMissingMetadataType)))
 			require.Equal(t, 0.0, client_testutil.ToFloat64(metrics.droppedHistogramsTotal.WithLabelValues(reasonMissingStartTimestamp)))
 			require.Equal(t, 2.0, client_testutil.ToFloat64(metrics.droppedExemplarsTotal.WithLabelValues(reasonDetachedExemplarNotAllowed)))
+			require.Equal(t, 2.0, client_testutil.ToFloat64(metrics.exemplarsTotal))
+			require.Equal(t, 0.0, client_testutil.ToFloat64(metrics.failedExemplarsTotal))
 			require.Equal(t, 0.0, client_testutil.ToFloat64(metrics.pendingExemplars))
+			require.Equal(t, int64(0), m.shards.enqueuedExemplars.Load())
 
 			require.Len(t, c.receivedSamples, 2)
 			require.Contains(t, c.receivedSamples, sCounterNoST.Labels.String())
@@ -4826,7 +4865,11 @@ func TestQueueManager_RemoteWriteModes(t *testing.T) {
 			stop()
 
 			require.Equal(t, 2.0, client_testutil.ToFloat64(metrics.droppedExemplarsTotal.WithLabelValues(reasonDetachedExemplarNotAllowed)))
+			require.Equal(t, 0.0, client_testutil.ToFloat64(metrics.exemplarsTotal))
+			require.Equal(t, 0.0, client_testutil.ToFloat64(metrics.failedExemplarsTotal))
 			require.Equal(t, 0.0, client_testutil.ToFloat64(metrics.pendingExemplars))
+			require.Equal(t, int64(0), m.shards.enqueuedExemplars.Load())
+			require.Equal(t, int64(2), m.dataDropped.newEvents.Load())
 			require.Empty(t, c.receivedV2Requests)
 		})
 
@@ -4924,7 +4967,10 @@ func TestQueueManager_RemoteWriteModes(t *testing.T) {
 			require.Equal(t, 2.0, client_testutil.ToFloat64(metrics.droppedHistogramsTotal.WithLabelValues(reasonMissingStartTimestamp)))
 
 			require.Equal(t, 2.0, client_testutil.ToFloat64(metrics.droppedExemplarsTotal.WithLabelValues(reasonDetachedExemplarNotAllowed)))
+			require.Equal(t, 3.0, client_testutil.ToFloat64(metrics.exemplarsTotal))
+			require.Equal(t, 0.0, client_testutil.ToFloat64(metrics.failedExemplarsTotal))
 			require.Equal(t, 0.0, client_testutil.ToFloat64(metrics.pendingExemplars))
+			require.Equal(t, int64(0), m.shards.enqueuedExemplars.Load())
 
 			require.Len(t, c.receivedSamples, 6)
 			require.Equal(t, int64(500), c.receivedSamples[sSummarySum.Labels.String()][0].StartTimestamp)
