@@ -459,10 +459,14 @@ export const getUPlotOptions = (
   hooks: {
     setSeries: [
       (u, seriesIdx, opts: Parameters<uPlot["setSeries"]>[1]) => {
-        if (opts.focus === undefined) return;
+        if (opts.focus === undefined) {
+          return;
+        }
         let changed = false;
         u.series.forEach((series, idx) => {
-          if (idx === 0) return;
+          if (idx === 0) {
+            return;
+          }
           const width =
             opts.focus && idx === seriesIdx
               ? focusedSeriesLineWidth
@@ -473,7 +477,9 @@ export const getUPlotOptions = (
           }
         });
         // Reuse the existing paths and axes when only line widths change.
-        if (changed) u.redraw(false, false);
+        if (changed) {
+          u.redraw(false, false);
+        }
       },
     ],
     setSelect: [
