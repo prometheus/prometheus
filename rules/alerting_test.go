@@ -1268,13 +1268,14 @@ func TestAlertingRuleStripsMetadataLabels(t *testing.T) {
 	}
 	testutil.RequireEqual(t, expected, res)
 
-	// Verify RestoreForState matches ALERTS_FOR_STATE even when stored with __type__="gauge".
+	// Verify RestoreForState matches ALERTS_FOR_STATE even when stored with __type__ and __unit__.
 	app = st.AppenderV2(t.Context())
 	_, err = app.Append(
 		0,
 		labels.FromStrings(
 			model.MetricNameLabel, alertForStateMetricName,
 			model.MetricTypeLabel, string(model.MetricTypeGauge),
+			model.MetricUnitLabel, "errors",
 			labels.AlertName, "HighErrors",
 			"job", "api",
 			"severity", "page",
@@ -1318,7 +1319,9 @@ func TestAlertingRuleStripsMetadataLabels(t *testing.T) {
 		},
 	})
 	g.Eval(t.Context(), evalTime)
+	require.NoError(t, restoredRule.LastError())
 	g.RestoreForState(evalTime.Add(30 * time.Second))
+	require.True(t, restoredRule.Restored())
 
 	restoredActive := restoredRule.ActiveAlerts()
 	require.Len(t, restoredActive, 1)
