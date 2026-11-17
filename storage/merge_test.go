@@ -1590,10 +1590,6 @@ func makeSeries(numSeries, numSamples int) []Series {
 	return series
 }
 
-func makeMergeSeriesSet(serieses [][]Series) SeriesSet {
-	return makeMergeSeriesSetWithMergeFunc(serieses, ChainedSeriesMerge)
-}
-
 func makeMergeSeriesSetWithMergeFunc(serieses [][]Series, mergeFunc VerticalSeriesMergeFunc) SeriesSet {
 	seriesSets := make([]genericSeriesSet, len(serieses))
 	for i, s := range serieses {
