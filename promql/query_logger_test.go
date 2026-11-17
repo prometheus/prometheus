@@ -119,6 +119,9 @@ func TestInsertConfinedToSlot(t *testing.T) {
 	// still not write past its own slot.
 	queryLogger.Insert(context.Background(), strings.Repeat("\x00", entrySize))
 
+	first := queryBytes[1 : 1+entrySize]
+	require.True(t, regexp.MustCompile(`^{"query":"(?:\\u0000)+","timestamp_sec":\d+}\x00*,$`).Match(first),
+		"first slot does not contain a valid truncated JSON entry")
 	next := queryBytes[1+entrySize : 1+2*entrySize]
 	require.True(t, regexp.MustCompile(`^\x00+$`).Match(next),
 		"entry spilled into the next slot")
