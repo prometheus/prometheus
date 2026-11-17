@@ -10768,21 +10768,15 @@ func BenchmarkScrapeCacheStaleness(b *testing.B) {
 
 	for _, numSeries := range []int{10000, 100000} {
 		entriesA := make([]benchSeries, numSeries)
-		entriesB := make([]benchSeries, numSeries)
 		for i := range numSeries {
 			id := strconv.Itoa(i)
 			entriesA[i] = benchSeries{
 				hash: xxhash.Sum64String("metric_a{id=\"" + id + "\"}"),
 				ce: cacheEntry{
-					ref:  storage.SeriesRef(i + 1),
+					// Leave even refs for churn=1pct replacements so both alternation
+					// directions span the live SeriesRef range and exercise the Bloom filter.
+					ref:  storage.SeriesRef(2*i + 1),
 					lset: labels.FromStrings(model.MetricNameLabel, "metric_a", "id", id),
-				},
-			}
-			entriesB[i] = benchSeries{
-				hash: xxhash.Sum64String("metric_b{id=\"" + id + "\"}"),
-				ce: cacheEntry{
-					ref:  storage.SeriesRef(numSeries + i + 1),
-					lset: labels.FromStrings(model.MetricNameLabel, "metric_b", "id", id),
 				},
 			}
 		}
@@ -10817,16 +10811,23 @@ func BenchmarkScrapeCacheStaleness(b *testing.B) {
 				retainedPerSeries = float64(memAfter-memBefore) / float64(numSeries)
 			}
 
+			var totalStale int
 			b.ReportAllocs()
 			b.ResetTimer()
 			for b.Loop() {
 				for i := range entriesA {
 					c.trackStaleness(entriesA[i].hash)
 				}
-				c.forEachStale(func(storage.SeriesRef, labels.Labels) bool { return true })
+				c.forEachStale(func(storage.SeriesRef, labels.Labels) bool {
+					totalStale++
+					return true
+				})
 				c.iterDone(false)
 			}
 			b.StopTimer()
+			if totalStale != 0 {
+				b.Fatalf("expected 0 stale series across benchmark, got %d", totalStale)
+			}
 			runtime.KeepAlive(c)
 			if retainedPerSeries > 0 {
 				b.ReportMetric(retainedPerSeries, "retained-B/series")
@@ -10873,6 +10874,7 @@ func BenchmarkScrapeCacheStaleness(b *testing.B) {
 			}
 
 			useFwd := true
+			var totalStale int
 			b.ReportAllocs()
 			b.ResetTimer()
 			for b.Loop() {
@@ -10884,10 +10886,16 @@ func BenchmarkScrapeCacheStaleness(b *testing.B) {
 				for i := range scrapeSet {
 					c.trackStaleness(scrapeSet[i].hash)
 				}
-				c.forEachStale(func(storage.SeriesRef, labels.Labels) bool { return true })
+				c.forEachStale(func(storage.SeriesRef, labels.Labels) bool {
+					totalStale++
+					return true
+				})
 				c.iterDone(false)
 			}
 			b.StopTimer()
+			if totalStale != 0 {
+				b.Fatalf("expected 0 stale series across benchmark, got %d", totalStale)
+			}
 			runtime.KeepAlive(c)
 			if retainedPerSeries > 0 {
 				b.ReportMetric(retainedPerSeries, "retained-B/series")
@@ -10895,9 +10903,10 @@ func BenchmarkScrapeCacheStaleness(b *testing.B) {
 		})
 
 		b.Run(fmt.Sprintf("series=%d/churn=1pct", numSeries), func(b *testing.B) {
-			// Interleave the 1% churning series across the scrape order so stale entries
-			// are scattered across seriesPrev (exercising in-place partition swaps) and
-			// replacement series are appended out of SeriesRef order in seriesCur.
+			// Interleave the 1% churning series across the scrape order and SeriesRef
+			// range so stale entries are scattered across seriesPrev and both alternation
+			// directions exercise the Bloom filter.
+			churnEntries := make([]benchSeries, numSeries/100)
 			scrapeSetA := make([]*benchSeries, numSeries)
 			scrapeSetB := make([]*benchSeries, numSeries)
 			c := newScrapeCache(metrics)
@@ -10905,8 +10914,15 @@ func BenchmarkScrapeCacheStaleness(b *testing.B) {
 				entriesA[i].ce = c.addRef(entriesA[i].hash, entriesA[i].ce.ref, entriesA[i].ce.lset, nil)
 				scrapeSetA[i] = &entriesA[i]
 				if i%100 == 0 {
-					entriesB[i].ce = c.addRef(entriesB[i].hash, entriesB[i].ce.ref, entriesB[i].ce.lset, nil)
-					scrapeSetB[i] = &entriesB[i]
+					idx := i / 100
+					id := strconv.Itoa(i)
+					h := xxhash.Sum64String("metric_b{id=\"" + id + "\"}")
+					lset := labels.FromStrings(model.MetricNameLabel, "metric_b", "id", id)
+					churnEntries[idx] = benchSeries{
+						hash: h,
+						ce:   c.addRef(h, storage.SeriesRef(2*i+2), lset, nil),
+					}
+					scrapeSetB[i] = &churnEntries[idx]
 				} else {
 					scrapeSetB[i] = &entriesA[i]
 				}
@@ -10937,6 +10953,7 @@ func BenchmarkScrapeCacheStaleness(b *testing.B) {
 			}
 
 			useA := true
+			var totalStale int
 			b.ReportAllocs()
 			b.ResetTimer()
 			for b.Loop() {
@@ -10948,10 +10965,16 @@ func BenchmarkScrapeCacheStaleness(b *testing.B) {
 				for _, s := range scrapeSet {
 					c.trackStaleness(s.hash)
 				}
-				c.forEachStale(func(storage.SeriesRef, labels.Labels) bool { return true })
+				c.forEachStale(func(storage.SeriesRef, labels.Labels) bool {
+					totalStale++
+					return true
+				})
 				c.iterDone(false)
 			}
 			b.StopTimer()
+			if totalStale != b.N*(numSeries/100) {
+				b.Fatalf("expected %d stale series across benchmark, got %d", b.N*(numSeries/100), totalStale)
+			}
 			runtime.KeepAlive(c)
 			if retainedPerSeries > 0 {
 				b.ReportMetric(retainedPerSeries, "retained-B/series")
