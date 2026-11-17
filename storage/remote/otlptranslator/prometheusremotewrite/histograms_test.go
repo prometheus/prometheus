@@ -538,12 +538,73 @@ func TestExponentialToNativeHistogram(t *testing.T) {
 					Count:           4,
 					Sum:             10.1,
 					Schema:          1,
-					ZeroThreshold:   defaultZeroThreshold,
+					ZeroThreshold:   0,
 					ZeroCount:       1,
 					NegativeSpans:   []histogram.Span{{Offset: 2, Length: 2}},
 					NegativeBuckets: []int64{1, 0},
 					PositiveSpans:   []histogram.Span{{Offset: 2, Length: 2}},
 					PositiveBuckets: []int64{1, 0},
+				}
+			},
+		},
+		{
+			name: "convert exp. to native histogram with buckets below 1e-128 and unset zero_threshold",
+			exponentialHist: func() pmetric.ExponentialHistogramDataPoint {
+				pt := pmetric.NewExponentialHistogramDataPoint()
+				pt.SetStartTimestamp(pcommon.NewTimestampFromTime(time.UnixMilli(100)))
+				pt.SetTimestamp(pcommon.NewTimestampFromTime(time.UnixMilli(500)))
+				pt.SetCount(2)
+				pt.SetSum(0)
+				pt.SetScale(0)
+
+				// Bucket (2^-430, 2^-429] is entirely below 1e-128.
+				pt.Positive().BucketCounts().FromRaw([]uint64{1})
+				pt.Positive().SetOffset(-430)
+
+				pt.Negative().BucketCounts().FromRaw([]uint64{1})
+				pt.Negative().SetOffset(-430)
+
+				return pt
+			},
+			wantNativeHist: func() *histogram.Histogram {
+				return &histogram.Histogram{
+					Count:           2,
+					Sum:             0,
+					Schema:          0,
+					ZeroThreshold:   0,
+					ZeroCount:       0,
+					NegativeSpans:   []histogram.Span{{Offset: -429, Length: 1}},
+					NegativeBuckets: []int64{1},
+					PositiveSpans:   []histogram.Span{{Offset: -429, Length: 1}},
+					PositiveBuckets: []int64{1},
+				}
+			},
+		},
+		{
+			name: "convert exp. to native histogram with zero_threshold set",
+			exponentialHist: func() pmetric.ExponentialHistogramDataPoint {
+				pt := pmetric.NewExponentialHistogramDataPoint()
+				pt.SetStartTimestamp(pcommon.NewTimestampFromTime(time.UnixMilli(100)))
+				pt.SetTimestamp(pcommon.NewTimestampFromTime(time.UnixMilli(500)))
+				pt.SetCount(2)
+				pt.SetSum(3)
+				pt.SetScale(0)
+				pt.SetZeroThreshold(0.5)
+
+				pt.Positive().BucketCounts().FromRaw([]uint64{2})
+				pt.Positive().SetOffset(0)
+
+				return pt
+			},
+			wantNativeHist: func() *histogram.Histogram {
+				return &histogram.Histogram{
+					Count:           2,
+					Sum:             3,
+					Schema:          0,
+					ZeroThreshold:   0.5,
+					ZeroCount:       0,
+					PositiveSpans:   []histogram.Span{{Offset: 1, Length: 1}},
+					PositiveBuckets: []int64{2},
 				}
 			},
 		},
@@ -570,7 +631,7 @@ func TestExponentialToNativeHistogram(t *testing.T) {
 				return &histogram.Histogram{
 					Count:           4,
 					Schema:          1,
-					ZeroThreshold:   defaultZeroThreshold,
+					ZeroThreshold:   0,
 					ZeroCount:       1,
 					NegativeSpans:   []histogram.Span{{Offset: 2, Length: 2}},
 					NegativeBuckets: []int64{1, 0},
@@ -611,7 +672,7 @@ func TestExponentialToNativeHistogram(t *testing.T) {
 					Count:           6,
 					Sum:             10.1,
 					Schema:          8,
-					ZeroThreshold:   defaultZeroThreshold,
+					ZeroThreshold:   0,
 					ZeroCount:       1,
 					PositiveSpans:   []histogram.Span{{Offset: 2, Length: 3}},
 					PositiveBuckets: []int64{1, 0, 0}, // 1, 1, 1
@@ -642,7 +703,7 @@ func TestExponentialToNativeHistogram(t *testing.T) {
 					Count:           6,
 					Sum:             10.1,
 					Schema:          8,
-					ZeroThreshold:   defaultZeroThreshold,
+					ZeroThreshold:   0,
 					ZeroCount:       1,
 					PositiveSpans:   []histogram.Span{{Offset: 1, Length: 2}},
 					PositiveBuckets: []int64{1, 1}, // 0+1, 1+1 = 1, 2
@@ -673,7 +734,7 @@ func TestExponentialToNativeHistogram(t *testing.T) {
 					Count:           17,
 					Sum:             10.1,
 					Schema:          8,
-					ZeroThreshold:   defaultZeroThreshold,
+					ZeroThreshold:   0,
 					ZeroCount:       1,
 					PositiveSpans:   []histogram.Span{{Offset: 1, Length: 2}},
 					PositiveBuckets: []int64{0, 8}, // 0+0, 5+3 = 0, 8
@@ -696,6 +757,7 @@ func TestExponentialToNativeHistogram(t *testing.T) {
 			require.Empty(t, annots)
 			require.Equal(t, tt.wantNativeHist(), got)
 			validateNativeHistogramCount(t, got)
+			validateNoZeroBucketOverlap(t, got)
 		})
 	}
 }
@@ -735,6 +797,18 @@ func validateNativeHistogramCount(t *testing.T, h *histogram.Histogram) {
 		actualCount += uint64(prevBucket)
 	}
 	require.Equal(t, want, actualCount, "native histogram count mismatch")
+}
+
+// validateNoZeroBucketOverlap checks that no populated bucket overlaps the zero bucket.
+func validateNoZeroBucketOverlap(t *testing.T, h *histogram.Histogram) {
+	for it := h.PositiveBucketIterator(); it.Next(); {
+		b := it.At()
+		require.GreaterOrEqualf(t, b.Lower, h.ZeroThreshold, "positive bucket %s overlaps the zero bucket with threshold %g", b.String(), h.ZeroThreshold)
+	}
+	for it := h.NegativeBucketIterator(); it.Next(); {
+		b := it.At()
+		require.LessOrEqualf(t, b.Upper, -h.ZeroThreshold, "negative bucket %s overlaps the zero bucket with threshold %g", b.String(), h.ZeroThreshold)
+	}
 }
 
 func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
@@ -798,7 +872,7 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 						H: &histogram.Histogram{
 							Count:           7,
 							Schema:          1,
-							ZeroThreshold:   defaultZeroThreshold,
+							ZeroThreshold:   0,
 							ZeroCount:       0,
 							PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}},
 							PositiveBuckets: []int64{4, -2},
@@ -814,7 +888,7 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 						H: &histogram.Histogram{
 							Count:           4,
 							Schema:          1,
-							ZeroThreshold:   defaultZeroThreshold,
+							ZeroThreshold:   0,
 							ZeroCount:       0,
 							PositiveSpans:   []histogram.Span{{Offset: 0, Length: 3}},
 							PositiveBuckets: []int64{4, -2, -1},
@@ -863,7 +937,7 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 						H: &histogram.Histogram{
 							Count:           7,
 							Schema:          1,
-							ZeroThreshold:   defaultZeroThreshold,
+							ZeroThreshold:   0,
 							ZeroCount:       0,
 							PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}},
 							PositiveBuckets: []int64{4, -2},
@@ -923,7 +997,7 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 						H: &histogram.Histogram{
 							Count:           7,
 							Schema:          1,
-							ZeroThreshold:   defaultZeroThreshold,
+							ZeroThreshold:   0,
 							ZeroCount:       0,
 							PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}},
 							PositiveBuckets: []int64{4, -2},
@@ -939,7 +1013,7 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 						H: &histogram.Histogram{
 							Count:           4,
 							Schema:          1,
-							ZeroThreshold:   defaultZeroThreshold,
+							ZeroThreshold:   0,
 							ZeroCount:       0,
 							PositiveSpans:   []histogram.Span{{Offset: 0, Length: 3}},
 							PositiveBuckets: []int64{4, -2, -1},
@@ -996,7 +1070,7 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 						H: &histogram.Histogram{
 							Count:           7,
 							Schema:          1,
-							ZeroThreshold:   defaultZeroThreshold,
+							ZeroThreshold:   0,
 							ZeroCount:       0,
 							PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}},
 							PositiveBuckets: []int64{4, -2},
@@ -1012,7 +1086,7 @@ func TestPrometheusConverter_addExponentialHistogramDataPoints(t *testing.T) {
 						H: &histogram.Histogram{
 							Count:           4,
 							Schema:          1,
-							ZeroThreshold:   defaultZeroThreshold,
+							ZeroThreshold:   0,
 							ZeroCount:       0,
 							NegativeSpans:   []histogram.Span{{Offset: 0, Length: 3}},
 							NegativeBuckets: []int64{4, -2, -1},

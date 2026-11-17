@@ -425,10 +425,9 @@ func (node *SubqueryExpr) getSubqueryTimeSuffix() string {
 
 func (node *NumberLiteral) String() string {
 	if node.Duration {
-		if node.Val < 0 {
-			return fmt.Sprintf("-%s", model.Duration(-node.Val*1e9).String())
-		}
-		return model.Duration(node.Val * 1e9).String()
+		// Round to whole milliseconds: Val is float64 seconds, so 1.001 is
+		// stored as 1.000999... and truncating would print (1s1ms) as (1s).
+		return (model.Duration(math.Round(node.Val*1000)) * model.Duration(time.Millisecond)).String()
 	}
 	return strconv.FormatFloat(node.Val, 'f', -1, 64)
 }

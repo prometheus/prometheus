@@ -619,9 +619,9 @@ func (h *headChunkReader) ChunkOrIterableWithCopy(meta chunks.Meta) (chunkenc.Ch
 }
 
 // skipEvictedSeries reports whether a chunk can be skipped because its series
-// was removed or its chunks were reclaimed by this eviction.
+// was removed by this eviction.
 func (h *headChunkReader) skipEvictedSeries(meta chunks.Meta) bool {
-	sid, cid, isOOO := unpackHeadChunkRef(meta.Ref)
+	sid, _, isOOO := unpackHeadChunkRef(meta.Ref)
 	// Series with out-of-order data are excluded from these evictions, so missing
 	// out-of-order chunks must not be skipped.
 	if isOOO {
@@ -631,14 +631,8 @@ func (h *headChunkReader) skipEvictedSeries(meta chunks.Meta) bool {
 		return false
 	}
 	if h.head.series.getByID(sid) != nil {
-		truncated, ok := h.evicting.truncatedChunks.Load(sid)
-		if !ok {
-			return false
-		}
-		r := truncated.(evictedChunkRange)
-		if int(wrapChunkID(cid-r.first)) >= r.count {
-			return false
-		}
+		// The series was retained, so preserve the missing-chunk error.
+		return false
 	}
 	h.head.metrics.chunkReadsOfRemovedSeries.Inc()
 	return true

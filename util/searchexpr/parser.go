@@ -12,7 +12,7 @@
 // limitations under the License.
 
 // Package searchexpr parses boolean search expressions that combine terms with
-// NOT, AND, OR, and parentheses.
+// NOT, AND, OR, and parentheses, and compiles them into storage filters.
 package searchexpr
 
 import (

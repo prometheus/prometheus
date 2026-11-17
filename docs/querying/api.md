@@ -2253,6 +2253,7 @@ curl http://localhost:9090/api/v1/features
       "!~": true
     },
     "rules": {
+      "auto_recording_metadata": false,
       "concurrent_rule_eval": false,
       "keep_firing_for": true
     },
