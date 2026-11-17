@@ -220,7 +220,7 @@ func newJSONEntry(query string, logger *slog.Logger) []byte {
 	query = trimStringByBytes(query, entrySize-(len(minEntryJSON)+1))
 	jsonEntry := _newJSONEntry(query, timestamp, logger)
 	for len(jsonEntry) > budget && query != "" {
-		newLen := max(len(query)-(len(jsonEntry)-budget), 0)
+		newLen := max(len(query)-max((len(jsonEntry)-budget)/6, 1), 0)
 		query = trimStringByBytes(query, newLen)
 		jsonEntry = _newJSONEntry(query, timestamp, logger)
 	}
