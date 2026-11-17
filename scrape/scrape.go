@@ -1280,6 +1280,11 @@ func (c *scrapeCache) inSeriesCur(metHash uint64) bool {
 	return ok
 }
 
+// deleteSeries removes metHash from series and seriesMeta while preserving its
+// (ref, lset) for staleness emission. Callers must pass alreadyScraped from get
+// because get updates ce.lastIter to c.iter before deleteSeries runs; when true
+// and metHash was already tracked in seriesCur, the deleted entry is saved in
+// extraCur instead of replacedPrev.
 func (c *scrapeCache) deleteSeries(metHash uint64, alreadyScraped bool) {
 	if ce, ok := c.series[metHash]; ok {
 		if ce.ref != 0 {
@@ -1383,6 +1388,11 @@ func (c *scrapeCache) remapRef(ref storage.SeriesRef, lset labels.Labels) storag
 	return ref
 }
 
+// trackStaleness records metHash as exposed in the current scrape. Callers must
+// ensure metHash is present in c.series with a non-zero ref and lastIter == c.iter
+// (via get or addRef) so iterDone(true) does not evict it before forEachStale runs.
+// Only adjacent duplicates are skipped on the hot path; non-adjacent duplicates
+// (possible only with explicit timestamps) are deduplicated by SeriesRef in forEachStale.
 func (c *scrapeCache) trackStaleness(metHash uint64) {
 	if n := len(c.seriesCur); n > 0 && c.seriesCur[n-1] == metHash {
 		return
