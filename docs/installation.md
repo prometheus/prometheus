@@ -24,12 +24,6 @@ Running Prometheus on Docker is as simple as `docker run -p 9090:9090
 prom/prometheus`. This starts Prometheus with a sample
 configuration and exposes it on port 9090.
 
-The default Docker image declares `/prometheus` as a volume. If you do not mount
-storage there, Docker creates an anonymous volume. For
-production deployments it is highly recommended to use a
-[named volume](https://docs.docker.com/storage/volumes/)
-to ease managing the data on Prometheus upgrades.
-
 ### Setting command line parameters
 
 The Docker image is started with a number of default command line parameters, which
@@ -64,14 +58,11 @@ docker run \
 
 ### Save your Prometheus data
 
-Prometheus stores its data in `/prometheus` inside the container. Stopping or
-restarting the same container preserves that data. Starting a replacement with
-`docker run` does not automatically reuse the previous anonymous volume, which
-may still exist after the old container is removed.
-
-To keep data available across container replacements and image upgrades, mount
-a named volume or bind mount at `/prometheus`, and reuse the same storage in
-each replacement container.
+Prometheus stores its data in `/prometheus` inside the container. To preserve
+data beyond the container's lifetime, configure persistent storage using a
+[named volume](https://docs.docker.com/storage/volumes/) or bind mount at
+`/prometheus`, and reuse the same storage when replacing or upgrading the
+container.
 
 Run Prometheus container with persistent storage:
 
