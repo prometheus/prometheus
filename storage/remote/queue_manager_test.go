@@ -3354,6 +3354,71 @@ func TestPopulateV2TimeSeries_ExemplarCoalescing(t *testing.T) {
 		require.Equal(t, -1, findExemplarTargetIndex(batch, nSeriesWithData, seriesIdx, sDetached))
 		require.Equal(t, -1, findExemplarTargetIndex(batch, nSeriesWithData, nil, sCounter))
 	})
+
+	t.Run("reusing seriesIdx across consecutive batches clears stale entries", func(t *testing.T) {
+		symbolTable := writev2.NewSymbolTable()
+		seriesIdx := make(map[uint64]exemplarTarget)
+		pendingData := make([]writev2.TimeSeries, 10)
+		exLabels := labels.FromStrings("trace_id", "reuse")
+
+		// Batch 1: > sparseExemplarLinearThreshold exemplars so seriesIdx is populated with sHist at batchIdx 2.
+		batch1 := []timeSeries{
+			{sType: tSample, seriesLabels: sCounter, value: 1, timestamp: 100},
+			{sType: tSample, seriesLabels: sFloatHist, value: 2, timestamp: 100},
+			{sType: tSample, seriesLabels: sHist, value: 3, timestamp: 100},
+			{sType: tExemplar, seriesLabels: sCounter, exemplarLabels: exLabels, value: 1, timestamp: 100},
+			{sType: tExemplar, seriesLabels: sCounter, exemplarLabels: exLabels, value: 2, timestamp: 101},
+			{sType: tExemplar, seriesLabels: sHist, exemplarLabels: exLabels, value: 3, timestamp: 100},
+			{sType: tExemplar, seriesLabels: sHist, exemplarLabels: exLabels, value: 4, timestamp: 101},
+			{sType: tExemplar, seriesLabels: sFloatHist, exemplarLabels: exLabels, value: 5, timestamp: 100},
+		}
+		nSeries, nSamples, nExemplars, _, _, nDropped := populateV2TimeSeries(
+			&symbolTable, batch1, pendingData, seriesIdx, true, true, false, remoteapi.WriteModeStateless,
+		)
+		require.Equal(t, 3, nSeries)
+		require.Equal(t, 3, nSamples)
+		require.Equal(t, 5, nExemplars)
+		require.Equal(t, 0, nDropped)
+		require.Len(t, seriesIdx, 3)
+
+		// Batch 2: exemplar-only batch (nSeries == 0) referencing previously-live series must drop all without panicking.
+		symbolTable.Reset()
+		batch2 := []timeSeries{
+			{sType: tExemplar, seriesLabels: sHist, exemplarLabels: exLabels, value: 1, timestamp: 200},
+			{sType: tExemplar, seriesLabels: sCounter, exemplarLabels: exLabels, value: 2, timestamp: 200},
+			{sType: tExemplar, seriesLabels: sFloatHist, exemplarLabels: exLabels, value: 3, timestamp: 200},
+			{sType: tExemplar, seriesLabels: sHist, exemplarLabels: exLabels, value: 4, timestamp: 201},
+			{sType: tExemplar, seriesLabels: sCounter, exemplarLabels: exLabels, value: 5, timestamp: 201},
+		}
+		nSeries, nSamples, nExemplars, _, _, nDropped = populateV2TimeSeries(
+			&symbolTable, batch2, pendingData, seriesIdx, true, true, false, remoteapi.WriteModeStateless,
+		)
+		require.Equal(t, 0, nSeries)
+		require.Equal(t, 0, nSamples)
+		require.Equal(t, 0, nExemplars)
+		require.Equal(t, 5, nDropped)
+
+		// Batch 3: shorter batch with 1 unrelated live sample and > threshold exemplars for sHist (which lived at higher batchIdx 2 in batch1).
+		symbolTable.Reset()
+		batch3 := []timeSeries{
+			{sType: tSample, seriesLabels: sDetached, value: 9, timestamp: 300},
+			{sType: tExemplar, seriesLabels: sHist, exemplarLabels: exLabels, value: 1, timestamp: 300},
+			{sType: tExemplar, seriesLabels: sHist, exemplarLabels: exLabels, value: 2, timestamp: 301},
+			{sType: tExemplar, seriesLabels: sCounter, exemplarLabels: exLabels, value: 3, timestamp: 300},
+			{sType: tExemplar, seriesLabels: sFloatHist, exemplarLabels: exLabels, value: 4, timestamp: 300},
+			{sType: tExemplar, seriesLabels: sDetached, exemplarLabels: exLabels, value: 5, timestamp: 300},
+		}
+		nSeries, nSamples, nExemplars, _, _, nDropped = populateV2TimeSeries(
+			&symbolTable, batch3, pendingData, seriesIdx, true, true, false, remoteapi.WriteModeStateless,
+		)
+		require.Equal(t, 1, nSeries)
+		require.Equal(t, 1, nSamples)
+		require.Equal(t, 1, nExemplars)
+		require.Equal(t, 4, nDropped)
+		require.Len(t, pendingData[0].Exemplars, 1)
+		require.Equal(t, float64(5), pendingData[0].Exemplars[0].Value)
+		require.Len(t, seriesIdx, 1)
+	})
 }
 
 func TestHighestTimestampOnAppend(t *testing.T) {
