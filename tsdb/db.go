@@ -705,9 +705,14 @@ func (db *DBReadOnly) loadDataAsQueryable(maxt int64) (storage.SampleAndChunkQue
 	}
 
 	// Also add the WAL if the current blocks don't cover the requests time range.
-	// A directory without a WAL, such as a snapshot, has only blocks to read.
 	walDir := filepath.Join(db.dir, "wal")
-	if _, err := os.Stat(walDir); maxBlockTime <= maxt && !os.IsNotExist(err) {
+	readWAL := maxBlockTime <= maxt
+	if readWAL && len(blocks) > 0 {
+		// Snapshots and backfilled databases may contain only blocks.
+		_, err := os.Stat(walDir)
+		readWAL = !os.IsNotExist(err)
+	}
+	if readWAL {
 		if err := head.Close(); err != nil {
 			return nil, err
 		}

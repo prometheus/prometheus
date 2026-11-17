@@ -972,6 +972,16 @@ func TestOverlappingBlocksDetectsAllOverlaps(t *testing.T) {
 	}, OverlappingBlocks(nc1))
 }
 
+func TestDBReadOnlyQuerierEmptyDir(t *testing.T) {
+	t.Parallel()
+	db, err := OpenDBReadOnly(t.TempDir(), t.TempDir(), nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, db.Close()) })
+
+	_, err = db.Querier(math.MinInt64, math.MaxInt64)
+	require.ErrorIs(t, err, os.ErrNotExist)
+}
+
 // TestDBReadOnlyClosing ensures that after closing the db
 // all api methods return an ErrClosed.
 func TestDBReadOnlyClosing(t *testing.T) {

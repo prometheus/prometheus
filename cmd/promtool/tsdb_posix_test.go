@@ -26,8 +26,6 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-
-	"github.com/prometheus/prometheus/tsdb"
 )
 
 func TestTSDBDumpOpenMetricsRoundTripPipe(t *testing.T) {
@@ -55,11 +53,6 @@ func TestTSDBDumpOpenMetricsRoundTripPipe(t *testing.T) {
 	// Import samples from OM format
 	code := backfillOpenMetrics(pipe, dbDir, false, false, 2*time.Hour, map[string]string{})
 	require.Equal(t, 0, code)
-	db, err := tsdb.Open(dbDir, nil, nil, tsdb.DefaultOptions(), nil)
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		require.NoError(t, db.Close())
-	})
 
 	// Dump the blocks into OM format
 	dumpedMetrics := getDumpedSamples(t, dbDir, "", math.MinInt64, math.MaxInt64, []string{"{__name__=~'(?s:.*)'}"}, formatSeriesSetOpenMetrics)
