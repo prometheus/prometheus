@@ -1430,18 +1430,21 @@ func (c *scrapeCache) forEachStale(f func(storage.SeriesRef, labels.Labels) bool
 		// sorting and map lookups completely.
 		minLen := min(len(c.seriesPrev), len(c.seriesCur))
 		firstMismatch := -1
-		if hasReplacedPrev {
-			firstMismatch = 0
-		} else {
-			for i := range minLen {
-				if c.seriesPrev[i] != c.seriesCur[i] {
+		for i := range minLen {
+			ph := c.seriesPrev[i]
+			if ph != c.seriesCur[i] {
+				firstMismatch = i
+				break
+			}
+			if hasReplacedPrev {
+				if _, replaced := c.replacedPrev[ph]; replaced {
 					firstMismatch = i
 					break
 				}
 			}
-			if firstMismatch < 0 && len(c.seriesPrev) > len(c.seriesCur) {
-				firstMismatch = minLen
-			}
+		}
+		if firstMismatch < 0 && len(c.seriesPrev) > len(c.seriesCur) {
+			firstMismatch = minLen
 		}
 
 		if firstMismatch >= 0 {
@@ -1457,8 +1460,13 @@ func (c *scrapeCache) forEachStale(f func(storage.SeriesRef, labels.Labels) bool
 			for i := firstMismatch; i < minLen; i++ {
 				ph := c.seriesPrev[i]
 				ch := c.seriesCur[i]
-				if !hasReplacedPrev && ph == ch {
-					continue
+				if ph == ch {
+					if !hasReplacedPrev {
+						continue
+					}
+					if _, replaced := c.replacedPrev[ph]; !replaced {
+						continue
+					}
 				}
 				if prevEnd != i {
 					c.seriesPrev[prevEnd], c.seriesPrev[i] = c.seriesPrev[i], c.seriesPrev[prevEnd]
