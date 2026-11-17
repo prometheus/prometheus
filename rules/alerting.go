@@ -250,6 +250,7 @@ func (r *AlertingRule) sample(alert *Alert, ts time.Time) promql.Sample {
 		lb.Set(l.Name, l.Value)
 	})
 
+	// Set __name__ and strip reserved schema labels (__type__, __unit__) inherited from r.labels.
 	schema.Metadata{Name: alertMetricName}.SetToLabels(lb)
 	lb.Set(labels.AlertName, r.name)
 	lb.Set(alertStateLabel, alert.State.String())
@@ -273,6 +274,7 @@ func (r *AlertingRule) forStateSample(alert *Alert, ts time.Time, v float64) pro
 		})
 	}
 
+	// Set __name__ and strip reserved schema labels (__type__, __unit__) inherited from r.labels.
 	schema.Metadata{Name: alertForStateMetricName}.SetToLabels(lb)
 	lb.Set(labels.AlertName, r.name)
 
