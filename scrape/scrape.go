@@ -1081,6 +1081,10 @@ type scrapeCache struct {
 	replacedPrev map[uint64]staleSeries
 	extraPrev    []staleSeries
 	extraCur     []staleSeries
+	// Lazily populated only when deleteSeries runs on an already-scraped hash so
+	// checking seriesCur membership stays amortized O(1) instead of O(N).
+	seriesCurSet     map[uint64]struct{}
+	seriesCurIndexed int
 
 	// Per-series post-relabel metadata cache, lazily allocated when metric relabel rules
 	// or metadata relabeling are enabled.
@@ -1218,6 +1222,8 @@ func (c *scrapeCache) iterDone(flushCache bool) {
 	}
 	c.replacedPrev = nil
 	c.extraPrev, c.extraCur = c.extraCur, nil
+	c.seriesCurSet = nil
+	c.seriesCurIndexed = 0
 
 	c.iter++
 }
@@ -1254,11 +1260,26 @@ func (c *scrapeCache) setSeriesMeta(metHash uint64, origMeta, meta unique.Handle
 	}
 }
 
+func (c *scrapeCache) inSeriesCur(metHash uint64) bool {
+	if len(c.seriesCur) == 0 {
+		return false
+	}
+	if c.seriesCurSet == nil {
+		c.seriesCurSet = make(map[uint64]struct{}, len(c.seriesCur))
+	}
+	for _, h := range c.seriesCur[c.seriesCurIndexed:] {
+		c.seriesCurSet[h] = struct{}{}
+	}
+	c.seriesCurIndexed = len(c.seriesCur)
+	_, ok := c.seriesCurSet[metHash]
+	return ok
+}
+
 func (c *scrapeCache) deleteSeries(metHash uint64, alreadyScraped bool) {
 	if ce, ok := c.series[metHash]; ok {
 		if ce.ref != 0 {
 			old := staleSeries{ref: ce.ref, lset: ce.lset}
-			if alreadyScraped && slices.Contains(c.seriesCur, metHash) {
+			if alreadyScraped && c.inSeriesCur(metHash) {
 				c.extraCur = append(c.extraCur, old)
 			} else {
 				if c.replacedPrev == nil {
