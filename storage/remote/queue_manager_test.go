@@ -2303,8 +2303,13 @@ func BenchmarkBuildV2WriteRequest(b *testing.B) {
 		seriesIdx := make(map[uint64]exemplarTarget, len(batch))
 		pBuf := []byte{}
 
+		// Warm reusable buffers (LabelsRefs, pBuf, cEnc) so iteration-0 growth does not skew allocs/op.
+		nSeries, _, _, _, _, _ := populateV2TimeSeries(&symbolTable, batch, seriesBuff, seriesIdx, true, true, false, remoteapi.WriteModeNone)
+		if _, _, _, _, err := buildV2WriteRequest(noopLogger, seriesBuff[:nSeries], symbolTable.Symbols(), &pBuf, nil, cEnc, "snappy"); err != nil {
+			b.Fatal(err)
+		}
+
 		b.ReportAllocs()
-		b.ResetTimer()
 		totalSize := 0
 		for b.Loop() {
 			symbolTable.Reset()
@@ -2321,14 +2326,25 @@ func BenchmarkBuildV2WriteRequest(b *testing.B) {
 	twoBatch := createDummyTimeSeries(2)
 	tenBatch := createDummyTimeSeries(10)
 	hundredBatch := createDummyTimeSeries(100)
+	hundredWithSparseExemplars := make([]timeSeries, 0, len(hundredBatch)+3)
+	hundredWithSparseExemplars = append(hundredWithSparseExemplars, hundredBatch...)
+	for i := range 3 {
+		idx := i * (len(hundredBatch) / 3)
+		hundredWithSparseExemplars = append(hundredWithSparseExemplars, timeSeries{
+			sType:          tExemplar,
+			seriesLabels:   hundredBatch[idx].seriesLabels,
+			exemplarLabels: labels.FromStrings("trace_id", fmt.Sprintf("%016x", idx)),
+			value:          hundredBatch[idx].value,
+			timestamp:      1000,
+		})
+	}
 	hundredWithExemplars := make([]timeSeries, 0, len(hundredBatch)+len(hundredBatch)/5)
 	hundredWithExemplars = append(hundredWithExemplars, hundredBatch...)
-	exLabels := labels.FromStrings("trace_id", "0123456789abcdef")
 	for i := 0; i < len(hundredBatch); i += 5 {
 		hundredWithExemplars = append(hundredWithExemplars, timeSeries{
 			sType:          tExemplar,
 			seriesLabels:   hundredBatch[i].seriesLabels,
-			exemplarLabels: exLabels,
+			exemplarLabels: labels.FromStrings("trace_id", fmt.Sprintf("%016x", i)),
 			value:          hundredBatch[i].value,
 			timestamp:      1000,
 		})
@@ -2344,6 +2360,10 @@ func BenchmarkBuildV2WriteRequest(b *testing.B) {
 
 	b.Run("1k instances", func(b *testing.B) {
 		bench(b, hundredBatch)
+	})
+
+	b.Run("1k instances with sparse exemplars", func(b *testing.B) {
+		bench(b, hundredWithSparseExemplars)
 	})
 
 	b.Run("1k instances with exemplars", func(b *testing.B) {
