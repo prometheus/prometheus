@@ -3327,6 +3327,33 @@ func TestPopulateV2TimeSeries_ExemplarCoalescing(t *testing.T) {
 		require.Equal(t, writev2.Metadata_METRIC_TYPE_COUNTER, pendingData[1].Metadata.Type)
 		require.Contains(t, symbolTable.Symbols(), "kept_trace")
 	})
+
+	t.Run("hash collision fallback in findExemplarTargetIndex", func(t *testing.T) {
+		batch := []timeSeries{
+			{sType: tMetadata, seriesLabels: labels.FromStrings("__name__", "unexpected_meta")},
+			{sType: tSample, seriesLabels: sCounter, value: 10, timestamp: 100},            // dataIdx 0
+			{sType: tExemplar, seriesLabels: sCounter, value: 1, timestamp: 100},           // skipped
+			{sType: tSample, seriesLabels: sHist, value: 20, timestamp: 150},               // dataIdx 1
+			{sType: tSample, seriesLabels: sCounter, value: 30, timestamp: 200},            // dataIdx 2 (latest live sCounter)
+			{sType: tSample, seriesLabels: sCounter, value: stale, timestamp: 250},         // dataIdx 3 (trailing stale)
+			{sType: tSample, seriesLabels: sStaleOnly, value: stale, timestamp: 300},       // dataIdx 4 (stale only)
+			{sType: tHistogram, seriesLabels: sFloatHist, histogram: hist, timestamp: 350}, // dataIdx 5 (colliding series)
+		}
+		const nSeriesWithData = 6
+
+		// Force sCounter, sStaleOnly, and sDetached hashes to collide with sFloatHist in seriesIdx.
+		collidingTarget := exemplarTarget{batchIdx: 7, dataIdx: 5}
+		seriesIdx := map[uint64]exemplarTarget{
+			sCounter.Hash():   collidingTarget,
+			sStaleOnly.Hash(): collidingTarget,
+			sDetached.Hash():  collidingTarget,
+		}
+
+		require.Equal(t, 2, findExemplarTargetIndex(batch, nSeriesWithData, seriesIdx, sCounter))
+		require.Equal(t, -1, findExemplarTargetIndex(batch, nSeriesWithData, seriesIdx, sStaleOnly))
+		require.Equal(t, -1, findExemplarTargetIndex(batch, nSeriesWithData, seriesIdx, sDetached))
+		require.Equal(t, -1, findExemplarTargetIndex(batch, nSeriesWithData, nil, sCounter))
+	})
 }
 
 func TestHighestTimestampOnAppend(t *testing.T) {
