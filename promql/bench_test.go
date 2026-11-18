@@ -809,12 +809,29 @@ func BenchmarkParser(b *testing.B) {
 		"foo unless on(bar) group_left(baz) bar",
 		"test[5d] OFFSET 10s [10m:5s]",
 	}
+	// Deeply nested expressions, named by shape as the expressions are long.
+	const depth = 1000
+	deepCases := []struct{ name, expr string }{
+		{"nested parens", strings.Repeat("(", depth) + "1" + strings.Repeat(")", depth)},
+		{"nested unary", strings.Repeat("-", depth) + "foo"},
+		{"scalar sum", "1" + strings.Repeat(" + 1", depth)},
+		{"vector sum", "foo" + strings.Repeat(" + foo", depth)},
+		{"right nested sum", strings.Repeat("1 + (", depth) + "1" + strings.Repeat(")", depth)},
+	}
 
 	for _, c := range cases {
 		b.Run(c, func(b *testing.B) {
 			b.ReportAllocs()
 			for b.Loop() {
 				testParser.ParseExpr(c)
+			}
+		})
+	}
+	for _, c := range deepCases {
+		b.Run(c.name, func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				testParser.ParseExpr(c.expr)
 			}
 		})
 	}
