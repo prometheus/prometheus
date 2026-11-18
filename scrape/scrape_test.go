@@ -825,39 +825,48 @@ func TestDiscoveredLabelsUpdate(t *testing.T) {
 
 // TestDiscoveredLabelsDuplicateTargets checks that when several discovered
 // targets end up with the same labels after relabeling, the active target keeps
-// the discovered labels of the first one, on the initial sync and on later ones.
+// the discovered labels of the first one, follows updates to it, and switches
+// to the next duplicate once the first one goes away.
 func TestDiscoveredLabelsDuplicateTargets(t *testing.T) {
-	cfg := &config.ScrapeConfig{
+	sp := newTestScrapePool(t, nil, true, func(scrapeLoopOptions) loop { return noopLoop() })
+	sp.config = &config.ScrapeConfig{
 		JobName:                    "dup",
 		ScrapeInterval:             model.Duration(time.Hour),
 		ScrapeTimeout:              model.Duration(time.Second),
 		MetricNameValidationScheme: model.UTF8Validation,
 		MetricNameEscapingScheme:   model.AllowUTF8,
 	}
-	sa := selectAppendable(teststorage.NewAppendable(), false)
-	sp, err := newScrapePool(cfg, sa.V1(), sa.V2(), 0, nil, nil, &Options{}, newTestScrapeMetrics(t))
-	require.NoError(t, err)
-	t.Cleanup(sp.stop)
 
-	// Both targets lose their __meta_ label on relabeling, so they are duplicates.
-	tgs := []*targetgroup.Group{
-		{
-			Source: "pod",
-			Targets: []model.LabelSet{
-				{model.AddressLabel: "127.0.0.1:1", "__meta_container_name": "app"},
-				{model.AddressLabel: "127.0.0.1:1", "__meta_container_name": "init"},
-			},
-		},
+	// Both targets lose their __meta_ labels on relabeling, so they are duplicates.
+	app := func(rev string) model.LabelSet {
+		return model.LabelSet{model.AddressLabel: "127.0.0.1:1", "__meta_container_name": "app", "__meta_rev": model.LabelValue(rev)}
+	}
+	initCtr := model.LabelSet{model.AddressLabel: "127.0.0.1:1", "__meta_container_name": "init"}
+	doSync := func(targets ...model.LabelSet) {
+		sp.Sync([]*targetgroup.Group{{Source: "pod", Targets: targets}})
 	}
 
 	lb := labels.NewBuilder(labels.EmptyLabels())
-	for i := range 3 {
-		sp.Sync(tgs)
-		require.Len(t, sp.activeTargets, 1, "sync %d", i)
+	requireDiscovered := func(container, rev string) {
+		t.Helper()
+		require.Len(t, sp.activeTargets, 1)
 		for _, tgt := range sp.activeTargets {
-			require.Equal(t, "app", tgt.DiscoveredLabels(lb).Get("__meta_container_name"), "sync %d", i)
+			dl := tgt.DiscoveredLabels(lb)
+			require.Equal(t, container, dl.Get("__meta_container_name"))
+			require.Equal(t, rev, dl.Get("__meta_rev"))
 		}
 	}
+
+	doSync(app("1"), initCtr)
+	requireDiscovered("app", "1")
+
+	// An updated __meta_ label on the first target must show up.
+	doSync(app("2"), initCtr)
+	requireDiscovered("app", "2")
+
+	// Once the first target is gone, the remaining duplicate takes over.
+	doSync(initCtr)
+	requireDiscovered("init", "")
 }
 
 type testLoop struct {
