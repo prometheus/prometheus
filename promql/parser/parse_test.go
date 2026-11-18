@@ -662,6 +662,28 @@ var testExpr = []struct {
 		},
 	},
 	{
+		input: "-(1 + 2) == (3)",
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 9, End: 10},
+				Err:           errors.New("comparisons between scalars must use BOOL modifier"),
+				Query:         "-(1 + 2) == (3)",
+			},
+		},
+	},
+	{
+		input: "(1 + -2) and 1",
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 0, End: 14},
+				Err:           errors.New("set operator \"and\" not allowed in binary scalar expression"),
+				Query:         "(1 + -2) and 1",
+			},
+		},
+	},
+	{
 		input: "1 or 1",
 		fail:  true,
 		errors: ParseErrors{

@@ -746,6 +746,11 @@ func (p *parser) checkAST(node Node) (typ ValueType) {
 	switch n := node.(type) {
 	case Expressions:
 		typ = ValueTypeNone
+	case *BinaryExpr, *ParenExpr, *UnaryExpr:
+		// The type of these depends on their children. It is derived below
+		// from the types returned when checking the children, as calling
+		// Type here would walk the whole subtree again for every node, making
+		// type checking of deeply nested expressions quadratic.
 	case Expr:
 		typ = n.Type()
 	default:
@@ -799,7 +804,12 @@ func (p *parser) checkAST(node Node) (typ ValueType) {
 			p.addParseErrf(opRange(), "bool modifier can only be used on comparison operators")
 		}
 
-		if n.Op.IsComparisonOperator() && !n.ReturnBool && n.RHS.Type() == ValueTypeScalar && n.LHS.Type() == ValueTypeScalar {
+		typ = ValueTypeVector
+		if lt == ValueTypeScalar && rt == ValueTypeScalar {
+			typ = ValueTypeScalar
+		}
+
+		if n.Op.IsComparisonOperator() && !n.ReturnBool && typ == ValueTypeScalar {
 			p.addParseErrf(opRange(), "comparisons between scalars must use BOOL modifier")
 		}
 
@@ -902,14 +912,15 @@ func (p *parser) checkAST(node Node) (typ ValueType) {
 		}
 
 	case *ParenExpr:
-		p.checkAST(n.Expr)
+		typ = p.checkAST(n.Expr)
 
 	case *UnaryExpr:
 		if n.Op != ADD && n.Op != SUB {
 			p.addParseErrf(n.PositionRange(), "only + and - operators allowed for unary expressions")
 		}
-		if t := p.checkAST(n.Expr); t != ValueTypeScalar && t != ValueTypeVector {
-			p.addParseErrf(n.PositionRange(), "unary expression only allowed on expressions of type scalar or instant vector, got %q", DocumentedType(t))
+		typ = p.checkAST(n.Expr)
+		if typ != ValueTypeScalar && typ != ValueTypeVector {
+			p.addParseErrf(n.PositionRange(), "unary expression only allowed on expressions of type scalar or instant vector, got %q", DocumentedType(typ))
 		}
 
 	case *SubqueryExpr:
