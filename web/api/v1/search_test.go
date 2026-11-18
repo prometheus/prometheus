@@ -1503,45 +1503,85 @@ func (q fixedSearchQuerier) SearchLabelValues(context.Context, string, *storage.
 	return q.rs
 }
 
-// TestSearchStreamFirstBatchError exercises the boundary where the first
-// batch that streamSearchResults assembles already contains both partial
-// results and a tail error. The handler must stream the partial results
-// before terminating with an in-band NDJSON error line.
-func TestSearchStreamFirstBatchError(t *testing.T) {
-	rs := storage.NewSearchResultSetFromSliceAndError(
-		[]storage.SearchResult{
-			{Value: "alpha", Score: 1.0},
-			{Value: "beta", Score: 1.0},
+// TestAPI_SearchMetricNames_StreamErrors checks errors before streaming and with partial results.
+func TestAPI_SearchMetricNames_StreamErrors(t *testing.T) {
+	for _, tc := range []struct {
+		name              string
+		resultSet         storage.SearchResultSet
+		expectedNames     []string
+		expectedCode      int
+		expectedErrorType string
+		expectedError     string
+	}{
+		{
+			name: "execution error after partial results",
+			resultSet: storage.NewSearchResultSetFromSliceAndError(
+				[]storage.SearchResult{{Value: "alpha", Score: 1.0}, {Value: "beta", Score: 1.0}},
+				nil,
+				errors.New("tail failure"),
+			),
+			expectedNames:     []string{"alpha", "beta"},
+			expectedCode:      http.StatusOK,
+			expectedErrorType: errorExec.str,
+			expectedError:     "tail failure",
 		},
-		nil,
-		errors.New("tail failure"),
-	)
-	queryable := errorTestQueryable{q: fixedSearchQuerier{rs: rs}}
+		{
+			name:              "deadline error before streaming",
+			resultSet:         storage.ErrSearchResultSet(context.DeadlineExceeded),
+			expectedCode:      http.StatusServiceUnavailable,
+			expectedErrorType: errorTimeout.str,
+			expectedError:     context.DeadlineExceeded.Error(),
+		},
+		{
+			name: "deadline error after partial results",
+			resultSet: storage.NewSearchResultSetFromSliceAndError(
+				[]storage.SearchResult{{Value: "alpha", Score: 1.0}},
+				nil,
+				context.DeadlineExceeded,
+			),
+			expectedNames:     []string{"alpha"},
+			expectedCode:      http.StatusOK,
+			expectedErrorType: errorTimeout.str,
+			expectedError:     context.DeadlineExceeded.Error(),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			api := minimalSearchAPI()
+			api.Queryable = errorTestQueryable{q: fixedSearchQuerier{rs: tc.resultSet}}
 
-	api := minimalSearchAPI()
-	api.Queryable = queryable
+			// A batch size of five surfaces each tail error while assembling the first batch.
+			rec := doSearchRequest(t, api, "/search/metric_names", url.Values{"batch_size": {"5"}})
+			require.Equal(t, tc.expectedCode, rec.Code)
 
-	// batch_size=5 ensures both results land in firstBatch; the iterator
-	// then surfaces the tail error in the same nextBatch call.
-	rec := doSearchRequest(t, api, "/search/metric_names", url.Values{
-		"batch_size": []string{"5"},
-	})
-	require.Equal(t, http.StatusOK, rec.Code, "partial first-batch results must not be lost to a JSON error response")
+			if tc.expectedCode != http.StatusOK {
+				require.Equal(t, "application/json", rec.Header().Get("Content-Type"))
+				var response Response
+				require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &response))
+				require.Equal(t, statusError, response.Status)
+				require.Equal(t, tc.expectedErrorType, response.ErrorType)
+				require.Equal(t, tc.expectedError, response.Error)
+				return
+			}
 
-	lines := parseNDJSON(t, rec.Body.String())
-	require.GreaterOrEqual(t, len(lines), 2, "expected a batch line followed by an error line")
+			require.Equal(t, "application/x-ndjson; charset=utf-8", rec.Header().Get("Content-Type"))
+			lines := parseNDJSON(t, rec.Body.String())
+			require.Len(t, lines, 2, "expected a batch line followed by an error line")
 
-	var firstBatch searchBatch[searchMetricNameResult]
-	require.NoError(t, json.Unmarshal(lines[0], &firstBatch))
-	names := make([]string, 0, len(firstBatch.Results))
-	for _, r := range firstBatch.Results {
-		names = append(names, r.Name)
+			var firstBatch searchBatch[searchMetricNameResult]
+			require.NoError(t, json.Unmarshal(lines[0], &firstBatch))
+			names := make([]string, 0, len(firstBatch.Results))
+			for _, result := range firstBatch.Results {
+				names = append(names, result.Name)
+			}
+			require.Equal(t, tc.expectedNames, names)
+
+			var terminal searchErrorResponse
+			require.NoError(t, json.Unmarshal(lines[1], &terminal))
+			require.Equal(t, "error", terminal.Status)
+			require.Equal(t, tc.expectedErrorType, terminal.ErrorType)
+			require.Equal(t, tc.expectedError, terminal.Error)
+		})
 	}
-	require.Equal(t, []string{"alpha", "beta"}, names)
-
-	var lastTrailer searchTrailer
-	require.NoError(t, json.Unmarshal(lines[len(lines)-1], &lastTrailer))
-	require.Equal(t, "error", lastTrailer.Status, "stream must terminate with an error line, not a success trailer")
 }
 
 // TestStreamSearchResultsWarningsSorted verifies that warnings emitted in the
