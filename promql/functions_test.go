@@ -547,6 +547,68 @@ load 10s
 					require.ErrorContains(t, rRes.Err, "vector cannot contain metrics with the same labelset")
 				})
 			}
+
+			// Nested expressions observe __name__ preservation and delayed duplicate
+			// merging, which top-level queries mask via Eval's final cleanupMetricLabels.
+			nestedLabelCases := []struct {
+				expr string
+				want func(tsMS int64) float64
+			}{
+				{
+					expr: `label_replace(abs(unary_float), "orig", "$1", "__name__", "(.+)")`,
+					want: func(tsMS int64) float64 { return float64(expectedSampleIdx(tsMS) + 1) },
+				},
+				{
+					expr: `label_replace(timestamp(unary_float), "orig", "$1", "__name__", "(.+)")`,
+					want: func(tsMS int64) float64 { return float64((expectedSampleIdx(tsMS) + 1) * 10) },
+				},
+				{
+					expr: `label_replace(start_timestamp(unary_float), "orig", "$1", "__name__", "(.+)")`,
+					want: func(tsMS int64) float64 { return float64((expectedSampleIdx(tsMS) + 1) * 9) },
+				},
+			}
+			for _, tc := range nestedLabelCases {
+				t.Run("nested label_replace/"+tc.expr, func(t *testing.T) {
+					rq, err := engine.NewRangeQuery(t.Context(), stor, qOpts, tc.expr, start, end, step)
+					require.NoError(t, err)
+					t.Cleanup(rq.Close)
+
+					rRes := rq.Exec(t.Context())
+					require.NoError(t, rRes.Err)
+					mat, err := rRes.Matrix()
+					require.NoError(t, err)
+					require.Len(t, mat, 1)
+
+					wantLabels := `{k="1"}`
+					if delayedNameRemoval {
+						wantLabels = `{k="1", orig="unary_float"}`
+					}
+					require.Equal(t, wantLabels, mat[0].Metric.String())
+					for _, pt := range mat[0].Floats {
+						require.Equal(t, tc.want(pt.T), pt.F, "ts=%d", pt.T)
+					}
+				})
+			}
+
+			for _, expr := range []string{`count(abs({k="dup_err"}))`, `count(timestamp({k="dup_err"}))`, `count(start_timestamp({k="dup_err"}))`} {
+				t.Run("nested count/"+expr, func(t *testing.T) {
+					rq, err := engine.NewRangeQuery(t.Context(), stor, qOpts, expr, start, end, step)
+					require.NoError(t, err)
+					t.Cleanup(rq.Close)
+
+					rRes := rq.Exec(t.Context())
+					if !delayedNameRemoval {
+						require.ErrorContains(t, rRes.Err, "vector cannot contain metrics with the same labelset")
+						return
+					}
+					require.NoError(t, rRes.Err)
+					mat, err := rRes.Matrix()
+					require.NoError(t, err)
+					require.Len(t, mat, 1)
+					require.Equal(t, `{}`, mat[0].Metric.String())
+					require.Equal(t, []promql.FPoint{{T: 10_000, F: 2}, {T: 15_000, F: 2}, {T: 20_000, F: 2}}, mat[0].Floats)
+				})
+			}
 		})
 	}
 }
