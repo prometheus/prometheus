@@ -3297,12 +3297,13 @@ func reuseOrGetFPointSlices(prevSS *Series, numSteps int) (r []FPoint) {
 }
 
 func (ev *evaluator) evalInPlaceFloatUnary(ctx context.Context, arg parser.Expr, fn func(float64) float64) (Matrix, annotations.Annotations) {
+	originalNumSamples := ev.currentSamples
 	val, ws := ev.eval(ctx, arg)
 	mat := val.(Matrix)
 	outIdx := 0
+	totalFloats := 0
 	for i := range mat {
 		if len(mat[i].Histograms) > 0 {
-			ev.currentSamples -= totalHPointSize(mat[i].Histograms)
 			putHPointSlice(mat[i].Histograms)
 			mat[i].Histograms = nil
 		}
@@ -3318,6 +3319,7 @@ func (ev *evaluator) evalInPlaceFloatUnary(ctx context.Context, arg parser.Expr,
 		for j := range floats {
 			floats[j].F = fn(floats[j].F)
 		}
+		totalFloats += len(floats)
 		mat[outIdx] = mat[i]
 		outIdx++
 	}
@@ -3325,7 +3327,14 @@ func (ev *evaluator) evalInPlaceFloatUnary(ctx context.Context, arg parser.Expr,
 	if !ev.enableDelayedNameRemoval {
 		mat = ev.mergeSeriesWithSameLabelset(mat)
 	}
+	// Reconcile currentSamples like rangeEval rather than subtracting dropped
+	// histogram sizes so children like smoothSeries or absent_over_time cannot
+	// leave currentSamples skewed or negative.
+	ev.currentSamples = originalNumSamples + totalFloats
 	ev.samplesStats.UpdatePeak(ev.currentSamples)
+	if ev.currentSamples > ev.maxSamples {
+		ev.error(ErrTooManySamples(env))
+	}
 	return mat, ws
 }
 

@@ -2399,6 +2399,23 @@ load 10s
 			MaxSamples: 91,
 			Start:      time.Unix(201, 0),
 		},
+		{
+			// abs() reconciles currentSamples after absent_over_time synthesizes points.
+			Query:      "abs(absent_over_time(nonexistent[10s]))",
+			MaxSamples: 5,
+			Start:      time.Unix(0, 0),
+			End:        time.Unix(4, 0),
+			Interval:   time.Second,
+		},
+		{
+			// Dropping smoothed histograms in abs() must not underflow currentSamples
+			// and bypass MaxSamples for subsequent sibling expressions.
+			Query:      "abs(metricWith1HistogramEvery10Seconds smoothed) or bigmetric",
+			MaxSamples: 2002,
+			Start:      time.Unix(0, 0),
+			End:        time.Unix(998, 0),
+			Interval:   2 * time.Second,
+		},
 	}
 
 	for _, c := range cases {
