@@ -2727,15 +2727,16 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		return result, warnings
 
 	case *parser.Call:
-		call := FunctionCalls[e.Func.Name]
 		if e.Func.Name == "timestamp" || e.Func.Name == "start_timestamp" {
 			// Matrix evaluation always returns the evaluation time,
 			// so this function needs special handling when given
 			// a vector selector.
 			if vs, ok := e.Args[0].(*parser.VectorSelector); ok {
-				return ev.rangeEvalTimestampFunctionOverVectorSelector(ctx, vs, call, e)
+				return ev.rangeEvalTimestampFunctionOverVectorSelector(ctx, vs, e)
 			}
 		}
+
+		call := FunctionCalls[e.Func.Name]
 
 		// Check if the function has a matrix argument.
 		var (
@@ -3341,7 +3342,7 @@ func (ev *evaluator) evalInPlaceFloatUnary(ctx context.Context, arg parser.Expr,
 	return mat, ws
 }
 
-func (ev *evaluator) rangeEvalTimestampFunctionOverVectorSelector(ctx context.Context, vs *parser.VectorSelector, _ FunctionCall, e *parser.Call) (parser.Value, annotations.Annotations) {
+func (ev *evaluator) rangeEvalTimestampFunctionOverVectorSelector(ctx context.Context, vs *parser.VectorSelector, e *parser.Call) (parser.Value, annotations.Annotations) {
 	ws, err := ev.checkAndExpandSeriesSet(ctx, vs)
 	if err != nil {
 		ev.error(errWithWarnings{fmt.Errorf("expanding series: %w", err), ws})
