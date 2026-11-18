@@ -464,25 +464,40 @@ load 10s
 
 					rRes := rq.Exec(t.Context())
 					require.NoError(t, rRes.Err)
+					require.Empty(t, rRes.Warnings)
 					mat, err := rRes.Matrix()
 					require.NoError(t, err)
 					require.NotEmpty(t, mat)
 
+					// Verify that duplicate labelsets were actually merged into one Series,
+					// timestamps are strictly increasing per series, and no stray timestamps exist.
+					seenSeries := make(map[string]struct{}, len(mat))
 					gotAtTS := make(map[int64]map[string]float64)
 					for _, s := range mat {
 						require.Empty(t, s.Histograms)
+						require.NotEmpty(t, s.Floats)
 						lbl := s.Metric.String()
-						for _, pt := range s.Floats {
+						require.NotContains(t, seenSeries, lbl, "duplicate series in matrix: %s", lbl)
+						seenSeries[lbl] = struct{}{}
+						for i, pt := range s.Floats {
+							if i > 0 {
+								require.Greater(t, pt.T, s.Floats[i-1].T, "non-increasing timestamp for %s", lbl)
+							}
 							if gotAtTS[pt.T] == nil {
 								gotAtTS[pt.T] = make(map[string]float64)
 							}
+							require.NotContains(t, gotAtTS[pt.T], lbl, "duplicate sample for %s at ts=%d", lbl, pt.T)
 							gotAtTS[pt.T][lbl] = pt.F
 						}
 					}
 
+					expectedSteps := 0
 					for ts := start; !ts.After(end); ts = ts.Add(step) {
 						tsMS := timestamp.FromTime(ts)
 						want := tc.want(tsMS)
+						if len(want) > 0 {
+							expectedSteps++
+						}
 						require.Equal(t, want, gotAtTS[tsMS], "ts=%d", tsMS)
 
 						iq, err := engine.NewInstantQuery(t.Context(), stor, qOpts, tc.expr, ts)
@@ -490,6 +505,7 @@ load 10s
 						iRes := iq.Exec(t.Context())
 						iq.Close()
 						require.NoError(t, iRes.Err)
+						require.Empty(t, iRes.Warnings)
 						vec, err := iRes.Vector()
 						require.NoError(t, err)
 
@@ -503,6 +519,7 @@ load 10s
 						}
 						require.Equal(t, want, instGot, "instant ts=%d", tsMS)
 					}
+					require.Len(t, gotAtTS, expectedSteps)
 				})
 			}
 
