@@ -254,6 +254,11 @@ metric: <
 `, randomName, randomHelp, labels10)
 }
 
+// TestMetricStreamingDecoder_LengthBeyondBuffer checks that a length prefix
+// claiming more bytes than the buffer holds is an error. The lengths only wrap
+// on 32-bit platforms, so on 64-bit this test passes even without the check:
+// it guards the fix through the "Go tests for 32-bit x86" CI job
+// (GOARCH=386).
 func TestMetricStreamingDecoder_LengthBeyondBuffer(t *testing.T) {
 	for _, length := range []uint64{1 << 31, 1<<32 - 1, 1<<32 + 3, 1<<35 - 1} {
 		// A metric family that is short enough on its own, behind a length
