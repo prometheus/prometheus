@@ -79,7 +79,7 @@ but the `BlockChunkRef` start at 0.
 The `ChunkRef` types allow retrieving the chunk data as efficiently as possible.
 * In the Head block the chunks are in the series struct. So we need to reach the series before we can access the chunk from it.
   Hence we need to pack the `HeadSeriesRef` to get to the series.
-* In persistent blocks, the chunk files are separated from the index and static. Hence you only need the co-ordinates within the `chunks` directory
+* In persistent blocks, the chunk files are separated from the index and static. Hence you only need the coordinates within the `chunks` directory
   to get to the chunk. Hence no need of `BlockSeriesRef`.
 
 ## Used internally in TSDB
