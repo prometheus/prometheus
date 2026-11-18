@@ -255,5 +255,8 @@ func loadBalancerIngressIPs(svc *apiv1.Service) string {
 			ips = append(ips, ing.IP)
 		}
 	}
-	return strings.Join(ips, serviceLabelSeparator)
+	if len(ips) == 0 {
+		return ""
+	}
+	return serviceLabelSeparator + strings.Join(ips, serviceLabelSeparator) + serviceLabelSeparator
 }
