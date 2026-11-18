@@ -291,6 +291,17 @@ func TestCalculateDuration(t *testing.T) {
 			errorMessage: "duration is out of range",
 		},
 		{
+			name:         "duration rounds down to zero",
+			expr:         &parser.NumberLiteral{Val: 0.00025},
+			errorMessage: "duration must be greater than 0",
+		},
+		{
+			name:            "zero after conversion is allowed for offsets",
+			expr:            &parser.NumberLiteral{Val: 0.00025},
+			allowedNegative: true,
+			expected:        0,
+		},
+		{
 			name: "duration just below the upper bound is accepted",
 			expr: &parser.NumberLiteral{Val: 1e9},
 			// 1e9 seconds is below 1<<63/1e9 seconds (~9.22e9), so it is

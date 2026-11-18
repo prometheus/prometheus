@@ -104,7 +104,14 @@ func (v *durationVisitor) calculateDuration(expr parser.Expr, allowedNegative bo
 	if duration > 1<<63/1e9 || duration < -(1<<63)/1e9 {
 		return 0, fmt.Errorf("%d:%d: duration is out of range", expr.PositionRange().Start, expr.PositionRange().End)
 	}
-	return time.Duration(duration*1000) * time.Millisecond, nil
+	result := time.Duration(duration*1000) * time.Millisecond
+	// A positive expression can round down to zero milliseconds. For ranges and
+	// explicit subquery steps that is equivalent to the rejected literal 0s, so
+	// reject it after the conversion as well. Offsets may legitimately be zero.
+	if result <= 0 && !allowedNegative {
+		return 0, fmt.Errorf("%d:%d: duration must be greater than 0", expr.PositionRange().Start, expr.PositionRange().End)
+	}
+	return result, nil
 }
 
 // evaluateDurationExpr recursively evaluates a duration expression to a float64 value.
