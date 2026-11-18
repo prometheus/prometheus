@@ -141,6 +141,34 @@ func makeLoadBalancerServiceFromIngress() *v1.Service {
 	}
 }
 
+func makeLoadBalancerServiceWithHostname() *v1.Service {
+	return &v1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "testservice-lb-hostname",
+			Namespace: "default",
+		},
+		Spec: v1.ServiceSpec{
+			Ports: []v1.ServicePort{
+				{
+					Name:     "testport",
+					Protocol: v1.ProtocolTCP,
+					Port:     int32(31900),
+				},
+			},
+			Type:      v1.ServiceTypeLoadBalancer,
+			ClusterIP: "10.0.0.1",
+		},
+		Status: v1.ServiceStatus{
+			LoadBalancer: v1.LoadBalancerStatus{
+				Ingress: []v1.LoadBalancerIngress{
+					{Hostname: "lb-1.example.com"},
+					{Hostname: "lb-2.example.com"},
+				},
+			},
+		},
+	}
+}
+
 func TestServiceDiscoveryAdd(t *testing.T) {
 	t.Parallel()
 	n, c := makeDiscovery(RoleService, NamespaceDiscovery{})
@@ -156,8 +184,10 @@ func TestServiceDiscoveryAdd(t *testing.T) {
 			c.CoreV1().Services(obj.Namespace).Create(context.Background(), obj, metav1.CreateOptions{})
 			obj = makeLoadBalancerServiceFromIngress()
 			c.CoreV1().Services(obj.Namespace).Create(context.Background(), obj, metav1.CreateOptions{})
+			obj = makeLoadBalancerServiceWithHostname()
+			c.CoreV1().Services(obj.Namespace).Create(context.Background(), obj, metav1.CreateOptions{})
 		},
-		expectedMaxItems: 4,
+		expectedMaxItems: 5,
 		expectedRes: map[string]*targetgroup.Group{
 			"svc/default/testservice": {
 				Targets: []model.LabelSet{
@@ -228,6 +258,24 @@ func TestServiceDiscoveryAdd(t *testing.T) {
 					"__meta_kubernetes_namespace":    "default",
 				},
 				Source: "svc/default/testservice-lb-ingress",
+			},
+			"svc/default/testservice-lb-hostname": {
+				Targets: []model.LabelSet{
+					{
+						"__meta_kubernetes_service_port_protocol": "TCP",
+						"__address__":                                     "testservice-lb-hostname.default.svc:31900",
+						"__meta_kubernetes_service_type":                  "LoadBalancer",
+						"__meta_kubernetes_service_port_name":             "testport",
+						"__meta_kubernetes_service_port_number":           "31900",
+						"__meta_kubernetes_service_cluster_ip":            "10.0.0.1",
+						"__meta_kubernetes_service_loadbalancer_hostname": "lb-1.example.com,lb-2.example.com",
+					},
+				},
+				Labels: model.LabelSet{
+					"__meta_kubernetes_service_name": "testservice-lb-hostname",
+					"__meta_kubernetes_namespace":    "default",
+				},
+				Source: "svc/default/testservice-lb-hostname",
 			},
 		},
 	}.Run(t)
