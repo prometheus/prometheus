@@ -203,35 +203,11 @@ fixes the possible problem with the feature flag.)
 
 It is possible to craft a query that aggregates by `__name__` and puts samples with and without delayed name removal into the same group. In that case, the name is removed from the affected group. Note that this case hardly occurs in queries that fulfill a practical purpose.
 
-## OTLP Delta Conversion
-
-`--enable-feature=otlp-deltatocumulative`
-
-> **Note:** This feature flag is deprecated and will be removed in a future major version. Use `--enable-feature=otlp-native-delta-ingestion` for native delta ingestion instead.
-
-When enabled, Prometheus will convert OTLP metrics from delta temporality to their
-cumulative equivalent, instead of dropping them. This cannot be enabled in conjunction with `otlp-native-delta-ingestion`.
-
-This uses
-[deltatocumulative][d2c]
-from the OTel collector, using its default settings.
-
-Delta conversion keeps in-memory state to aggregate delta changes per-series over time.
-When Prometheus restarts, this state is lost, starting the aggregation from zero
-again. This results in a counter reset in the cumulative series.
-
-This state is periodically ([`max_stale`][d2c]) cleared of inactive series.
-
-Enabling this _can_ have negative impact on performance, because the in-memory
-state is mutex guarded. Cumulative-only OTLP requests are not affected.
-
-[d2c]: https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/deltatocumulativeprocessor
-
 ## OTLP Native Delta Support
 
 `--enable-feature=otlp-native-delta-ingestion`
 
-This is the recommended feature flag for ingesting OTLP metrics with delta temporality. When enabled, Prometheus stores the raw sample values without conversion. This cannot be enabled in conjunction with the deprecated `otlp-deltatocumulative` flag.
+This is the recommended feature flag for ingesting OTLP metrics with delta temporality. When enabled, Prometheus stores the raw sample values without conversion.
 
 To retain the OTLP `StartTimeUnixNano` field, also enable [`st-storage`](#start-timestamp-st-native-storage). To use the retained start timestamps in PromQL functions such as `rate()` and `increase()`, enable [`use-start-timestamps`](#start-timestamp-st-usage-in-promql-functions). Delta metrics are currently given the unknown metric metadata type.
 

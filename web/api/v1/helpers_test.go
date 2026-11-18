@@ -97,7 +97,6 @@ func newTestAPI(t *testing.T, cfg testhelpers.APIConfig) *testhelpers.APIWrapper
 		false,                              // rwEnabled
 		nil,                                // acceptRemoteWriteProtoMsgs
 		false,                              // otlpEnabled
-		false,                              // otlpDeltaToCumulative
 		false,                              // otlpNativeDeltaIngestion
 		5*time.Minute,                      // lookbackDelta
 		false,                              // enableTypeAndUnitLabels

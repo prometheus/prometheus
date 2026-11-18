@@ -187,9 +187,8 @@ func createPrometheusAPI(t *testing.T, q storage.SampleAndChunkQueryable, overri
 		nil,
 		false,
 		remoteapi.MessageTypes{remoteapi.WriteV1MessageType, remoteapi.WriteV2MessageType},
-		false,
-		false,
-		false,
+		false, // Disable OTLP receiver.
+		false, // Disable native delta ingestion.
 		5*time.Minute,
 		false,
 		false,
