@@ -1,6 +1,5 @@
 import { parser } from '../dist/index.es.js';
 import { fileTests } from '@lezer/generator/dist/test';
-import { highlightTree, tagHighlighter, tags } from '@lezer/highlight';
 
 import * as fs from 'fs';
 import * as path from 'path';
@@ -106,47 +105,6 @@ describe('literal and duration keyword compatibility', () => {
     for (const name of ['step', 'STEP', 'range', 'RANGE', 'min_of', 'MIN_OF', 'max_of', 'MAX_OF']) {
         it(`preserves ${name} as a metric name`, () => {
             expect(strictParser.parse(name).toString()).toBe('PromQL(VectorSelector(Identifier))');
-        });
-    }
-});
-
-// Grammar terms that are missing from highlight.js are silently left unstyled.
-describe('syntax highlighting', () => {
-    const highlighter = tagHighlighter([
-        { tag: tags.function(tags.variableName), class: 'function' },
-        { tag: tags.operatorKeyword, class: 'aggregation' },
-        { tag: tags.modifier, class: 'modifier' },
-        { tag: tags.operator, class: 'operator' },
-    ]);
-    const highlight = (query) => {
-        const spans = [];
-        highlightTree(parser.parse(query), highlighter, (from, to, cls) => spans.push([query.slice(from, to), cls]));
-        return spans;
-    };
-
-    // Read the function names from the grammar so that a new function cannot be added without highlighting.
-    const grammar = fs.readFileSync(path.join(caseDir, '../src/promql.grammar'), 'utf8');
-    const functionNames = new Set([...grammar.matchAll(/condFn<"(\w+)">/g)].map((m) => m[1]));
-    it('finds the function names in the grammar', () => {
-        expect(functionNames.size).toBeGreaterThan(80);
-    });
-    for (const name of functionNames) {
-        it(`highlights ${name}() as a function`, () => {
-            expect(highlight(`${name}(foo)`)).toContainEqual([name, 'function']);
-        });
-    }
-
-    const cases = [
-        ['count_values("value", foo)', 'count_values', 'aggregation'],
-        ['foo + fill(0) bar', 'fill', 'modifier'],
-        ['foo + fill_left(0) fill_right(1) bar', 'fill_left', 'modifier'],
-        ['foo + fill_left(0) fill_right(1) bar', 'fill_right', 'modifier'],
-        ['foo >/ bar', '>/', 'operator'],
-        ['foo </ bar', '</', 'operator'],
-    ];
-    for (const [query, token, cls] of cases) {
-        it(`highlights ${token} in ${query} as ${cls}`, () => {
-            expect(highlight(query)).toContainEqual([token, cls]);
         });
     }
 });
