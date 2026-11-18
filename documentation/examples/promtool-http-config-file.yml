@@ -8,5 +8,9 @@ basic_auth:
   password: verylongpassword
 
 tls_config:
-  cert_file: server.crt
-  key_file: server.key
+  # To trust a private server CA, set ca_file.
+  # ca_file: ca.crt
+
+  # For mutual TLS, provide the client certificate and key here.
+  cert_file: client.crt
+  key_file: client.key

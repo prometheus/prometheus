@@ -6,10 +6,12 @@ sort_rank: 6
 Promtool is a versatile CLI tool for Prometheus that supports validation, debugging, querying, unit testing, tsdb management, pushing data, and experimental PromQL editing.
 
 Prometheus supports basic authentication and TLS. Since promtool needs to connect to Prometheus, we need to provide the authentication details. To specify those authentication details, use the `--http.config.file` for all requests that need to communicate with Prometheus.
-For instance, if you would like to check whether your local Prometheus server is healthy, you would use:
+For example, to check the health of a local Prometheus server that uses TLS:
 ```bash
-promtool check healthy --url=http://localhost:9090 --http.config.file=http-config-file.yml
+promtool check healthy --url=https://localhost:9090 --http.config.file=http-config-file.yml
 ```
+
+For a plain HTTP server, use an `http://` URL.
 
 The file is written in [YAML format](https://en.wikipedia.org/wiki/YAML), defined by the schema described below.
 Brackets indicate that a parameter is optional. For non-list parameters the value is set to the specified default.
