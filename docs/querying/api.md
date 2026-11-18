@@ -2134,6 +2134,8 @@ To enable native delta ingestion, pass `--enable-feature=otlp-native-delta-inges
 
 *New in v3.4; start-timestamp-aware querying was added in v3.12.*
 
+The previous `--enable-feature=otlp-deltatocumulative` flag, which converted delta metrics to cumulative metrics using the OpenTelemetry Collector's [deltatocumulative processor](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/deltatocumulativeprocessor), was removed in Prometheus v4.0. Use native delta ingestion instead.
+
 ## Notifications
 
 The following endpoints provide information about active status notifications concerning the Prometheus server itself.

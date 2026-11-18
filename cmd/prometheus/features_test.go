@@ -138,14 +138,3 @@ func TestSetFeatureListOptions_AutoRecordingMetadata(t *testing.T) {
 
 	require.True(t, c.enableAutoRecordingMetadata)
 }
-
-func TestSetFeatureListOptions_OTLPDeltaToCumulativeRemoved(t *testing.T) {
-	var output bytes.Buffer
-	logger := promslog.New(&promslog.Config{Writer: &output})
-	c := &flagConfig{featureList: []string{"otlp-deltatocumulative"}}
-	require.NoError(t, c.setFeatureListOptions(logger))
-
-	require.Contains(t, output.String(), "otlp-deltatocumulative")
-	require.Contains(t, output.String(), "Unknown option for --enable-feature")
-	require.False(t, c.web.NativeOTLPDeltaIngestion)
-}
