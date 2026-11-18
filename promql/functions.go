@@ -2105,7 +2105,7 @@ func funcPresentOverTime(_ []Vector, matrixVals Matrix, _ parser.Expressions, en
 // inPlaceFloatUnaryFuncs maps single-argument instant-vector functions whose
 // output depends only on each float sample's value (f(float64) float64),
 // independent of timestamps, other series, or evaluation step time, and that
-// drop histograms, strip the metric name, and emit no annotations. Range and
+// drop histograms, strip metadata labels, and emit no annotations. Range and
 // instant queries in ev.eval evaluate them in place on the child Matrix without
 // stepping through rangeEval.
 var inPlaceFloatUnaryFuncs = map[string]func(float64) float64{
@@ -2153,6 +2153,9 @@ func sgn(v float64) float64 {
 	}
 }
 
+// simpleFloatFunc implements FunctionCalls entries for single-argument float
+// functions. Note that ev.eval evaluates functions in inPlaceFloatUnaryFuncs
+// directly on matrices without calling simpleFloatFunc; keep both in sync.
 func simpleFloatFunc(vectorVals []Vector, enh *EvalNodeHelper, f func(float64) float64) Vector {
 	for _, el := range vectorVals[0] {
 		if el.H == nil { // Process only float samples.
@@ -3064,6 +3067,9 @@ func funcYear(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNode
 }
 
 // FunctionCalls is a list of all functions supported by PromQL, including their types.
+// Note that Engine evaluates inPlaceFloatUnaryFuncs and direct vector-selector calls to
+// timestamp and start_timestamp via matrix fast paths instead of invoking these entries;
+// those entries remain populated for callers dispatching through FunctionCalls directly.
 var FunctionCalls = map[string]FunctionCall{
 	"abs":                          funcAbs,
 	"absent":                       funcAbsent,
