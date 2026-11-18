@@ -8,8 +8,9 @@ basic_auth:
   password: verylongpassword
 
 tls_config:
-  # To trust a private server CA, set ca_file.
-  # ca_file: ca.crt
+  # Use the CA certificate that signed the server certificate.
+  # Omit ca_file if the system already trusts the server certificate.
+  ca_file: ca.crt
 
   # For mutual TLS, provide the client certificate and key here.
   cert_file: client.crt
