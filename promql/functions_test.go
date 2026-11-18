@@ -320,48 +320,27 @@ func TestMADOverTimeUsesExactSubnormalMedian(t *testing.T) {
 }
 
 func TestRangeUnaryAndTimestampFastPaths(t *testing.T) {
-	stor := promqltest.NewBuiltinTestStorage(t)
-	app := stor.AppenderV2(t.Context())
-
-	floatSeries := labels.FromStrings("__name__", "unary_float", "__type__", "gauge", "__unit__", "seconds", "k", "1")
-	histSeries := labels.FromStrings("__name__", "unary_hist", "k", "2")
-	mixedSeries := labels.FromStrings("__name__", "unary_mixed", "k", "3")
-	dupASeries := labels.FromStrings("__name__", "dup_a", "k", "dup")
-	dupBSeries := labels.FromStrings("__name__", "dup_b", "k", "dup")
-	dupErrASeries := labels.FromStrings("__name__", "dup_err_a", "k", "dup_err")
-	dupErrBSeries := labels.FromStrings("__name__", "dup_err_b", "k", "dup_err")
-
-	for step := range 6 {
-		ts := int64((step + 1) * 10_000)
-		st := ts - int64((step+1)*1_000)
-		val := -float64(step + 1)
-		h := tsdbutil.GenerateTestFloatHistogram(int64(step))
-
-		_, err := app.Append(0, floatSeries, st, ts, val, nil, nil, storage.AOptions{})
-		require.NoError(t, err)
-		_, err = app.Append(0, histSeries, st, ts, 0, nil, h, storage.AOptions{})
-		require.NoError(t, err)
-
-		if step < 3 {
-			_, err = app.Append(0, mixedSeries, st, ts, val, nil, nil, storage.AOptions{})
-			require.NoError(t, err)
-		} else {
-			_, err = app.Append(0, mixedSeries, st, ts, 0, nil, h, storage.AOptions{})
-			require.NoError(t, err)
-		}
-		if step < 2 {
-			_, err = app.Append(0, dupASeries, st, ts, val, nil, nil, storage.AOptions{})
-			require.NoError(t, err)
-		} else if step >= 4 {
-			_, err = app.Append(0, dupBSeries, st, ts, val, nil, nil, storage.AOptions{})
-			require.NoError(t, err)
-		}
-	}
-	_, err := app.Append(0, dupErrASeries, 5_000, 10_000, -1, nil, nil, storage.AOptions{})
-	require.NoError(t, err)
-	_, err = app.Append(0, dupErrBSeries, 5_000, 10_000, -2, nil, nil, storage.AOptions{})
-	require.NoError(t, err)
-	require.NoError(t, app.Commit())
+	stor := promqltest.LoadedStorage(t, `
+load 10s
+	unary_float{__type__="gauge",__unit__="seconds",k="1"}@st _ -1s -2s -3s -4s -5s -6s
+	unary_float{__type__="gauge",__unit__="seconds",k="1"}    _ -1  -2  -3  -4  -5  -6
+	unary_hist{k="2"}@st                                      _ -1s -2s -3s -4s -5s -6s
+	unary_hist{k="2"}                                         _ {{sum:1}} {{sum:2}} {{sum:3}} {{sum:4}} {{sum:5}} {{sum:6}}
+	unary_mixed{k="3"}@st                                     _ -1s -2s -3s -4s -5s -6s
+	unary_mixed{k="3"}                                        _ -1  -2  -3  {{sum:4}} {{sum:5}} {{sum:6}}
+	dup_a{k="dup"}@st                                         _ -1s -2s
+	dup_a{k="dup"}                                            _ -1  -2
+	dup_b{k="dup"}@st                                         _ _   _   _   _   -5s -6s
+	dup_b{k="dup"}                                            _ _   _   _   _   -5  -6
+	dup_err_a{k="dup_err"}@st                                 _ -5s
+	dup_err_a{k="dup_err"}                                    _ -1
+	dup_err_b{k="dup_err"}@st                                 _ -5s
+	dup_err_b{k="dup_err"}                                    _ -2
+`, func(opt *tsdb.Options) {
+		opt.EnableSTStorage = true
+		opt.FloatChunkEncoding = chunkenc.EncXOR2
+		opt.EnableHistogramSTEncoding = true
+	})
 
 	enableST := true
 	qOpts := promql.NewPrometheusQueryOpts(false, 15*time.Second, &enableST)
