@@ -3389,6 +3389,13 @@ func (ev *evaluator) rangeEvalTimestampFunctionOverVectorSelector(ctx context.Co
 			step++
 			if guard != nil {
 				guard.checkContext()
+			} else if step&1023 == 0 {
+				// Without a query cost guard, check cancellation periodically so a
+				// single series over many steps (e.g. disabled start_timestamp) cannot
+				// spin past context cancellation or timeout.
+				if err := contextDone(ctx, "expression evaluation"); err != nil {
+					ev.error(err)
+				}
 			}
 			stepOffset := baseOffset
 			if vs.Timestamp != nil {

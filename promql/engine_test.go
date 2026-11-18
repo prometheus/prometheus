@@ -832,6 +832,37 @@ func TestEngineShutdown(t *testing.T) {
 	require.ErrorAs(t, res2.Err, &e, "expected cancellation error but got: %s", res2.Err)
 }
 
+func TestRangeTimestampSelectorCancellationWithoutBudget(t *testing.T) {
+	stor := promqltest.LoadedStorage(t, `
+load 10s
+  metric 1+1x300
+`)
+	engine := promqltest.NewTestEngineWithOpts(t, promql.EngineOpts{
+		MaxSamples:         promqltest.DefaultMaxSamplesPerQuery,
+		Timeout:            10 * time.Second,
+		UseStartTimestamps: false,
+		Parser:             parser.NewParser(promqltest.TestParserOpts),
+	})
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	counted := &sampleReadQueryable{Queryable: stor}
+	counted.onRead = func() {
+		if counted.reads == 1 {
+			cancel()
+		}
+	}
+
+	q, err := engine.NewRangeQuery(ctx, counted, nil, "start_timestamp(metric)", time.Unix(0, 0), time.Unix(3000, 0), time.Second)
+	require.NoError(t, err)
+	t.Cleanup(q.Close)
+
+	res := q.Exec(ctx)
+	var canceled promql.ErrQueryCanceled
+	require.ErrorAs(t, res.Err, &canceled)
+}
+
 func TestEngineEvalStmtTimestamps(t *testing.T) {
 	storage := promqltest.LoadedStorage(t, `
 load 10s
