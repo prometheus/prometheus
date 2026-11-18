@@ -2791,37 +2791,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 
 		if !matrixArg {
 			if fn, ok := inPlaceFloatUnaryFuncs[e.Func.Name]; ok && len(e.Args) == 1 {
-				val, ws := ev.eval(ctx, e.Args[0])
-				warnings.Merge(ws)
-				mat := val.(Matrix)
-				outIdx := 0
-				for i := range mat {
-					if len(mat[i].Histograms) > 0 {
-						ev.currentSamples -= totalHPointSize(mat[i].Histograms)
-						putHPointSlice(mat[i].Histograms)
-						mat[i].Histograms = nil
-					}
-					if len(mat[i].Floats) == 0 {
-						putFPointSlice(mat[i].Floats)
-						continue
-					}
-					if !ev.enableDelayedNameRemoval {
-						mat[i].Metric = mat[i].Metric.DropReserved(schema.IsMetadataLabel)
-					}
-					mat[i].DropName = true
-					floats := mat[i].Floats
-					for j := range floats {
-						floats[j].F = fn(floats[j].F)
-					}
-					mat[outIdx] = mat[i]
-					outIdx++
-				}
-				mat = mat[:outIdx]
-				if !ev.enableDelayedNameRemoval {
-					mat = ev.mergeSeriesWithSameLabelset(mat)
-				}
-				ev.samplesStats.UpdatePeak(ev.currentSamples)
-				return mat, warnings
+				return ev.evalInPlaceFloatUnary(ctx, e.Args[0], fn)
 			}
 
 			// Does not have a matrix argument.
@@ -3324,6 +3294,39 @@ func reuseOrGetFPointSlices(prevSS *Series, numSteps int) (r []FPoint) {
 	}
 
 	return getFPointSlice(numSteps)
+}
+
+func (ev *evaluator) evalInPlaceFloatUnary(ctx context.Context, arg parser.Expr, fn func(float64) float64) (Matrix, annotations.Annotations) {
+	val, ws := ev.eval(ctx, arg)
+	mat := val.(Matrix)
+	outIdx := 0
+	for i := range mat {
+		if len(mat[i].Histograms) > 0 {
+			ev.currentSamples -= totalHPointSize(mat[i].Histograms)
+			putHPointSlice(mat[i].Histograms)
+			mat[i].Histograms = nil
+		}
+		if len(mat[i].Floats) == 0 {
+			putFPointSlice(mat[i].Floats)
+			continue
+		}
+		if !ev.enableDelayedNameRemoval {
+			mat[i].Metric = mat[i].Metric.DropReserved(schema.IsMetadataLabel)
+		}
+		mat[i].DropName = true
+		floats := mat[i].Floats
+		for j := range floats {
+			floats[j].F = fn(floats[j].F)
+		}
+		mat[outIdx] = mat[i]
+		outIdx++
+	}
+	mat = mat[:outIdx]
+	if !ev.enableDelayedNameRemoval {
+		mat = ev.mergeSeriesWithSameLabelset(mat)
+	}
+	ev.samplesStats.UpdatePeak(ev.currentSamples)
+	return mat, ws
 }
 
 func (ev *evaluator) rangeEvalTimestampFunctionOverVectorSelector(ctx context.Context, vs *parser.VectorSelector, _ FunctionCall, e *parser.Call) (parser.Value, annotations.Annotations) {
