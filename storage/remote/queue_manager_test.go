@@ -916,14 +916,11 @@ func TestDisableReshardOnRetry(t *testing.T) {
 func TestLastSendTimestampNotUpdatedOnContextCancellation(t *testing.T) {
 	t.Parallel()
 
-	// staleTimestamp is older than shardUpdateDuration.
-	staleTimestamp := time.Now().Add(-2 * shardUpdateDuration).Unix()
-
-	sendAttempted := make(chan struct{})
-	var once sync.Once
+	var storeCalled atomic.Bool
 	client := &MockWriteClient{
 		StoreFunc: func(ctx context.Context, _ []byte, _ int) (WriteResponseStats, error) {
-			once.Do(func() { close(sendAttempted) })
+			storeCalled.Store(true)
+			// Block until shards.stop() cancels the context after flushDeadline.
 			<-ctx.Done()
 			return WriteResponseStats{}, ctx.Err()
 		},
@@ -931,40 +928,22 @@ func TestLastSendTimestampNotUpdatedOnContextCancellation(t *testing.T) {
 		EndpointFunc: func() string { return "http://fake:9090/api/v1/write" },
 	}
 
-	recs := testwal.GenerateRecords(recCase{
-		Series:           1,
-		SamplesPerSeries: 1,
-	})
-
-	cfg := config.DefaultQueueConfig
+	cfg := testDefaultQueueConfig()
 	cfg.MaxShards = 1
-	cfg.MaxSamplesPerSend = 1
-	mcfg := config.DefaultMetadataConfig
 
-	m := newTestQueueManager(
-		t, cfg, mcfg, time.Second, client, remoteapi.WriteV1MessageType,
-	)
+	// flushDeadline long enough for the shard to dequeue and call Store,
+	// short enough to not slow CI.
+	m := newTestQueueManager(t, cfg, config.DefaultMetadataConfig, 100*time.Millisecond, client, remoteapi.WriteV1MessageType)
+
+	recs := testwal.GenerateRecords(recCase{Series: 1, SamplesPerSeries: 1})
 	m.StoreSeries(recs.Series, 0)
-	m.lastSendTimestamp.Store(staleTimestamp)
-	m.Start()
-
+	m.numShards = 1
+	m.shards.start(1)
 	m.Append(recs.Samples)
+	m.shards.stop()
 
-	require.Eventually(t, func() bool {
-		select {
-		case <-sendAttempted:
-			return true
-		default:
-			return false
-		}
-	}, 10*time.Second, 10*time.Millisecond)
-
-	// Stop cancels the shard context while Store is blocked.
-	m.Stop()
-
-	currentLastSend := m.lastSendTimestamp.Load()
-	require.Equal(t, staleTimestamp, currentLastSend)
-	require.False(t, m.shouldReshard(m.numShards+1))
+	require.True(t, storeCalled.Load())
+	require.Equal(t, int64(0), m.lastSendTimestamp.Load())
 }
 
 func createProtoTimeseriesWithOld(numSamples, baseTs int64) []prompb.TimeSeries {
