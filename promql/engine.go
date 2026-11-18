@@ -3303,6 +3303,9 @@ func (ev *evaluator) evalInPlaceFloatUnary(ctx context.Context, arg parser.Expr,
 	outIdx := 0
 	totalFloats := 0
 	for i := range mat {
+		if err := contextDone(ctx, "expression evaluation"); err != nil {
+			ev.error(err)
+		}
 		if len(mat[i].Histograms) > 0 {
 			putHPointSlice(mat[i].Histograms)
 			mat[i].Histograms = nil
