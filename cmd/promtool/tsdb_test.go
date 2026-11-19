@@ -232,17 +232,112 @@ func TestTSDBDumpNativeHistogram(t *testing.T) {
 	require.Equal(t, sortLines(strings.TrimSpace(expected)), sortLines(strings.TrimSpace(dumpedMetrics)))
 }
 
-func TestFormatSeriesSetRejectsUnknownSampleType(t *testing.T) {
+func TestFormatSeriesSetRejectsUnsupportedSampleType(t *testing.T) {
+	tests := []struct {
+		formatName  string
+		format      func(storage.SeriesSet) error
+		valType     chunkenc.ValueType
+		expectedErr string
+	}{
+		{
+			formatName:  "prom rejects unknown",
+			format:      formatSeriesSet,
+			valType:     chunkenc.ValueType(255),
+			expectedErr: "unknown sample type unknown",
+		},
+		{
+			formatName:  "openmetrics rejects unknown",
+			format:      formatSeriesSetOpenMetrics,
+			valType:     chunkenc.ValueType(255),
+			expectedErr: "unknown sample type unknown",
+		},
+		{
+			formatName:  "openmetrics rejects integer histogram",
+			format:      formatSeriesSetOpenMetrics,
+			valType:     chunkenc.ValHistogram,
+			expectedErr: "unsupported sample type histogram",
+		},
+		{
+			formatName:  "openmetrics rejects float histogram",
+			format:      formatSeriesSetOpenMetrics,
+			valType:     chunkenc.ValFloatHistogram,
+			expectedErr: "unsupported sample type floathistogram",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.formatName, func(t *testing.T) {
+			ss := &singleSeriesSet{
+				series: &storage.SeriesEntry{
+					Lset: labels.FromStrings(labels.MetricName, "test"),
+					SampleIteratorFn: func(chunkenc.Iterator) chunkenc.Iterator {
+						return &valueTypeIterator{valType: tt.valType}
+					},
+				},
+			}
+
+			require.EqualError(t, tt.format(ss), tt.expectedErr)
+		})
+	}
+}
+
+func TestFormatSeriesSetOpenMetricsRejectsNativeHistogramInMixedSeries(t *testing.T) {
 	ss := &singleSeriesSet{
 		series: &storage.SeriesEntry{
-			Lset: labels.FromStrings(labels.MetricName, "unknown"),
+			Lset: labels.FromStrings(labels.MetricName, "mixed"),
 			SampleIteratorFn: func(chunkenc.Iterator) chunkenc.Iterator {
-				return &unknownValueTypeIterator{}
+				return &mixedIterator{
+					types: []chunkenc.ValueType{chunkenc.ValFloat, chunkenc.ValHistogram},
+				}
 			},
 		},
 	}
 
-	require.EqualError(t, formatSeriesSet(ss), "unknown sample type unknown")
+	var err error
+	out := captureStdout(t, func() {
+		err = formatSeriesSetOpenMetrics(ss)
+	})
+	require.EqualError(t, err, "unsupported sample type histogram")
+	require.Contains(t, out, "mixed{} 0 0.000")
+	require.NotContains(t, out, "# EOF")
+}
+
+func TestFormatSeriesSetReturnsSeriesSetError(t *testing.T) {
+	for name, format := range map[string]func(storage.SeriesSet) error{
+		"prom":        formatSeriesSet,
+		"json":        formatSeriesSetLabelsToJSON,
+		"openmetrics": formatSeriesSetOpenMetrics,
+	} {
+		t.Run(name, func(t *testing.T) {
+			ss := &singleSeriesSet{
+				err: errors.New("series set error"),
+			}
+
+			var err error
+			out := captureStdout(t, func() {
+				err = format(ss)
+			})
+			require.EqualError(t, err, "series set error")
+			require.NotContains(t, out, "# EOF")
+		})
+	}
+}
+
+func captureStdout(t *testing.T, f func()) string {
+	t.Helper()
+	oldStdout := os.Stdout
+	r, w, err := os.Pipe()
+	require.NoError(t, err)
+	os.Stdout = w
+
+	f()
+
+	w.Close()
+	os.Stdout = oldStdout
+
+	var buf bytes.Buffer
+	_, _ = io.Copy(&buf, r)
+	return buf.String()
 }
 
 func TestFormatSeriesSetReturnsIteratorError(t *testing.T) {
@@ -268,10 +363,11 @@ func TestFormatSeriesSetReturnsIteratorError(t *testing.T) {
 type singleSeriesSet struct {
 	series storage.Series
 	done   bool
+	err    error
 }
 
 func (s *singleSeriesSet) Next() bool {
-	if s.done {
+	if s.err != nil || s.done {
 		return false
 	}
 	s.done = true
@@ -279,23 +375,45 @@ func (s *singleSeriesSet) Next() bool {
 }
 
 func (s *singleSeriesSet) At() storage.Series              { return s.series }
-func (*singleSeriesSet) Err() error                        { return nil }
+func (s *singleSeriesSet) Err() error                      { return s.err }
 func (*singleSeriesSet) Warnings() annotations.Annotations { return nil }
 
-type unknownValueTypeIterator struct {
+type valueTypeIterator struct {
 	chunkenc.Iterator
-	done bool
+	valType chunkenc.ValueType
+	done    bool
 }
 
-func (it *unknownValueTypeIterator) Next() chunkenc.ValueType {
+func (it *valueTypeIterator) Next() chunkenc.ValueType {
 	if it.done {
 		return chunkenc.ValNone
 	}
 	it.done = true
-	return chunkenc.ValueType(255)
+	return it.valType
 }
 
-func (*unknownValueTypeIterator) Err() error { return nil }
+func (*valueTypeIterator) Err() error { return nil }
+
+type mixedIterator struct {
+	chunkenc.Iterator
+	types []chunkenc.ValueType
+	idx   int
+}
+
+func (it *mixedIterator) Next() chunkenc.ValueType {
+	if it.idx >= len(it.types) {
+		return chunkenc.ValNone
+	}
+	vt := it.types[it.idx]
+	it.idx++
+	return vt
+}
+
+func (*mixedIterator) At() (int64, float64) {
+	return 0, 0
+}
+
+func (*mixedIterator) Err() error { return nil }
 
 type errIterator struct {
 	chunkenc.Iterator
