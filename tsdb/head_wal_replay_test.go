@@ -21,6 +21,7 @@ import (
 	"strconv"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
@@ -292,4 +293,108 @@ func TestHead_WALReplay_ExemplarsBeforeFullRangeTombstone(t *testing.T) {
 		require.Len(t, r.Exemplars, 1)
 		require.Equal(t, r.SeriesLabels.Get("a"), r.Exemplars[0].Labels.Get("trace_id"))
 	}
+}
+
+// exemplarReplayDeletionGate keeps the old series in the by-ref index until the
+// exemplar worker has processed records on both sides of its tombstone.
+type exemplarReplayDeletionGate struct {
+	noopSeriesLifecycleCallback
+	ExemplarStorage
+	blockerRef       chunks.HeadSeriesRef
+	sentinelLabels   labels.Labels
+	sentinelReplayed chan struct{}
+}
+
+func (g *exemplarReplayDeletionGate) PostDeletion(deleted map[chunks.HeadSeriesRef]labels.Labels) {
+	if _, ok := deleted[g.blockerRef]; !ok {
+		return
+	}
+	// The synctest bubble detects a deadlock if replay stalls before the sentinel.
+	<-g.sentinelReplayed
+}
+
+func (g *exemplarReplayDeletionGate) AddExemplar(l labels.Labels, e exemplar.Exemplar) error {
+	err := g.ExemplarStorage.AddExemplar(l, e)
+	if err == nil && labels.Equal(l, g.sentinelLabels) {
+		close(g.sentinelReplayed)
+	}
+	return err
+}
+
+func TestHead_WALReplay_ExemplarAfterFullRangeTombstone(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		const (
+			blockerRef   = 2
+			oldRef       = 4
+			aliasRef     = 5
+			recreatedRef = 7
+			sentinelRef  = 9
+		)
+		seriesLabels := labels.FromStrings("a", "recreated")
+		sentinelLabels := labels.FromStrings("a", "sentinel")
+		fullRange := tombstones.Intervals{{Mint: math.MinInt64, Maxt: math.MaxInt64}}
+
+		// The blocker and old ref share a shard. Only the old ref's deletion needs
+		// to queue behind the callback. Later series and samples use the other shard.
+		opts := newTestHeadDefaultOptions(1000, false)
+		opts.WALReplayConcurrency = 2
+		var processor walSubsetProcessor
+		processor.setup()
+		require.NotZero(t, cap(processor.input), "the blocked shard must be able to queue one deletion")
+
+		gate := &exemplarReplayDeletionGate{
+			blockerRef:       blockerRef,
+			sentinelLabels:   sentinelLabels,
+			sentinelReplayed: make(chan struct{}),
+		}
+		opts.SeriesCallback = gate
+		head, w := newTestHeadWithOptions(t, compression.None, opts)
+		gate.ExemplarStorage = head.exemplars
+		head.exemplars = gate
+
+		populateTestWL(t, w, []any{
+			[]record.RefSeries{
+				{Ref: blockerRef, Labels: labels.FromStrings("a", "blocker")},
+				{Ref: oldRef, Labels: seriesLabels},
+				{Ref: aliasRef, Labels: seriesLabels},
+				{Ref: sentinelRef, Labels: sentinelLabels},
+			},
+			[]record.RefSample{
+				{Ref: blockerRef, T: 100, V: 1},
+				{Ref: oldRef, T: 100, V: 1},
+				{Ref: sentinelRef, T: 100, V: 1},
+			},
+			[]tombstones.Stone{{Ref: blockerRef, Intervals: fullRange}},
+			// Keep this tombstone in a separate record so its deletion queues
+			// behind the callback. Use aliasRef to verify that replay remaps the
+			// tombstone to oldRef and skips the late exemplar below.
+			[]tombstones.Stone{{Ref: aliasRef, Intervals: fullRange}},
+			// An exemplar-only appender can commit after its series was evicted.
+			// If replay accepts that exemplar, the recreated series' exemplar
+			// below is rejected as out of order.
+			[]record.RefExemplar{{Ref: oldRef, T: 500, V: 1, Labels: labels.FromStrings("trace_id", "evicted")}},
+			[]record.RefSeries{{Ref: recreatedRef, Labels: seriesLabels}},
+			[]record.RefSample{{Ref: recreatedRef, T: 300, V: 1}},
+			[]record.RefExemplar{
+				{Ref: recreatedRef, T: 300, V: 1, Labels: labels.FromStrings("trace_id", "recreated")},
+				{Ref: sentinelRef, T: 300, V: 1, Labels: labels.FromStrings("trace_id", "sentinel")},
+			},
+		}, nil, false)
+		first, last, err := wlog.Segments(w.Dir())
+		require.NoError(t, err)
+		require.Equal(t, first, last, "replay drains the sample shards at each segment boundary")
+
+		require.NoError(t, head.Init(math.MinInt64))
+		require.Equal(t, uint64(2), head.NumSeries(), "the recreated and sentinel series must survive replay")
+
+		q, err := head.ExemplarQuerier(t.Context())
+		require.NoError(t, err)
+		res, err := q.Select(0, 500, []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "a", "recreated")})
+		require.NoError(t, err)
+		require.Len(t, res, 1)
+		require.Len(t, res[0].Exemplars, 1)
+		require.Equal(t, "recreated", res[0].Exemplars[0].Labels.Get("trace_id"))
+		require.Equal(t, int64(300), res[0].Exemplars[0].Ts)
+		require.Equal(t, float64(1), prom_testutil.ToFloat64(head.metrics.walReplayUnknownRefsTotal.WithLabelValues("exemplars")))
+	})
 }

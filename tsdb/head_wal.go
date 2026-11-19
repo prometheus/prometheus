@@ -61,6 +61,29 @@ type seriesRefSet struct {
 	mtx  sync.Mutex
 }
 
+func (s *seriesRefSet) add(refs []chunks.HeadSeriesRef) {
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
+	for _, ref := range refs {
+		s.refs[ref] = struct{}{}
+	}
+}
+
+func (s *seriesRefSet) contains(ref chunks.HeadSeriesRef) bool {
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
+	_, ok := s.refs[ref]
+	return ok
+}
+
+func (s *seriesRefSet) remove(refs []chunks.HeadSeriesRef) {
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
+	for _, ref := range refs {
+		delete(s.refs, ref)
+	}
+}
+
 func (s *seriesRefSet) merge(other map[chunks.HeadSeriesRef]struct{}) {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
@@ -91,6 +114,9 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 	var unknownTombstoneRefs atomic.Uint64
 	// Track number of series records that had overlapping m-map chunks.
 	var mmapOverlappingChunks atomic.Uint64
+
+	// Keep refs tombstoned for exemplars until their shard removes them from the head.
+	pendingExemplarDeletes := &seriesRefSet{refs: make(map[chunks.HeadSeriesRef]struct{})}
 
 	// Start workers that each process samples for a partition of the series ID space.
 	var (
@@ -127,7 +153,7 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 		processors[i].setup()
 
 		go func(wp *walSubsetProcessor) {
-			missingSeries, unknownSamples, unknownHistograms, overlapping := wp.processWALSamples(h, mmappedChunks, oooMmappedChunks, lastMmapRef)
+			missingSeries, unknownSamples, unknownHistograms, overlapping := wp.processWALSamples(h, mmappedChunks, oooMmappedChunks, lastMmapRef, pendingExemplarDeletes)
 			unknownSeriesRefs.merge(missingSeries)
 			unknownSampleRefs.Add(unknownSamples)
 			mmapOverlappingChunks.Add(overlapping)
@@ -140,16 +166,24 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 	go func(input <-chan exemplarReplayItem) {
 		missingSeries := make(map[chunks.HeadSeriesRef]struct{})
 		var err error
+		var sawFullRangeTombstone bool
 		defer close(exemplarsDone)
 		for in := range input {
 			if len(in.deletedSeriesRefs) > 0 {
 				// The exemplars preceding the tombstone have been processed, so the
 				// processor owning the series can delete them.
+				pendingExemplarDeletes.add(in.deletedSeriesRefs)
+				sawFullRangeTombstone = true
 				processors[in.shard].input <- walSubsetProcessorInputItem{deletedSeriesRefs: in.deletedSeriesRefs}
 				continue
 			}
 			e := in.exemplar
-			ms := h.series.getByID(e.Ref)
+			// Check the set first. Once a ref leaves it, the by-ref lookup
+			// will no longer find the series.
+			var ms *memSeries
+			if !sawFullRangeTombstone || !pendingExemplarDeletes.contains(e.Ref) {
+				ms = h.series.getByID(e.Ref)
+			}
 			if ms == nil {
 				unknownExemplarRefs.Inc()
 				missingSeries[e.Ref] = struct{}{}
@@ -375,10 +409,8 @@ Outer:
 			for i := range concurrency {
 				if len(deleteSeriesShards[i]) > 0 {
 					// Exemplars are replayed by a separate worker. Route the deletion
-					// through it, so that the exemplars preceding the tombstone still
-					// find their series. Records following the tombstone for the same
-					// series, which are not expected, may still be applied to the
-					// series before its deletion.
+					// through it so that earlier exemplars still find their series and
+					// later exemplars see the tombstone before physical deletion.
 					exemplarsInput <- exemplarReplayItem{deletedSeriesRefs: deleteSeriesShards[i], shard: i}
 					deleteSeriesShards[i] = nil
 				}
@@ -836,7 +868,7 @@ func (h *Head) appendWALHistogram(ms *memSeries, st, t int64, hist *histogram.Hi
 // processWALSamples adds the samples it receives to the head and passes
 // the buffer received to an output channel for reuse.
 // Samples before the minValidTime timestamp are discarded.
-func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmappedChunks map[chunks.HeadSeriesRef][]*mmappedChunk, lastMmapRef chunks.ChunkDiskMapperRef) (map[chunks.HeadSeriesRef]struct{}, uint64, uint64, uint64) {
+func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmappedChunks map[chunks.HeadSeriesRef][]*mmappedChunk, lastMmapRef chunks.ChunkDiskMapperRef, pendingExemplarDeletes *seriesRefSet) (map[chunks.HeadSeriesRef]struct{}, uint64, uint64, uint64) {
 	defer close(wp.output)
 	defer close(wp.histogramsOutput)
 
@@ -925,6 +957,7 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 
 		if len(in.deletedSeriesRefs) > 0 {
 			h.deleteSeriesByID(in.deletedSeriesRefs)
+			pendingExemplarDeletes.remove(in.deletedSeriesRefs)
 		}
 	}
 	h.updateMinMaxTime(mint, maxt)
