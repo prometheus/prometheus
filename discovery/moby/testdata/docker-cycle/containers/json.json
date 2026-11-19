@@ -1,0 +1,22 @@
+[
+  {
+    "Id": "container-a",
+    "Names": ["/container-a"],
+    "HostConfig": {
+      "NetworkMode": "container:container-b"
+    },
+    "NetworkSettings": {
+      "Networks": {}
+    }
+  },
+  {
+    "Id": "container-b",
+    "Names": ["/container-b"],
+    "HostConfig": {
+      "NetworkMode": "container:container-a"
+    },
+    "NetworkSettings": {
+      "Networks": {}
+    }
+  }
+]

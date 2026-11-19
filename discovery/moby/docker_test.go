@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"sort"
 	"testing"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
@@ -224,6 +225,37 @@ host: %s
 		t.Run(fmt.Sprintf("item %d", i), func(t *testing.T) {
 			require.Equal(t, lbls, tg.Targets[i])
 		})
+	}
+}
+
+func TestDockerSDRefreshStopsOnNetworkModeCycle(t *testing.T) {
+	t.Parallel()
+	sdmock := NewSDMock(t, "docker-cycle")
+	sdmock.Setup()
+
+	e := sdmock.Endpoint()
+	url := e[:len(e)-1]
+	cfgString := fmt.Sprintf("\n---\nhost: %s\n", url)
+	var cfg DockerSDConfig
+	require.NoError(t, yaml.Unmarshal([]byte(cfgString), &cfg))
+
+	d, err := NewDockerDiscovery(&cfg, discovery.DiscovererOptions{
+		Logger:  promslog.NewNopLogger(),
+		Metrics: newDiscovererMetrics(t, &cfg),
+	})
+	require.NoError(t, err)
+
+	refreshDone := make(chan error, 1)
+	go func() {
+		_, err := d.refresh(context.Background())
+		refreshDone <- err
+	}()
+
+	select {
+	case err := <-refreshDone:
+		require.NoError(t, err)
+	case <-time.After(maxRefreshDuration):
+		t.Fatal("Docker SD refresh did not terminate for cyclic container network modes")
 	}
 }
 

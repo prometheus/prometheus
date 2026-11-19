@@ -1,0 +1,5 @@
+Ostype: linux
+Server: Docker/19.03.5-ce (linux)
+Docker-Experimental: "false"
+Api-Version: "1.40"
+Cache-Control: no-cache, no-store, must-revalidat
