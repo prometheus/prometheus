@@ -20,21 +20,6 @@
       "scripts/**"
     ]
   },
-  "customManagers": [
-    {
-      "customType": "regex",
-      "managerFilePatterns": [
-        "/^\\.github\\/workflows\\/prombench\\.yml$/"
-      ],
-      "matchStrings": [
-        "uses: docker://prominfra/prombench@(?<currentDigest>sha256:[a-f0-9]+)"
-      ],
-      "currentValueTemplate": "master",
-      "depNameTemplate": "prominfra/prombench",
-      "datasourceTemplate": "docker",
-      "versioningTemplate": "docker"
-    }
-  ],
   "prBodyNotes": [
     "```release-notes",
     "NONE",
