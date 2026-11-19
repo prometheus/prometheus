@@ -14,13 +14,16 @@
 package promql
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/grafana/regexp"
 	"github.com/stretchr/testify/require"
@@ -107,24 +110,55 @@ func TestQueryLogging(t *testing.T) {
 }
 
 func TestInsertConfinedToSlot(t *testing.T) {
-	queryBytes := make([]byte, 1+2*entrySize)
-	queryLogger := ActiveQueryTracker{
-		mmappedFile:  queryBytes,
-		logger:       nil,
-		getNextIndex: make(chan int, 2),
+	for _, tc := range []struct {
+		name  string
+		query string
+	}{
+		// Each NUL escapes to the six-byte \u0000 (the worst-case ~6x
+		// inflation), so the entry overflows the slot and the trim converges
+		// in a single iteration.
+		{"all null bytes", strings.Repeat("\x00", entrySize)},
+		// A quote escapes to \" (~1.5x), so (encoded excess)/6 under-trims and
+		// the loop runs several times before it fits; exercises the
+		// max(..., 1) progress floor and multi-iteration trimming.
+		{"escaped quotes", strings.Repeat(`a"`, entrySize)},
+		// A three-byte rune that does not divide the slot, so a byte-budget
+		// trim lands mid-rune unless trimStringByBytes backs up to a rune
+		// start; exercises the entrySize-1 boundary without producing invalid
+		// UTF-8.
+		{"utf8 multibyte", strings.Repeat("€", entrySize)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			queryBytes := make([]byte, 1+2*entrySize)
+			queryLogger := ActiveQueryTracker{
+				mmappedFile:  queryBytes,
+				logger:       nil,
+				getNextIndex: make(chan int, 2),
+			}
+			queryLogger.generateIndices(2)
+
+			queryLogger.Insert(context.Background(), tc.query)
+
+			// The entry must stay within its slot: the slot's last byte holds
+			// the separator and the next slot must be untouched.
+			slot := queryBytes[1 : 1+entrySize]
+			require.Equal(t, byte(','), slot[entrySize-1], "separator byte overwritten")
+			next := queryBytes[1+entrySize : 1+2*entrySize]
+			require.True(t, regexp.MustCompile(`^\x00+$`).Match(next),
+				"entry spilled into the next slot")
+
+			// The slot must hold a valid, non-empty, truncated JSON entry whose
+			// query is a prefix of the input (not wiped to "" or cut mid-JSON).
+			body := bytes.TrimRight(slot[:entrySize-1], "\x00")
+			require.LessOrEqual(t, len(body), entrySize-1)
+			var entry Entry
+			require.NoError(t, json.Unmarshal(body, &entry), "slot does not hold valid JSON: %q", body)
+			require.NotEmpty(t, entry.Query, "query was trimmed away entirely")
+			require.True(t, strings.HasPrefix(tc.query, entry.Query),
+				"stored query is not a prefix of the input")
+			require.True(t, utf8.ValidString(entry.Query), "stored query is not valid UTF-8")
+		})
 	}
-	queryLogger.generateIndices(2)
-
-	// A slot-sized NUL query encodes to ~6x its size once escaped and must
-	// still not write past its own slot.
-	queryLogger.Insert(context.Background(), strings.Repeat("\x00", entrySize))
-
-	first := queryBytes[1 : 1+entrySize]
-	require.True(t, regexp.MustCompile(`^{"query":"(?:\\u0000)+","timestamp_sec":\d+}\x00*,$`).Match(first),
-		"first slot does not contain a valid truncated JSON entry")
-	next := queryBytes[1+entrySize : 1+2*entrySize]
-	require.True(t, regexp.MustCompile(`^\x00+$`).Match(next),
-		"entry spilled into the next slot")
 }
 
 func TestIndexReuse(t *testing.T) {
