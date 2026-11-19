@@ -1018,7 +1018,8 @@ func TestDBReadOnlyQuerierMissingWAL(t *testing.T) {
 					var q storage.ChunkQuerier
 					q, err = db.ChunkQuerier(math.MinInt64, math.MaxInt64)
 					if err == nil {
-						require.NoError(t, q.Close())
+						series := queryAndExpandChunks(t, q, labels.MustNewMatcher(labels.MatchRegexp, defaultLabelName, ".+"))
+						require.Len(t, series, 1)
 					}
 				} else {
 					var q storage.Querier
