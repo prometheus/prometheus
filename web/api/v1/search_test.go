@@ -409,6 +409,7 @@ func TestAPI_SearchEndpoints_SecondaryWarnings(t *testing.T) {
 								expected = expected[:limit]
 							}
 							require.Equal(t, expected, results)
+							require.JSONEq(t, fmt.Sprintf(`{"status":"success","has_more":%t,"returned":%d}`, trailer.HasMore, len(results)), string(lines[len(lines)-1]))
 							if tc.noopSecondary || tc.emptyRange {
 								require.Empty(t, warnings)
 							} else {

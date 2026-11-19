@@ -21,9 +21,10 @@ package v1
 //     array and an optional "warnings" array. The first batch always emits
 //     even when "results" is empty so clients can observe warnings reliably.
 //   - The stream then terminates with EITHER a searchTrailer line (status
-//     "success", optional "warnings" delta, "has_more" indicator) OR a
-//     searchErrorResponse line (status "error", "errorType", "error") if the
-//     storage backend errored mid-stream after the first batch was sent.
+//     "success", optional "warnings" delta, "has_more" indicator, "returned"
+//     record count) OR a searchErrorResponse line (status "error",
+//     "errorType", "error") if the storage backend errored mid-stream after
+//     the first batch was sent.
 //   - Errors that occur before the first batch is written are reported as the
 //     usual non-streaming JSON error object with a 4xx/5xx status code.
 //   - Clients MUST tolerate an abrupt EOF without a trailer (e.g. transport
@@ -134,8 +135,11 @@ type searchBatch[T any] struct {
 
 // searchTrailer is the final NDJSON line indicating completion status.
 type searchTrailer struct {
-	Status   string   `json:"status"`
-	HasMore  bool     `json:"has_more"`
+	Status  string `json:"status"`
+	HasMore bool   `json:"has_more"`
+	// Returned is the number of records in the response, across all batches.
+	// It excludes the record read past the limit to set HasMore.
+	Returned int      `json:"returned"`
 	Warnings []string `json:"warnings,omitempty"`
 }
 
@@ -590,7 +594,7 @@ func streamSearchResults[T any](ctx context.Context, api *API, w http.ResponseWr
 	}
 
 	if len(firstBatch) == 0 {
-		_ = nw.writeLine(searchTrailer{Status: "success", HasMore: streamer.hasMore})
+		_ = nw.writeLine(searchTrailer{Status: "success", HasMore: streamer.hasMore, Returned: streamer.emitted})
 		return
 	}
 
@@ -629,7 +633,7 @@ func streamSearchResults[T any](ctx context.Context, api *API, w http.ResponseWr
 	if slices.Equal(trailerWarnings, firstWarnings) {
 		trailerWarnings = nil
 	}
-	_ = nw.writeLine(searchTrailer{Status: "success", HasMore: streamer.hasMore, Warnings: trailerWarnings})
+	_ = nw.writeLine(searchTrailer{Status: "success", HasMore: streamer.hasMore, Returned: streamer.emitted, Warnings: trailerWarnings})
 }
 
 // searchLabelValues retrieves label values using the Searcher interface.

@@ -1834,7 +1834,7 @@ paths:
                                     summary: NDJSON stream of metric names
                                     value: |
                                         {"results":[{"name":"http_requests_total","type":"counter","help":"Total HTTP requests."}]}
-                                        {"status":"success","has_more":false}
+                                        {"status":"success","has_more":false,"returned":1}
                 default:
                     description: Error searching metric names.
                     content:
@@ -1882,7 +1882,7 @@ paths:
                                     summary: NDJSON stream of metric names
                                     value: |
                                         {"results":[{"name":"http_requests_total","type":"counter","help":"Total HTTP requests."}]}
-                                        {"status":"success","has_more":false}
+                                        {"status":"success","has_more":false,"returned":1}
                 default:
                     description: Error searching metric names via POST.
                     content:
@@ -2070,7 +2070,7 @@ paths:
                                     summary: NDJSON stream of label names
                                     value: |
                                         {"results":[{"name":"instance"},{"name":"job"}]}
-                                        {"status":"success","has_more":false}
+                                        {"status":"success","has_more":false,"returned":2}
                 default:
                     description: Error searching label names.
                     content:
@@ -2119,7 +2119,7 @@ paths:
                                     summary: NDJSON stream of label names
                                     value: |
                                         {"results":[{"name":"instance"},{"name":"job"}]}
-                                        {"status":"success","has_more":false}
+                                        {"status":"success","has_more":false,"returned":2}
                 default:
                     description: Error searching label names via POST.
                     content:
@@ -2317,7 +2317,7 @@ paths:
                                     summary: NDJSON stream of label values
                                     value: |
                                         {"results":[{"value":"localhost:9090"},{"value":"localhost:9091"}]}
-                                        {"status":"success","has_more":true}
+                                        {"status":"success","has_more":true,"returned":2}
                 default:
                     description: Error searching label values.
                     content:
@@ -2367,7 +2367,7 @@ paths:
                                     summary: NDJSON stream of label values
                                     value: |
                                         {"results":[{"value":"localhost:9090"},{"value":"localhost:9091"}]}
-                                        {"status":"success","has_more":true}
+                                        {"status":"success","has_more":true,"returned":2}
                 default:
                     description: Error searching label values via POST.
                     content:
