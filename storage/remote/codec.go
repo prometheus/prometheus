@@ -662,22 +662,15 @@ func (s *chunkedSeriesSet) Next() bool {
 	res := &prompb.ChunkedReadResponse{}
 
 	err := s.chunkedReader.NextProto(res)
+	if err == nil && len(res.ChunkedSeries) == 0 {
+		err = errors.New("remote read response contains no chunked series")
+	}
 	if err != nil {
 		if !errors.Is(err, io.EOF) {
 			s.err = err
 			_, _ = io.Copy(io.Discard, s.respBody)
 		}
 
-		_ = s.respBody.Close()
-		s.cancel(err)
-		s.exhausted = true
-
-		return false
-	}
-	if len(res.ChunkedSeries) == 0 {
-		err := errors.New("remote read response contains no chunked series")
-		s.err = err
-		_, _ = io.Copy(io.Discard, s.respBody)
 		_ = s.respBody.Close()
 		s.cancel(err)
 		s.exhausted = true
