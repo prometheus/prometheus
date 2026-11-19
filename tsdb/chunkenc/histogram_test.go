@@ -1919,3 +1919,37 @@ func TestHistogramIteratorInvalidBucketCount(t *testing.T) {
 		})
 	}
 }
+
+// BenchmarkHistogramIteratorInvalidBucketCount measures the cost of rejecting
+// a malformed chunk before allocating slices from untrusted span lengths.
+func BenchmarkHistogramIteratorInvalidBucketCount(b *testing.B) {
+	for _, enc := range []Encoding{EncHistogram, EncFloatHistogram, EncHistogramST, EncFloatHistogramST} {
+		b.Run(enc.String(), func(b *testing.B) {
+			for _, negative := range []bool{false, true} {
+				b.Run(fmt.Sprintf("negative=%t", negative), func(b *testing.B) {
+					spans := []histogram.Span{{Length: 1 << 16}}
+					var pos, neg []histogram.Span
+					if negative {
+						neg = spans
+					} else {
+						pos = spans
+					}
+					stream := bstream{stream: []byte{0, 1, 0}}
+					writeHistogramChunkLayout(&stream, 0, 0, pos, neg, nil)
+					chunk, err := FromData(enc, stream.bytes())
+					if err != nil {
+						b.Fatal(err)
+					}
+					b.ReportAllocs()
+					b.ResetTimer()
+					for b.Loop() {
+						it := chunk.Iterator(nil)
+						if it.Next() != ValNone || it.Err() == nil {
+							b.Fatal("malformed chunk must be rejected")
+						}
+					}
+				})
+			}
+		})
+	}
+}
