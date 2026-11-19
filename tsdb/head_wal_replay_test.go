@@ -232,9 +232,10 @@ func (s *recordingExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemp
 
 // exemplarCheckingSeriesCallback counts the deleted series whose exemplar has not been added yet.
 type exemplarCheckingSeriesCallback struct {
+	// Keep missing first so that it is 64-bit aligned on 32-bit platforms.
+	missing atomic.Int64
 	noopSeriesLifecycleCallback
 	exemplars *recordingExemplarStorage
-	missing   atomic.Int64
 }
 
 func (c *exemplarCheckingSeriesCallback) PostDeletion(deleted map[chunks.HeadSeriesRef]labels.Labels) {
