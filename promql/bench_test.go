@@ -412,6 +412,39 @@ func BenchmarkQuantileOverTimeInstant(b *testing.B) {
 	}
 }
 
+// BenchmarkQuantileCallers covers the other users of the quantile helper and
+// topk, which shares aggregation storage but still needs full samples.
+func BenchmarkQuantileCallers(b *testing.B) {
+	stor := teststorage.New(b)
+	stor.DisableCompactions()
+	opts := promql.EngineOpts{
+		MaxSamples: 50000000,
+		Timeout:    100 * time.Second,
+		Parser:     parser.NewParser(parser.Options{EnableExperimentalFunctions: true}),
+	}
+	engine := promqltest.NewTestEngineWithOpts(b, opts)
+	require.NoError(b, setupRangeQueryTestData(stor, engine, 10000, 8641))
+
+	for _, metric := range []string{"a_one", "a_hundred"} {
+		for _, format := range []string{"quantile(0.5, %s)", "mad_over_time(%s[1m])", "mad_over_time(%s[1h])", "topk(5, %s)"} {
+			expr := fmt.Sprintf(format, metric)
+			b.Run(expr, func(b *testing.B) {
+				ctx := context.Background()
+				b.ReportAllocs()
+				for b.Loop() {
+					qry, err := engine.NewInstantQuery(ctx, stor, nil, expr, time.Unix(86400, 0))
+					require.NoError(b, err)
+					res := qry.Exec(ctx)
+					if res.Err != nil {
+						b.Fatal(res.Err)
+					}
+					qry.Close()
+				}
+			})
+		}
+	}
+}
+
 func BenchmarkJoinQuery(b *testing.B) {
 	stor := teststorage.New(b)
 	stor.DisableCompactions() // Don't want auto-compaction disrupting timings.

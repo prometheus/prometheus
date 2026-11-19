@@ -1659,18 +1659,18 @@ func funcMadOverTime(_ []Vector, matrixVal Matrix, args parser.Expressions, enh 
 		annos.Add(annotations.NewHistogramIgnoredInMixedRangeInfo(getMetricName(samples.Metric), args[0].PositionRange()))
 	}
 	return aggrOverTime(matrixVal, enh, func(s Series) float64 {
-		values := make(vectorByValueHeap, 0, len(s.Floats))
+		values := make([]float64, 0, len(s.Floats))
 		for _, f := range s.Floats {
 			// A NaN sample makes the median, and therefore the deviation,
 			// undefined, so propagate NaN rather than silently dropping it.
 			if math.IsNaN(f.F) {
 				return math.NaN()
 			}
-			values = append(values, Sample{F: f.F})
+			values = append(values, f.F)
 		}
 		median := quantile(0.5, values)
 		for i := range values {
-			values[i].F = math.Abs(values[i].F - median)
+			values[i] = math.Abs(values[i] - median)
 		}
 		return quantile(0.5, values)
 	}), annos
@@ -2033,7 +2033,7 @@ func funcQuantileOverTime(vectorVals []Vector, matrixVal Matrix, args parser.Exp
 	}
 	values := enh.quantileValues[:len(el.Floats)]
 	for i, f := range el.Floats {
-		values[i] = Sample{F: f.F}
+		values[i] = f.F
 	}
 	return append(enh.Out, Sample{F: quantile(q, values)}), annos
 }
