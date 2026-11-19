@@ -177,6 +177,14 @@ func TestMetricStreamingDecoder(t *testing.T) {
 	require.Equal(t, `{checksum="", path="github.com/prometheus/client_golang", version="(devel)"}`, firstMetricLset.String())
 }
 
+func TestMetricStreamingDecoder_MessageLengthExceedsBuffer(t *testing.T) {
+	varintBuf := make([]byte, binary.MaxVarintLen64)
+	varintLength := binary.PutUvarint(varintBuf, uint64(1)<<31)
+
+	d := NewMetricStreamingDecoder(varintBuf[:varintLength])
+	require.ErrorContains(t, d.NextMetricFamily(), "clientpb: insufficient length of buffer")
+}
+
 // Regression test against https://github.com/prometheus/prometheus/pull/16946
 func TestMetricStreamingDecoder_LabelsCorruption(t *testing.T) {
 	lastScrapeSize := 0
