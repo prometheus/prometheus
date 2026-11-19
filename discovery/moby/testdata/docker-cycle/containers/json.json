@@ -1,22 +1,82 @@
 [
   {
-    "Id": "container-a",
-    "Names": ["/container-a"],
+    "Id": "self-cycle",
+    "Names": ["/self-cycle"],
     "HostConfig": {
-      "NetworkMode": "container:container-b"
+      "NetworkMode": "container:self-cycle"
     },
     "NetworkSettings": {
       "Networks": {}
     }
   },
   {
-    "Id": "container-b",
-    "Names": ["/container-b"],
+    "Id": "cycle-a",
+    "Names": ["/cycle-a"],
     "HostConfig": {
-      "NetworkMode": "container:container-a"
+      "NetworkMode": "container:cycle-b"
     },
     "NetworkSettings": {
       "Networks": {}
+    }
+  },
+  {
+    "Id": "cycle-b",
+    "Names": ["/cycle-b"],
+    "HostConfig": {
+      "NetworkMode": "container:cycle-a"
+    },
+    "NetworkSettings": {
+      "Networks": {}
+    }
+  },
+  {
+    "Id": "chain-start",
+    "Names": ["/chain-start"],
+    "HostConfig": {
+      "NetworkMode": "container:chain-middle"
+    },
+    "NetworkSettings": {
+      "Networks": {}
+    }
+  },
+  {
+    "Id": "chain-middle",
+    "Names": ["/chain-middle"],
+    "HostConfig": {
+      "NetworkMode": "container:chain-end"
+    },
+    "NetworkSettings": {
+      "Networks": {}
+    }
+  },
+  {
+    "Id": "chain-end",
+    "Names": ["/chain-end"],
+    "HostConfig": {
+      "NetworkMode": "bridge"
+    },
+    "NetworkSettings": {
+      "Networks": {
+        "bridge": {
+          "NetworkID": "bridge-network",
+          "IPAddress": "172.18.0.2"
+        }
+      }
+    }
+  },
+  {
+    "Id": "unrelated",
+    "Names": ["/unrelated"],
+    "HostConfig": {
+      "NetworkMode": "bridge"
+    },
+    "NetworkSettings": {
+      "Networks": {
+        "bridge": {
+          "NetworkID": "bridge-network",
+          "IPAddress": "172.18.0.3"
+        }
+      }
     }
   }
 ]

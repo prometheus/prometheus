@@ -228,7 +228,7 @@ host: %s
 	}
 }
 
-func TestDockerSDRefreshStopsOnNetworkModeCycle(t *testing.T) {
+func TestDockerSDRefreshHandlesNetworkModeCycles(t *testing.T) {
 	t.Parallel()
 	sdmock := NewSDMock(t, "docker-cycle")
 	sdmock.Setup()
@@ -245,15 +245,33 @@ func TestDockerSDRefreshStopsOnNetworkModeCycle(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	refreshDone := make(chan error, 1)
+	type refreshResult struct {
+		containerIDs []string
+		err          error
+	}
+	refreshDone := make(chan refreshResult, 1)
 	go func() {
-		_, err := d.refresh(context.Background())
-		refreshDone <- err
+		tgs, err := d.refresh(context.Background())
+		if err != nil {
+			refreshDone <- refreshResult{err: err}
+			return
+		}
+		if len(tgs) != 1 {
+			refreshDone <- refreshResult{err: fmt.Errorf("expected 1 target group, got %d", len(tgs))}
+			return
+		}
+		var containerIDs []string
+		for _, target := range tgs[0].Targets {
+			containerIDs = append(containerIDs, string(target[dockerLabelContainerID]))
+		}
+		sort.Strings(containerIDs)
+		refreshDone <- refreshResult{containerIDs: containerIDs}
 	}()
 
 	select {
-	case err := <-refreshDone:
-		require.NoError(t, err)
+	case result := <-refreshDone:
+		require.NoError(t, result.err)
+		require.Equal(t, []string{"chain-end", "chain-middle", "chain-start", "unrelated"}, result.containerIDs)
 	case <-time.After(maxRefreshDuration):
 		t.Fatal("Docker SD refresh did not terminate for cyclic container network modes")
 	}
