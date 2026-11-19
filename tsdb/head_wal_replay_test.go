@@ -398,3 +398,89 @@ func TestHead_WALReplay_ExemplarAfterFullRangeTombstone(t *testing.T) {
 		require.Equal(t, float64(1), prom_testutil.ToFloat64(head.metrics.walReplayUnknownRefsTotal.WithLabelValues("exemplars")))
 	})
 }
+
+// BenchmarkHead_WALReplay_FullRangeTombstones measures WAL replay of exemplars around
+// the full-range tombstones logged when series are evicted.
+func BenchmarkHead_WALReplay_FullRangeTombstones(b *testing.B) {
+	// Series, sample and exemplar records have the size of a large scrape. Eviction
+	// logs a single tombstone record for all the series it deletes.
+	const recordSize = 1000
+	fullRange := tombstones.Intervals{{Mint: math.MinInt64, Maxt: math.MaxInt64}}
+
+	for _, c := range []struct {
+		// Series that receive an exemplar in every round and are never evicted.
+		liveSeries int
+		// Series evicted per round, each with an exemplar logged before its tombstone.
+		evictedSeriesPerRound int
+		rounds                int
+	}{
+		// The exemplars of many series precede a single large tombstone record, so
+		// replay has many deletions in flight at once.
+		{liveSeries: 0, evictedSeriesPerRound: 100000, rounds: 1},
+		// Live series keep receiving exemplars between evictions, so most exemplars
+		// are replayed after a full-range tombstone.
+		{liveSeries: 100000, evictedSeriesPerRound: 1000, rounds: 10},
+	} {
+		name := fmt.Sprintf("liveSeries=%d,evictedSeriesPerRound=%d,rounds=%d", c.liveSeries, c.evictedSeriesPerRound, c.rounds)
+		b.Run(name, func(b *testing.B) {
+			// Replayed exemplars that repeat the labels and value of a series' newest
+			// exemplar are dropped as duplicates regardless of their timestamps, so
+			// every exemplar gets its own trace ID.
+			var traceID int
+			exemplarRecords := func(from, to int, t int64) []any {
+				var recs []any
+				for start := from; start < to; start += recordSize {
+					exemplars := make([]record.RefExemplar, 0, recordSize)
+					for i := start; i < min(start+recordSize, to); i++ {
+						traceID++
+						exemplars = append(exemplars, record.RefExemplar{Ref: chunks.HeadSeriesRef(i + 1), T: t, V: 1, Labels: labels.FromStrings("trace_id", strconv.Itoa(traceID))})
+					}
+					recs = append(recs, exemplars)
+				}
+				return recs
+			}
+
+			// The live series take the first refs, followed by the series evicted in
+			// each round.
+			numSeries := c.liveSeries + c.rounds*c.evictedSeriesPerRound
+			var recs []any
+			for start := 0; start < numSeries; start += recordSize {
+				series := make([]record.RefSeries, 0, recordSize)
+				samples := make([]record.RefSample, 0, recordSize)
+				for i := start; i < min(start+recordSize, numSeries); i++ {
+					ref := chunks.HeadSeriesRef(i + 1)
+					series = append(series, record.RefSeries{Ref: ref, Labels: labels.FromStrings("a", strconv.Itoa(i))})
+					samples = append(samples, record.RefSample{Ref: ref, T: 100, V: 1})
+				}
+				recs = append(recs, series, samples)
+			}
+			for round := range c.rounds {
+				t := int64(200 + round)
+				from := c.liveSeries + round*c.evictedSeriesPerRound
+				to := from + c.evictedSeriesPerRound
+				recs = append(recs, exemplarRecords(from, to, t)...)
+				stones := make([]tombstones.Stone, 0, c.evictedSeriesPerRound)
+				for i := from; i < to; i++ {
+					stones = append(stones, tombstones.Stone{Ref: storage.SeriesRef(i + 1), Intervals: fullRange})
+				}
+				recs = append(recs, stones)
+				recs = append(recs, exemplarRecords(0, c.liveSeries, t)...)
+			}
+
+			dir := b.TempDir()
+			w, err := wlog.New(nil, nil, dir, compression.None)
+			require.NoError(b, err)
+			populateTestWL(b, w, recs, nil, false)
+
+			for b.Loop() {
+				// The options enable exemplar storage.
+				opts := newTestHeadDefaultOptions(1000, false)
+				opts.ChunkDirRoot = dir
+				h, err := NewHead(nil, nil, w, nil, opts, nil)
+				require.NoError(b, err)
+				require.NoError(b, h.Init(math.MinInt64))
+			}
+			require.NoError(b, w.Close())
+		})
+	}
+}
