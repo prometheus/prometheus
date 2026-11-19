@@ -929,6 +929,18 @@ describe('promql operations', () => {
       expectedDiag: [],
     },
     {
+      expr: 'sum(pi())',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [
+        {
+          from: 4,
+          to: 8,
+          message: 'expected type vector in aggregation expression, got scalar',
+          severity: 'error',
+        },
+      ],
+    },
+    {
       expr: 'cosh(1)',
       expectedValueType: ValueType.vector,
       expectedDiag: [

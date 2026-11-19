@@ -16,8 +16,8 @@ import { getFunction, PromQLFunction } from './function';
 // functionSignatures.ts is generated from promql/parser/functions.go, and CI checks that it is up to date.
 import { functionSignatures } from '../../../../mantine-ui/src/promql/functionSignatures';
 
-// min_of and max_of are registered as functions in the Go parser, but the grammar only accepts
-// them inside duration expressions, so they have no entry in the function table.
+// min_of and max_of are regular (experimental) functions in the Go parser, but lezer-promql only supports them
+// inside duration expressions so far, so they have no entry in the function table yet.
 const durationOnlyFunctions = ['min_of', 'max_of'];
 
 describe('promqlFunctions', () => {
@@ -31,7 +31,7 @@ describe('promqlFunctions', () => {
       }
     }
 
-    const expected: { [name: string]: PromQLFunction } = {};
+    const expected: typeof functionSignatures = {};
     for (const { name, argTypes, variadic, returnType } of Object.values(functionSignatures)) {
       if (!durationOnlyFunctions.includes(name)) {
         expected[name] = { name, argTypes, variadic, returnType };
