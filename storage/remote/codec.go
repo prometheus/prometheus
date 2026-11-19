@@ -674,6 +674,16 @@ func (s *chunkedSeriesSet) Next() bool {
 
 		return false
 	}
+	if len(res.ChunkedSeries) == 0 {
+		err := errors.New("remote read response contains no chunked series")
+		s.err = err
+		_, _ = io.Copy(io.Discard, s.respBody)
+		_ = s.respBody.Close()
+		s.cancel(err)
+		s.exhausted = true
+
+		return false
+	}
 
 	s.current = &chunkedSeries{
 		ChunkedSeries: prompb.ChunkedSeries{
