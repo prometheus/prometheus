@@ -656,6 +656,26 @@ func TestNativeHistogramsAsClassicQuerier_Select(t *testing.T) {
 					},
 				},
 				{
+					name:          "classic sample between two NHCB samples marks NHCB-only bucket stale",
+					queryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket")},
+					classicSeries: []Series{
+						NewListSeries(labels.FromStrings("__name__", "http_requests_bucket", "le", "1.0"), []chunks.Sample{fSample{t: 2, f: 12}}),
+						NewListSeries(labels.FromStrings("__name__", "http_requests_bucket", "le", "+Inf"), []chunks.Sample{fSample{t: 2, f: 20}}),
+					},
+					nhcbSeries: []Series{
+						NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{
+							hSample{t: 1, h: makeNHCB([]float64{1.0, 5.0}, []int64{5, 3, 2})},
+							hSample{t: 3, h: makeNHCB([]float64{1.0, 5.0}, []int64{15, 7, 8})},
+						}),
+					},
+					expectedCount: 3,
+					expectedSamples: []seriesSamples{
+						{labels: `{__name__="http_requests_bucket", le="+Inf"}`, samples: []fSample{{t: 1, f: 10}, {t: 2, f: 20}, {t: 3, f: 30}}},
+						{labels: `{__name__="http_requests_bucket", le="1.0"}`, samples: []fSample{{t: 1, f: 5}, {t: 2, f: 12}, {t: 3, f: 15}}},
+						{labels: `{__name__="http_requests_bucket", le="5.0"}`, samples: []fSample{{t: 1, f: 8}, {t: 2, f: staleF}, {t: 3, f: 22}}},
+					},
+				},
+				{
 					name:          "exponential native histogram coexisting with classic returns classic untouched",
 					queryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket")},
 					classicSeries: []Series{
