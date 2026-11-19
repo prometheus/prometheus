@@ -6016,6 +6016,85 @@ metric: <
 	}
 }
 
+func TestProtobufParseHistogramNegativeOffsetInNonFirstSpan(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		firstHistogram string
+		spanSide       string
+		expectedError  string
+	}{
+		{
+			name:          "positive spans",
+			expectedError: "positive side: span 2 has negative offset -1",
+		},
+		{
+			name:          "negative spans",
+			spanSide:      "negative",
+			expectedError: "negative side: span 2 has negative offset -1",
+		},
+		{
+			name: "subsequent histogram in metric family",
+			firstHistogram: `metric: <
+  histogram: <
+    sample_count: 1
+    sample_sum: 1.0
+    schema: 1
+    zero_threshold: 0
+    zero_count: 0
+    positive_span: < offset: 0 length: 1 >
+    positive_delta: 1
+  >
+>
+`,
+			expectedError: "positive side: span 2 has negative offset -1",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var invalidSpans string
+			switch tc.spanSide {
+			case "negative":
+				invalidSpans = `negative_span: < offset: 0 length: 1 >
+    negative_span: < offset: -1 length: 1 >
+    negative_delta: 1
+    negative_delta: 2`
+			default:
+				invalidSpans = `positive_span: < offset: 0 length: 1 >
+    positive_span: < offset: -1 length: 1 >
+    positive_delta: 1
+    positive_delta: 2`
+			}
+			invalidHistogram := `metric: <
+  histogram: <
+    sample_count: 2
+    sample_sum: 1.0
+    schema: 1
+    zero_threshold: 0
+    zero_count: 0
+    ` + invalidSpans + `
+  >
+>
+`
+			buf := metricFamiliesToProtobuf(t, []string{`name: "test_histogram"
+help: "Test."
+type: HISTOGRAM
+` + tc.firstHistogram + invalidHistogram})
+			p := NewProtobufParser(buf.Bytes(), false, false, false, false, labels.NewSymbolTable())
+			var gotErr error
+			for {
+				_, err := p.Next()
+				if errors.Is(err, io.EOF) {
+					break
+				}
+				if err != nil {
+					gotErr = err
+					break
+				}
+			}
+			require.ErrorContains(t, gotErr, tc.expectedError)
+		})
+	}
+}
+
 func TestProtobufParseZeroFloatHistogram(t *testing.T) {
 	for _, tc := range []struct {
 		name      string

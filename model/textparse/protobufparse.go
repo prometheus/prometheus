@@ -607,6 +607,9 @@ func (p *ProtobufParser) Next() (Entry, error) {
 		if p.ignoreNativeHistograms || !isNativeHistogram(p.dec.GetHistogram()) {
 			return switchToClassic()
 		}
+		if err := checkNativeHistogramConsistency(p.dec.GetHistogram()); err != nil {
+			return EntryInvalid, fmt.Errorf("histogram %q: %w", p.dec.GetName(), err)
+		}
 
 		if err := p.onSeriesOrHistogramUpdate(); err != nil {
 			return EntryInvalid, err
@@ -800,11 +803,14 @@ func checkNativeHistogramConsistency(h *dto.Histogram) error {
 	return checkProtoSpanBucketConsistency("negative", h.GetNegativeSpan(), negativeBuckets)
 }
 
-// checkProtoSpanBucketConsistency returns an error when the total length
-// described by spans does not match numBuckets.
+// checkProtoSpanBucketConsistency returns an error when span offsets are
+// invalid or the total span length does not match numBuckets.
 func checkProtoSpanBucketConsistency(side string, spans []dto.BucketSpan, numBuckets int) error {
 	var total int
-	for _, s := range spans {
+	for i, s := range spans {
+		if i > 0 && s.GetOffset() < 0 {
+			return fmt.Errorf("%s side: span %d has negative offset %d", side, i+1, s.GetOffset())
+		}
 		total += int(s.GetLength())
 	}
 	if total != numBuckets {
