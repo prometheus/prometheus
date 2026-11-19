@@ -178,6 +178,7 @@ func TestMetricStreamingDecoder(t *testing.T) {
 }
 
 func TestMetricStreamingDecoder_MessageLengthExceedsBuffer(t *testing.T) {
+	// This input only overflows int on 32-bit architectures.
 	varintBuf := make([]byte, binary.MaxVarintLen64)
 	varintLength := binary.PutUvarint(varintBuf, uint64(1)<<31)
 
