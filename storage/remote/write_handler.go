@@ -171,6 +171,10 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 		err = appV2.Commit()
 		if err != nil {
 			h.samplesAppendedWithoutMetadata.Add(float64(samplesAppended))
+			return
+		}
+		if samplesWithUnsortedLabels > 0 {
+			h.samplesWithUnsortedLabelsTotal.Add(float64(samplesWithUnsortedLabels))
 		}
 	}()
 
@@ -238,9 +242,6 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 	}
 	if samplesWithInvalidLabels > 0 {
 		h.samplesWithInvalidLabelsTotal.Add(float64(samplesWithInvalidLabels))
-	}
-	if samplesWithUnsortedLabels > 0 {
-		h.samplesWithUnsortedLabelsTotal.Add(float64(samplesWithUnsortedLabels))
 	}
 	return nil
 }
@@ -341,7 +342,7 @@ func (h *writeHandler) appendV2(app *timeLimitExemplarAppenderV2, req *writev2.R
 		exemplars = make([]exemplar.Exemplar, 0, 1)
 	)
 	for _, ts := range req.Timeseries {
-		ls, err := desymbolizeAndValidate(&b, ts.LabelsRefs, req.Symbols)
+		ls, err := ts.ToLabels(&b, req.Symbols)
 		if err != nil {
 			badRequestErrs = append(badRequestErrs, fmt.Errorf("parsing labels for series %v: %w", ts.LabelsRefs, err))
 			samplesWithInvalidLabels += len(ts.Samples) + len(ts.Histograms)
@@ -610,33 +611,4 @@ func areLabelsSorted(ls []prompb.Label) bool {
 		}
 	}
 	return true
-}
-
-func desymbolizeAndValidate(b *labels.ScratchBuilder, labelRefs []uint32, symbols []string) (labels.Labels, error) {
-	if len(labelRefs)%2 != 0 {
-		return labels.EmptyLabels(), fmt.Errorf("invalid labelRefs length %d", len(labelRefs))
-	}
-
-	b.Reset()
-	var prevName string
-	for i := 0; i < len(labelRefs); i += 2 {
-		nameRef, valueRef := labelRefs[i], labelRefs[i+1]
-		if int(nameRef) >= len(symbols) || int(valueRef) >= len(symbols) {
-			return labels.EmptyLabels(), fmt.Errorf("labelRefs %d (name) = %d (value) outside of symbols table (size %d)", nameRef, valueRef, len(symbols))
-		}
-		name := symbols[nameRef]
-		value := symbols[valueRef]
-
-		if i > 0 {
-			if name == prevName {
-				return labels.EmptyLabels(), fmt.Errorf("duplicate label with name: %s", name)
-			}
-			if name < prevName {
-				return labels.EmptyLabels(), fmt.Errorf("labels are not sorted lexicographically: %s is not after %s", name, prevName)
-			}
-		}
-		b.Add(name, value)
-		prevName = name
-	}
-	return b.Labels(), nil
 }
