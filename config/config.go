@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"mime"
 	"net/url"
 	"os"
@@ -1289,6 +1290,11 @@ func (t *TracingConfig) UnmarshalYAML(unmarshal func(any) error) error {
 
 	if t.Endpoint == "" {
 		return errors.New("tracing endpoint must be set")
+	}
+
+	// The sampling fraction is a probability.
+	if math.IsNaN(t.SamplingFraction) || t.SamplingFraction < 0 || t.SamplingFraction > 1 {
+		return fmt.Errorf("tracing sampling_fraction must be between 0 and 1, got %v", t.SamplingFraction)
 	}
 
 	if t.Compression != "" && t.Compression != GzipCompression {
