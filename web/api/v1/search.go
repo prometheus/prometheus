@@ -57,6 +57,7 @@ import (
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/httputil"
+	"github.com/prometheus/prometheus/util/searchexpr"
 )
 
 // defaultFuzzAlg is the algorithm assumed when fuzz_alg is not specified.
@@ -95,9 +96,10 @@ func FuzzAlgorithms() []string {
 type searchParams struct {
 	matcherSets   [][]*labels.Matcher
 	searches      []string
-	fuzzThreshold int    // 0-100, default 0 (lowest fuzzy threshold).
-	fuzzAlg       string // "subsequence" (default) or "jarowinkler".
-	caseSensitive bool   // Default true.
+	searchExpr    searchexpr.Expr // Nil when search_expr is absent or empty.
+	fuzzThreshold int             // 0-100, default 0 (lowest fuzzy threshold).
+	fuzzAlg       string          // "subsequence" (default) or "jarowinkler".
+	caseSensitive bool            // Default true.
 	sortBy        string
 	sortDir       string // "asc" (default) or "dsc".
 	includeScore  bool   // Include relevance score in each result record.
@@ -227,6 +229,18 @@ func (api *API) parseSearchParams(r *http.Request) (searchParams, *apiError) {
 		)}
 	}
 
+	if v := r.FormValue("search_expr"); v != "" {
+		// buildSearchFilter skips empty search[] terms, so they do not conflict.
+		if slices.ContainsFunc(sp.searches, func(s string) bool { return s != "" }) {
+			return sp, &apiError{errorBadData, errors.New("search[] and search_expr are mutually exclusive")}
+		}
+		expr, err := searchexpr.Parse(v)
+		if err != nil {
+			return sp, &apiError{errorBadData, fmt.Errorf("invalid search_expr: %w", err)}
+		}
+		sp.searchExpr = expr
+	}
+
 	sp.fuzzThreshold = 0
 	if v := r.FormValue("fuzz_threshold"); v != "" {
 		ft, err := strconv.Atoi(v)
@@ -271,8 +285,8 @@ func (api *API) parseSearchParams(r *http.Request) (searchParams, *apiError) {
 	if sp.sortDir != "asc" && sp.sortDir != "dsc" {
 		return sp, &apiError{errorBadData, fmt.Errorf("invalid sort_dir %q: must be \"asc\" or \"dsc\"", sp.sortDir)}
 	}
-	if sp.sortBy == "score" && len(sp.searches) == 0 {
-		return sp, &apiError{errorBadData, errors.New("sort_by=score requires search[] to be set")}
+	if sp.sortBy == "score" && len(sp.searches) == 0 && sp.searchExpr == nil {
+		return sp, &apiError{errorBadData, errors.New("sort_by=score requires search[] or search_expr to be set")}
 	}
 
 	// Default limit is shrunk to maxSearchLimit when the operator configured
@@ -708,25 +722,9 @@ func buildSearchFilter(searches []string, fuzzThreshold int, fuzzAlg string, cas
 	if len(terms) == 0 {
 		return nil
 	}
-	threshold := float64(fuzzThreshold) / 100.0
 	filters := make([]storage.Filter, 0, len(terms))
 	for _, s := range terms {
-		var f storage.Filter
-		if fuzzAlg == "subsequence" {
-			f = NewSubsequenceFilter(s, threshold)
-		} else {
-			// Jaro-Winkler: substring OR Jaro-Winkler fuzzy.
-			substringFilter := NewSubstringFilter(s)
-			var fuzzyFilter *FuzzyFilter
-			if fuzzThreshold > 0 {
-				fuzzyFilter = NewFuzzyFilter(s, threshold)
-			}
-			f = &orFilter{
-				substringFilter: substringFilter,
-				fuzzyFilter:     fuzzyFilter,
-			}
-		}
-		filters = append(filters, f)
+		filters = append(filters, newSearchTermFilter(s, fuzzThreshold, fuzzAlg))
 	}
 	var combined storage.Filter
 	if len(filters) == 1 {
@@ -734,18 +732,64 @@ func buildSearchFilter(searches []string, fuzzThreshold int, fuzzAlg string, cas
 	} else {
 		combined = newOrSearchesFilter(filters...)
 	}
+	return wrapSearchFilter(combined, fuzzThreshold, fuzzAlg, caseSensitive)
+}
+
+// buildSearchExprFilter compiles a search_expr expression. Positive terms use
+// the same filter as a search[] term. Negated terms use a literal substring
+// match, because a fuzzy match would also exclude values that do not contain
+// the term. Compile ignores the score of a negated term, so the negated filter
+// does not compute one. The case folding and memoization rules of
+// buildSearchFilter apply.
+func buildSearchExprFilter(expr searchexpr.Expr, fuzzThreshold int, fuzzAlg string, caseSensitive bool) (storage.Filter, error) {
+	filter, err := searchexpr.Compile(expr, func(term string, negated bool) (storage.Filter, error) {
+		if !caseSensitive {
+			term = strings.ToLower(term)
+		}
+		if negated {
+			return &containsFilter{query: term}, nil
+		}
+		return newSearchTermFilter(term, fuzzThreshold, fuzzAlg), nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return wrapSearchFilter(filter, fuzzThreshold, fuzzAlg, caseSensitive), nil
+}
+
+// newSearchTermFilter returns the filter for one search term. The term must
+// already be lowercased for a case-insensitive search.
+func newSearchTermFilter(term string, fuzzThreshold int, fuzzAlg string) storage.Filter {
+	threshold := float64(fuzzThreshold) / 100.0
+	if fuzzAlg == "subsequence" {
+		return NewSubsequenceFilter(term, threshold)
+	}
+	// Jaro-Winkler: substring OR Jaro-Winkler fuzzy.
+	var fuzzyFilter *FuzzyFilter
+	if fuzzThreshold > 0 {
+		fuzzyFilter = NewFuzzyFilter(term, threshold)
+	}
+	return &orFilter{
+		substringFilter: NewSubstringFilter(term),
+		fuzzyFilter:     fuzzyFilter,
+	}
+}
+
+// wrapSearchFilter adds the case folding and memoization wrappers that
+// buildSearchFilter documents.
+func wrapSearchFilter(filter storage.Filter, fuzzThreshold int, fuzzAlg string, caseSensitive bool) storage.Filter {
 	if !caseSensitive {
-		combined = newCaseFoldingFilter(combined)
+		filter = newCaseFoldingFilter(filter)
 	}
 	if filterChainHasExpensiveScoring(fuzzThreshold, fuzzAlg) {
-		combined = newMemoizingFilter(combined)
+		filter = newMemoizingFilter(filter)
 	}
-	return combined
+	return filter
 }
 
 // filterChainHasExpensiveScoring reports whether the search filter chain built
-// by buildSearchFilter will exercise a non-trivial scoring path that justifies
-// memoization across blocks.
+// by buildSearchFilter or buildSearchExprFilter will exercise a non-trivial
+// scoring path that justifies memoization across blocks.
 func filterChainHasExpensiveScoring(fuzzThreshold int, fuzzAlg string) bool {
 	if fuzzAlg == "subsequence" {
 		return true
@@ -797,6 +841,18 @@ func (api *API) newSearchRequest(w http.ResponseWriter, r *http.Request, endpoin
 		return nil
 	}
 
+	var filter storage.Filter
+	if sp.searchExpr != nil {
+		var err error
+		filter, err = buildSearchExprFilter(sp.searchExpr, sp.fuzzThreshold, sp.fuzzAlg, sp.caseSensitive)
+		if err != nil {
+			api.respondError(w, &apiError{errorBadData, fmt.Errorf("invalid search_expr: %w", err)}, nil)
+			return nil
+		}
+	} else {
+		filter = buildSearchFilter(sp.searches, sp.fuzzThreshold, sp.fuzzAlg, sp.caseSensitive)
+	}
+
 	q, err := api.Queryable.Querier(timestamp.FromTime(sp.start), timestamp.FromTime(sp.end))
 	if err != nil {
 		api.respondPreStreamSearchError(w, err)
@@ -811,7 +867,7 @@ func (api *API) newSearchRequest(w http.ResponseWriter, r *http.Request, endpoin
 	}
 
 	hints := &storage.SearchHints{
-		Filter: buildSearchFilter(sp.searches, sp.fuzzThreshold, sp.fuzzAlg, sp.caseSensitive),
+		Filter: filter,
 		Limit:  searchHintsLimit(sp.limit), // Fetch one extra to detect has_more (with saturation guard).
 	}
 	hints.OrderBy = sortOrdering(sp.sortBy, sp.sortDir)
