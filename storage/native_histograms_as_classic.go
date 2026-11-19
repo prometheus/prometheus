@@ -328,9 +328,6 @@ func peekNHCBSeries(s Series, it chunkenc.Iterator, hScratch *histogram.Histogra
 		return peekedNHCB{}, it, false, nil
 	}
 	it = s.Iterator(it)
-	if it == nil {
-		return peekedNHCB{}, nil, false, nil
-	}
 	for {
 		switch it.Next() {
 		case chunkenc.ValNone:
@@ -1125,13 +1122,6 @@ func collectClassicGroup(series []Series, suffix string, leMatchers []*labels.Ma
 			continue
 		}
 		it = s.Iterator(it)
-		if it == nil {
-			if keep {
-				kept = append(kept, classicKeptEntry{lset: lset})
-				bufferedCount++
-			}
-			continue
-		}
 		startOff := len(samplesBuf)
 		firstSeries := len(ts) == 0
 		idx := 0
@@ -1293,24 +1283,17 @@ func mergeSamples(a, b Series) (Series, error) {
 		bSample, hasB = nextFloat(itB)
 	}
 
-	if itA != nil {
-		if err := itA.Err(); err != nil {
-			return nil, err
-		}
+	if err := itA.Err(); err != nil {
+		return nil, err
 	}
-	if itB != nil {
-		if err := itB.Err(); err != nil {
-			return nil, err
-		}
+	if err := itB.Err(); err != nil {
+		return nil, err
 	}
 
 	return &fSampleSeries{lset: a.Labels(), samples: samples}, nil
 }
 
 func nextFloat(it chunkenc.Iterator) (fSample, bool) {
-	if it == nil {
-		return fSample{}, false
-	}
 	for {
 		switch it.Next() {
 		case chunkenc.ValNone:
