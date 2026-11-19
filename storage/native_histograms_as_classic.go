@@ -906,9 +906,14 @@ func (s *nhcbToClassicSeriesSet) convertGroup(g *histogramGroup, dst []Series) (
 
 // convertPeekedNHCB converts a single peeked NHCB series into classic series,
 // shadowing samples at timestamps where the stored classic histogram is active.
-// loadGroupTS is called lazily and at most once on the first live NHCB sample
-// to load the group's classic timestamps; a nil loadGroupTS disables classic
-// shadowing on the streaming fast path.
+// Shadowing emits StaleNaN on active converted series at classic timestamps.
+// For matching labels, mergeSamples overrides the StaleNaN with the live classic
+// sample. For converted buckets absent from the stored classic histogram because
+// of differing bucket boundaries or le formatting, the StaleNaN survives so
+// PromQL's lookback window cannot carry old converted buckets into a stored
+// classic histogram. loadGroupTS is called lazily and at most once on the first
+// live NHCB sample to load the group's classic timestamps; a nil loadGroupTS
+// disables classic shadowing on the streaming fast path.
 func (s *nhcbToClassicSeriesSet) convertPeekedNHCB(p peekedNHCB, loadGroupTS func() ([]int64, error), dst []Series) ([]Series, error) {
 	nhcbLabels := p.series.Labels()
 	it := p.it
