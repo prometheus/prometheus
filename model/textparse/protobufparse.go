@@ -809,7 +809,7 @@ func checkProtoSpanBucketConsistency(side string, spans []dto.BucketSpan, numBuc
 	var total int
 	for i, s := range spans {
 		if i > 0 && s.GetOffset() < 0 {
-			return fmt.Errorf("%s side: span %d has negative offset %d", side, i+1, s.GetOffset())
+			return fmt.Errorf("%s side: span %d has negative offset %d: %w", side, i+1, s.GetOffset(), histogram.ErrHistogramSpanNegativeOffset)
 		}
 		total += int(s.GetLength())
 	}

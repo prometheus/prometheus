@@ -6091,6 +6091,7 @@ type: HISTOGRAM
 				}
 			}
 			require.ErrorContains(t, gotErr, tc.expectedError)
+			require.ErrorIs(t, gotErr, histogram.ErrHistogramSpanNegativeOffset)
 		})
 	}
 }
