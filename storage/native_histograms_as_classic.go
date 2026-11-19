@@ -1155,6 +1155,12 @@ func collectClassicGroup(series []Series, suffix string, leMatchers []*labels.Ma
 				}
 				ts = append(ts, t)
 				needSort = true
+			// NOTE: Only buffer native histogram samples while no float sample
+			// has been seen yet. histSamples is kept only when the series has
+			// no floats at all, preserving pure native histograms under a
+			// classic suffix via nonFloatClassicSeries. Mixed float and native
+			// histogram series are merged as float streams and drop native
+			// histogram samples regardless of sample order.
 			case chunkenc.ValHistogram:
 				if keep && len(samplesBuf) == startOff {
 					t, h := it.AtHistogram(nil)

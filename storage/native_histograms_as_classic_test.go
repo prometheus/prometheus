@@ -746,6 +746,28 @@ func TestNativeHistogramsAsClassicQuerier_Select(t *testing.T) {
 						{labels: `{__name__="http_requests_count", job="api"}`, samples: []fSample{{t: 2, f: 25}, {t: 3, f: 120}}},
 					},
 				},
+				{
+					name:          "mixed-type classic series with float then native histogram keeps float and drops trailing histogram",
+					queryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_count")},
+					classicSeries: []Series{
+						NewListSeries(labels.FromStrings("__name__", "http_requests_count", "job", "api"), []chunks.Sample{
+							fSample{t: 1, f: 25},
+							hSample{t: 2, h: expNH},
+							fhSample{t: 3, fh: expNH.ToFloat(nil)},
+						}),
+					},
+					nhcbSeries: []Series{
+						NewListSeries(labels.FromStrings("__name__", "http_requests", "job", "api"), []chunks.Sample{
+							hSample{t: 1, h: makeNHCB([]float64{1.0}, []int64{50, 50})},
+							hSample{t: 2, h: makeNHCB([]float64{1.0}, []int64{60, 60})},
+							hSample{t: 3, h: makeNHCB([]float64{1.0}, []int64{70, 70})},
+						}),
+					},
+					expectedCount: 1,
+					expectedSamples: []seriesSamples{
+						{labels: `{__name__="http_requests_count", job="api"}`, samples: []fSample{{t: 1, f: 25}, {t: 2, f: 120}, {t: 3, f: 140}}},
+					},
+				},
 			},
 		},
 		{
