@@ -13,6 +13,35 @@
 
 import { HTTPPrometheusClient, CachedPrometheusClient } from './prometheus';
 
+describe('HTTPPrometheusClient labelValues', () => {
+  const requestedPath = async (labelName: string): Promise<string> => {
+    let requested = '';
+    const mockFetch = (input: RequestInfo): Promise<Response> => {
+      requested = input as string;
+      return Promise.resolve(new Response(JSON.stringify({ status: 'success', data: [] })));
+    };
+    const client = new HTTPPrometheusClient({ url: 'http://localhost:8080', fetchFn: mockFetch });
+    await client.labelValues(labelName);
+    return requested.replace('http://localhost:8080', '').split('?')[0];
+  };
+
+  it('requests a legacy label name as is', async () => {
+    expect(await requestedPath('job')).toBe('/api/v1/label/job/values');
+    expect(await requestedPath('__name__')).toBe('/api/v1/label/__name__/values');
+  });
+
+  it('escapes label names that are not legacy-valid with the U__ encoding', async () => {
+    // The API requires this encoding for names that contain a "/".
+    expect(await requestedPath('app.kubernetes.io/name')).toBe('/api/v1/label/U__app_2e_kubernetes_2e_io_2f_name/values');
+    expect(await requestedPath('http.status_code')).toBe('/api/v1/label/U__http_2e_status__code/values');
+    expect(await requestedPath('0abc')).toBe('/api/v1/label/U___30_abc/values');
+  });
+
+  it('escapes label names that start with the U__ prefix', async () => {
+    expect(await requestedPath('U__foo')).toBe('/api/v1/label/U__U____foo/values');
+  });
+});
+
 describe('HTTPPrometheusClient destroy', () => {
   it('should be safe to call destroy multiple times', () => {
     const client = new HTTPPrometheusClient({ url: 'http://localhost:8080' });

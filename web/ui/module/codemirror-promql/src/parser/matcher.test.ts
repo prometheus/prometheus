@@ -126,6 +126,29 @@ describe('labelMatchersToString test', () => {
       ] as Matcher[],
       result: 'rate{labelName2=~"label.+",labelName3!~"label.+"}',
     },
+    {
+      title: 'rate{"app.kubernetes.io/name"="web",plain=~"a.+"} quotes label names outside the legacy charset',
+      metricName: 'rate',
+      labelName: 'k8s.pod.name',
+      matchers: [
+        {
+          type: EqlSingle,
+          name: 'app.kubernetes.io/name',
+          value: 'web',
+        },
+        {
+          type: EqlSingle,
+          name: 'k8s.pod.name',
+          value: 'pod-1',
+        },
+        {
+          type: EqlRegex,
+          name: 'plain',
+          value: 'a.+',
+        },
+      ] as Matcher[],
+      result: 'rate{"app.kubernetes.io/name"="web",plain=~"a.+"}',
+    },
   ];
 
   testCases.forEach((value) => {
