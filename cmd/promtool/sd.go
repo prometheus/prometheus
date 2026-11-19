@@ -34,7 +34,10 @@ import (
 type sdCheckResult struct {
 	DiscoveredLabels labels.Labels `json:"discoveredLabels"`
 	Labels           labels.Labels `json:"labels"`
-	Error            error         `json:"error,omitempty"`
+	// Error is the message of the error that occurred while building the
+	// target's labels. It is a string because an error value would be encoded
+	// as an empty JSON object and could not be compared by cmp.Equal.
+	Error string `json:"error,omitempty"`
 }
 
 // CheckSD performs service discovery for the given job name and reports the results.
@@ -150,7 +153,9 @@ func getSDCheckResult(targetGroups []*targetgroup.Group, scrapeConfig *config.Sc
 			result := sdCheckResult{
 				DiscoveredLabels: orig,
 				Labels:           res,
-				Error:            err,
+			}
+			if err != nil {
+				result.Error = err.Error()
 			}
 
 			duplicateRes := false
