@@ -1548,6 +1548,24 @@ remote_write:
 	}, 30*time.Second, time.Second)
 }
 
+func TestRemoteReadShardingFeature(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		features []string
+		enabled  bool
+	}{
+		{name: "default"},
+		{name: "enabled", features: []string{"remote-read-sharding"}, enabled: true},
+		{name: "combined", features: []string{"promql-per-step-stats,remote-read-sharding"}, enabled: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := flagConfig{featureList: tc.features}
+			require.NoError(t, cfg.setFeatureListOptions(promslog.NewNopLogger()))
+			require.Equal(t, tc.enabled, cfg.tsdb.ToTSDBOptions().EnableSharding)
+		})
+	}
+}
+
 // TestFeatureFlagsDocumented ensures the --enable-feature help text in main.go
 // and the documented flags in docs/feature_flags.md list the same set of flags.
 func TestFeatureFlagsDocumented(t *testing.T) {

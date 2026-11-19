@@ -16,6 +16,7 @@ package remote
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -102,6 +103,13 @@ func (h *readHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	// Validate every query before writing a streamed response for any of them.
+	for i, query := range req.Queries {
+		if err := validateReadShardHints(query.Hints); err != nil {
+			http.Error(w, fmt.Sprintf("invalid hints for query %d: %s", i, err), http.StatusBadRequest)
+			return
+		}
+	}
 
 	externalLabels := h.config().GlobalConfig.ExternalLabels.Map()
 
@@ -161,18 +169,7 @@ func (h *readHandler) remoteReadSamples(
 				}
 			}()
 
-			var hints *storage.SelectHints
-			if query.Hints != nil {
-				hints = &storage.SelectHints{
-					Start:    query.Hints.StartMs,
-					End:      query.Hints.EndMs,
-					Step:     query.Hints.StepMs,
-					Func:     query.Hints.Func,
-					Grouping: query.Hints.Grouping,
-					Range:    query.Hints.RangeMs,
-					By:       query.Hints.By,
-				}
-			}
+			hints := toSelectHints(query.Hints)
 
 			var ws annotations.Annotations
 			resp.Results[i], ws, err = ToQueryResult(querier.Select(ctx, false, hints, filteredMatchers...), h.remoteReadSampleLimit)
@@ -233,18 +230,7 @@ func (h *readHandler) remoteReadStreamedXORChunks(ctx context.Context, w http.Re
 				}
 			}()
 
-			var hints *storage.SelectHints
-			if query.Hints != nil {
-				hints = &storage.SelectHints{
-					Start:    query.Hints.StartMs,
-					End:      query.Hints.EndMs,
-					Step:     query.Hints.StepMs,
-					Func:     query.Hints.Func,
-					Grouping: query.Hints.Grouping,
-					Range:    query.Hints.RangeMs,
-					By:       query.Hints.By,
-				}
-			}
+			hints := toSelectHints(query.Hints)
 
 			ws, err := StreamChunkedReadResponses(
 				cw,

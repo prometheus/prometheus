@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"strings"
 	"sync"
@@ -43,6 +44,62 @@ import (
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/util/annotations"
 )
+
+func TestQueryShardHints(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		hints *storage.SelectHints
+	}{
+		{name: "nil"},
+		{name: "disabled", hints: &storage.SelectHints{}},
+		{name: "one shard", hints: &storage.SelectHints{ShardCount: 1}},
+		{
+			name: "all fields",
+			hints: &storage.SelectHints{
+				Start: 11, End: 22, Step: 3, Func: "sum", Grouping: []string{"job"}, By: true, Range: 5,
+				ShardCount: 8, ShardIndex: 3,
+			},
+		},
+		{name: "maximum shard values", hints: &storage.SelectHints{ShardCount: math.MaxUint64, ShardIndex: math.MaxUint64 - 1}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			query, err := ToQuery(1, 2, nil, tc.hints)
+			require.NoError(t, err)
+			wire, err := proto.Marshal(query)
+			require.NoError(t, err)
+			var decoded prompb.Query
+			require.NoError(t, proto.Unmarshal(wire, &decoded))
+			require.Equal(t, int64(1), decoded.StartTimestampMs)
+			require.Equal(t, int64(2), decoded.EndTimestampMs)
+			if tc.hints == nil {
+				require.Nil(t, decoded.Hints)
+			} else {
+				require.NotNil(t, decoded.Hints)
+				require.Equal(t, tc.hints.ShardCount, decoded.Hints.ShardCount)
+				require.Equal(t, tc.hints.ShardIndex, decoded.Hints.ShardIndex)
+			}
+			require.Equal(t, tc.hints, toSelectHints(decoded.Hints))
+		})
+	}
+}
+
+func TestQueryRejectsInvalidShardHints(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		count, index uint64
+	}{
+		{name: "disabled with index", index: 1},
+		{name: "index equals count", count: 2, index: 2},
+		{name: "index exceeds count", count: 2, index: 3},
+		{name: "maximum index", count: math.MaxUint64, index: math.MaxUint64},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			query, err := ToQuery(0, 1, nil, &storage.SelectHints{ShardCount: tc.count, ShardIndex: tc.index})
+			require.ErrorContains(t, err, "shard_index")
+			require.Nil(t, query)
+		})
+	}
+}
 
 var (
 	testHistogram = histogram.Histogram{

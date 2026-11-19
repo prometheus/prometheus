@@ -110,13 +110,18 @@ func ToQuery(from, to int64, matchers []*labels.Matcher, hints *storage.SelectHi
 	var rp *prompb.ReadHints
 	if hints != nil {
 		rp = &prompb.ReadHints{
-			StartMs:  hints.Start,
-			EndMs:    hints.End,
-			StepMs:   hints.Step,
-			Func:     hints.Func,
-			Grouping: hints.Grouping,
-			By:       hints.By,
-			RangeMs:  hints.Range,
+			StartMs:    hints.Start,
+			EndMs:      hints.End,
+			StepMs:     hints.Step,
+			Func:       hints.Func,
+			Grouping:   hints.Grouping,
+			By:         hints.By,
+			RangeMs:    hints.Range,
+			ShardCount: hints.ShardCount,
+			ShardIndex: hints.ShardIndex,
+		}
+		if err := validateReadShardHints(rp); err != nil {
+			return nil, err
 		}
 	}
 
@@ -126,6 +131,30 @@ func ToQuery(from, to int64, matchers []*labels.Matcher, hints *storage.SelectHi
 		Matchers:         ms,
 		Hints:            rp,
 	}, nil
+}
+
+func validateReadShardHints(hints *prompb.ReadHints) error {
+	if hints != nil && (hints.ShardCount > 0 || hints.ShardIndex > 0) && hints.ShardIndex >= hints.ShardCount {
+		return fmt.Errorf("shard_index %d must be less than shard_count %d", hints.ShardIndex, hints.ShardCount)
+	}
+	return nil
+}
+
+func toSelectHints(hints *prompb.ReadHints) *storage.SelectHints {
+	if hints == nil {
+		return nil
+	}
+	return &storage.SelectHints{
+		Start:      hints.StartMs,
+		End:        hints.EndMs,
+		Step:       hints.StepMs,
+		Func:       hints.Func,
+		Grouping:   hints.Grouping,
+		By:         hints.By,
+		Range:      hints.RangeMs,
+		ShardCount: hints.ShardCount,
+		ShardIndex: hints.ShardIndex,
+	}
 }
 
 // ToQueryResult builds a QueryResult proto.
