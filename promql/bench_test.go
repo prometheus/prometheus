@@ -384,6 +384,34 @@ func BenchmarkRangeQuery(b *testing.B) {
 	}
 }
 
+// BenchmarkQuantileOverTimeInstant covers the first scratch allocation for
+// different range lengths and series counts.
+func BenchmarkQuantileOverTimeInstant(b *testing.B) {
+	stor := teststorage.New(b)
+	stor.DisableCompactions()
+	engine := promqltest.NewTestEngine(b, false, 0, promqltest.DefaultMaxSamplesPerQuery)
+	require.NoError(b, setupRangeQueryTestData(stor, engine, 10000, 8641))
+
+	for _, metric := range []string{"a_one", "a_hundred"} {
+		for _, window := range []string{"1m", "1h", "1d"} {
+			expr := fmt.Sprintf("quantile_over_time(0.5, %s[%s])", metric, window)
+			b.Run(expr, func(b *testing.B) {
+				ctx := context.Background()
+				b.ReportAllocs()
+				for b.Loop() {
+					qry, err := engine.NewInstantQuery(ctx, stor, nil, expr, time.Unix(86400, 0))
+					require.NoError(b, err)
+					res := qry.Exec(ctx)
+					if res.Err != nil {
+						b.Fatal(res.Err)
+					}
+					qry.Close()
+				}
+			})
+		}
+	}
+}
+
 func BenchmarkJoinQuery(b *testing.B) {
 	stor := teststorage.New(b)
 	stor.DisableCompactions() // Don't want auto-compaction disrupting timings.
