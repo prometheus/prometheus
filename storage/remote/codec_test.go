@@ -1043,6 +1043,20 @@ func TestChunkedSeriesIteratorReportsCorruptChunk(t *testing.T) {
 		it := newChunkedSeriesIterator(corruptMiddleChunk(t), 0, 14000)
 		require.Equal(t, chunkenc.ValNone, it.Seek(6000))
 		require.Error(t, it.Err())
+		require.Equal(t, chunkenc.ValNone, it.Seek(11000))
+		require.Equal(t, chunkenc.ValNone, it.Next())
+		require.Error(t, it.Err())
+	})
+
+	t.Run("seek into a chunk that fails to decode", func(t *testing.T) {
+		chks := buildTestChunks(t)
+		// The first chunk understates its max time, so Seek moves past it
+		// before its samples run out, and the chunk it moves to can't be read.
+		chks[0].MaxTimeMs = 1000
+		chks[1].Type = prompb.Chunk_Encoding(99)
+		it := newChunkedSeriesIterator(chks, 0, 14000)
+		require.Equal(t, chunkenc.ValNone, it.Seek(2000))
+		require.ErrorContains(t, it.Err(), "invalid chunk encoding")
 	})
 
 	t.Run("reused for another series", func(t *testing.T) {

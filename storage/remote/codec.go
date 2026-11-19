@@ -789,6 +789,11 @@ func (it *chunkedSeriesIterator) Seek(t int64) chunkenc.ValueType {
 	})
 	if it.idx > startIdx {
 		it.resetIterator()
+		if it.err != nil {
+			// it.cur still iterates the previous chunk.
+			it.valType = chunkenc.ValNone
+			return it.valType
+		}
 	} else {
 		ts := it.cur.AtT()
 		if ts >= t {
@@ -833,6 +838,8 @@ func (it *chunkedSeriesIterator) resetIterator() {
 func (it *chunkedSeriesIterator) reset(chunks []prompb.Chunk, mint, maxt int64) {
 	// The iterator is reused across series; an error belongs to the previous one.
 	it.err = nil
+	it.cur = nil
+	it.valType = chunkenc.ValNone
 	it.chunks = chunks
 	it.mint = mint
 	it.maxt = maxt
