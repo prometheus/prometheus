@@ -935,6 +935,12 @@ func (DefaultBlockPopulator) PopulateBlock(ctx context.Context, metrics *Compact
 			return fmt.Errorf("open index reader for block %+v: %w", b.Meta(), err)
 		}
 		closers = append(closers, indexr)
+		// Keep dense symbol offsets local to this compaction. The original reader
+		// stays open until the deferred Close above.
+		indexr, err = withDenseSymbolOffsets(indexr)
+		if err != nil {
+			return fmt.Errorf("build compaction symbol offsets: %w", err)
+		}
 
 		chunkr, err := b.Chunks()
 		if err != nil {
@@ -1041,4 +1047,18 @@ func (DefaultBlockPopulator) PopulateBlock(ctx context.Context, metrics *Compact
 	}
 
 	return nil
+}
+
+// withDenseSymbolOffsets builds a borrowed dense-offset view for supported readers.
+func withDenseSymbolOffsets(ir IndexReader) (IndexReader, error) {
+	switch r := ir.(type) {
+	case blockIndexReader:
+		var err error
+		r.ir, err = withDenseSymbolOffsets(r.ir)
+		return r, err
+	case *index.Reader:
+		return r.WithDenseSymbolOffsets()
+	default:
+		return ir, nil
+	}
 }
