@@ -140,3 +140,56 @@ load 10m
 
 eval range from 0 to 20m step 10m -metric_a or -metric_b
   {} -1 -4 _
+
+clear
+
+# A series that keeps its metric name and one that drops it can have the same
+# labels until the name is removed at the end of the query. Range queries must
+# keep them apart, no matter which one appears first.
+load 1m
+  metric{env="1"} 50 150 50 150 50
+
+eval instant at 0m metric > 100 or metric * 2
+  {env="1"} 100
+
+eval instant at 1m metric > 100 or metric * 2
+  metric{env="1"} 150
+
+eval range from 0 to 4m step 1m metric > 100 or metric * 2
+  metric{env="1"} _ 150 _ 150 _
+  {env="1"} 100 _ 100 _ 100
+
+eval range from 1m to 4m step 1m metric > 100 or metric * 2
+  metric{env="1"} 150 _ 150 _
+  {env="1"} _ 100 _ 100
+
+eval range from 0 to 4m step 1m metric * 2 or metric > 100
+  {env="1"} 100 300 100 300 100
+
+eval range from 0 to 4m step 1m topk(1, metric > 100 or metric * 2)
+  metric{env="1"} _ 150 _ 150 _
+  {env="1"} 100 _ 100 _ 100
+
+eval range from 1m to 4m step 1m bottomk(1, metric > 100 or metric * 2)
+  metric{env="1"} 150 _ 150 _
+  {env="1"} _ 100 _ 100
+
+eval range from 0 to 4m step 1m last_over_time((metric > 100 or metric * 2)[1m:1m])
+  metric{env="1"} _ 150 _ 150 _
+  {env="1"} 100 _ 100 _ 100
+
+eval range from 0 to 4m step 1m label_replace(metric > 100 or metric * 2, "src", "$1", "__name__", "(.*)")
+  metric{env="1", src="metric"} _ 150 _ 150 _
+  {env="1", src="metric"} 100 _ 100 _ 100
+
+eval range from 0 to 4m step 1m label_join(metric > 100 or metric * 2, "src", "", "__name__")
+  metric{env="1", src="metric"} _ 150 _ 150 _
+  {env="1", src="metric"} 100 _ 100 _ 100
+
+# Series that end up with the same labels once the name is dropped are still merged.
+eval range from 0 to 4m step 1m metric > 100 or -metric
+  metric{env="1"} _ 150 _ 150 _
+  {env="1"} -50 _ -50 _ -50
+
+eval range from 0 to 4m step 1m label_replace(metric, "__name__", "", "", "") > 100 or -label_replace(metric, "__name__", "", "", "")
+  {env="1"} -50 150 -50 150 -50

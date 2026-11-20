@@ -437,7 +437,7 @@ func (ev *evaluator) combineWithInfoSeries(ctx context.Context, mat, infoMat Mat
 		Series
 		ts int64
 	}
-	seriess := make(map[uint64]seriesAndTimestamp, biggestLen) // Output series by series hash.
+	seriess := make(map[outputSeriesKey]seriesAndTimestamp, biggestLen) // Output series by labels and DropName.
 	tempNumSamples := ev.currentSamples
 
 	// For every base series, compute signature per info metric.
@@ -487,8 +487,8 @@ func (ev *evaluator) combineWithInfoSeries(ctx context.Context, mat, infoMat Mat
 
 		// Add samples in result vector to output series.
 		for _, sample := range result {
-			h := sample.Metric.Hash()
-			ss, exists := seriess[h]
+			key := ev.seriesKey(sample.Metric, sample.DropName)
+			ss, exists := seriess[key]
 			if exists {
 				if ss.ts == ts { // If we've seen this output series before at this timestamp, it's a duplicate.
 					ev.errorf("vector cannot contain metrics with the same labelset")
@@ -498,7 +498,7 @@ func (ev *evaluator) combineWithInfoSeries(ctx context.Context, mat, infoMat Mat
 				ss = seriesAndTimestamp{Series{Metric: sample.Metric, DropName: sample.DropName}, ts}
 			}
 			addToSeries(&ss.Series, enh.Ts, sample.F, sample.H, numSteps)
-			seriess[h] = ss
+			seriess[key] = ss
 		}
 	}
 
