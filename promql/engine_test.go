@@ -832,6 +832,37 @@ func TestEngineShutdown(t *testing.T) {
 	require.ErrorAs(t, res2.Err, &e, "expected cancellation error but got: %s", res2.Err)
 }
 
+func TestRangeTimestampSelectorCancellationWithoutBudget(t *testing.T) {
+	stor := promqltest.LoadedStorage(t, `
+load 10s
+  metric 1+1x300
+`)
+	engine := promqltest.NewTestEngineWithOpts(t, promql.EngineOpts{
+		MaxSamples:         promqltest.DefaultMaxSamplesPerQuery,
+		Timeout:            10 * time.Second,
+		UseStartTimestamps: false,
+		Parser:             parser.NewParser(promqltest.TestParserOpts),
+	})
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	counted := &sampleReadQueryable{Queryable: stor}
+	counted.onRead = func() {
+		if counted.reads == 1 {
+			cancel()
+		}
+	}
+
+	q, err := engine.NewRangeQuery(ctx, counted, nil, "start_timestamp(metric)", time.Unix(0, 0), time.Unix(3000, 0), time.Second)
+	require.NoError(t, err)
+	t.Cleanup(q.Close)
+
+	res := q.Exec(ctx)
+	var canceled promql.ErrQueryCanceled
+	require.ErrorAs(t, res.Err, &canceled)
+}
+
 func TestEngineEvalStmtTimestamps(t *testing.T) {
 	storage := promqltest.LoadedStorage(t, `
 load 10s
@@ -1019,7 +1050,7 @@ load 10s
 			// timestamp function has a special handling.
 			Query:        "timestamp(metricWith1SampleEvery10Seconds)",
 			Start:        time.Unix(21, 0),
-			PeakSamples:  2,
+			PeakSamples:  1,
 			TotalSamples: 1, // 1 sample / 10 seconds
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				21000: 1,
@@ -1032,8 +1063,21 @@ load 10s
 		{
 			Query:        "timestamp(metricWith1HistogramEvery10Seconds)",
 			Start:        time.Unix(21, 0),
-			PeakSamples:  2,
+			PeakSamples:  1,
 			TotalSamples: 1, // 1 float sample (because of timestamp) / 10 seconds
+			TotalSamplesPerStep: stats.TotalSamplesPerStep{
+				21000: 1,
+			},
+			SamplesRead: 1,
+			SamplesReadPerStep: stats.TotalSamplesPerStep{
+				21000: 1,
+			},
+		},
+		{
+			Query:        "start_timestamp(metricWith1SampleEvery10Seconds)",
+			Start:        time.Unix(21, 0),
+			PeakSamples:  1,
+			TotalSamples: 1,
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				21000: 1,
 			},
@@ -1437,7 +1481,7 @@ load 10s
 			Start:        time.Unix(201, 0),
 			End:          time.Unix(220, 0),
 			Interval:     5 * time.Second,
-			PeakSamples:  5,
+			PeakSamples:  4,
 			TotalSamples: 4, // 1 sample per query * 4 steps
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				201000: 1,
@@ -1459,7 +1503,7 @@ load 10s
 			Start:        time.Unix(201, 0),
 			End:          time.Unix(220, 0),
 			Interval:     5 * time.Second,
-			PeakSamples:  5,
+			PeakSamples:  4,
 			TotalSamples: 4, // 1 sample per query * 4 steps
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				201000: 1,
@@ -1473,6 +1517,92 @@ load 10s
 				206000: 1,
 				211000: 1,
 				216000: 1,
+			},
+		},
+		{
+			Query:        "start_timestamp(metricWith1SampleEvery10Seconds)",
+			Start:        time.Unix(201, 0),
+			End:          time.Unix(220, 0),
+			Interval:     5 * time.Second,
+			PeakSamples:  4,
+			TotalSamples: 4,
+			TotalSamplesPerStep: stats.TotalSamplesPerStep{
+				201000: 1,
+				206000: 1,
+				211000: 1,
+				216000: 1,
+			},
+			SamplesRead: 4,
+			SamplesReadPerStep: stats.TotalSamplesPerStep{
+				201000: 1,
+				206000: 1,
+				211000: 1,
+				216000: 1,
+			},
+		},
+		{
+			Query:        "start_timestamp(metricWith1HistogramEvery10Seconds)",
+			Start:        time.Unix(201, 0),
+			End:          time.Unix(220, 0),
+			Interval:     5 * time.Second,
+			PeakSamples:  4,
+			TotalSamples: 4,
+			TotalSamplesPerStep: stats.TotalSamplesPerStep{
+				201000: 1,
+				206000: 1,
+				211000: 1,
+				216000: 1,
+			},
+			SamplesRead: 4,
+			SamplesReadPerStep: stats.TotalSamplesPerStep{
+				201000: 1,
+				206000: 1,
+				211000: 1,
+				216000: 1,
+			},
+		},
+		{
+			// inPlaceFloatUnaryFuncs evaluates in place on the child Matrix without a second Matrix allocation.
+			Query:        "abs(metricWith1SampleEvery10Seconds)",
+			Start:        time.Unix(201, 0),
+			End:          time.Unix(220, 0),
+			Interval:     5 * time.Second,
+			PeakSamples:  4,
+			TotalSamples: 4,
+			TotalSamplesPerStep: stats.TotalSamplesPerStep{
+				201000: 1,
+				206000: 1,
+				211000: 1,
+				216000: 1,
+			},
+			SamplesRead: 4,
+			SamplesReadPerStep: stats.TotalSamplesPerStep{
+				201000: 1,
+				206000: 1,
+				211000: 1,
+				216000: 1,
+			},
+		},
+		{
+			// Dropping histogram samples in inPlaceFloatUnaryFuncs reclaims currentSamples before evaluating RHS.
+			Query:        "abs(metricWith1HistogramEvery10Seconds) or metricWith1SampleEvery10Seconds",
+			Start:        time.Unix(201, 0),
+			End:          time.Unix(220, 0),
+			Interval:     5 * time.Second,
+			PeakSamples:  52,
+			TotalSamples: 56,
+			TotalSamplesPerStep: stats.TotalSamplesPerStep{
+				201000: 14,
+				206000: 14,
+				211000: 14,
+				216000: 14,
+			},
+			SamplesRead: 56,
+			SamplesReadPerStep: stats.TotalSamplesPerStep{
+				201000: 14,
+				206000: 14,
+				211000: 14,
+				216000: 14,
 			},
 		},
 		{
@@ -2354,6 +2484,23 @@ load 10s
 			Query:      "max_over_time(metricWith1HistogramEvery10Seconds[61s])[20s:5s]",
 			MaxSamples: 91,
 			Start:      time.Unix(201, 0),
+		},
+		{
+			// abs() reconciles currentSamples after absent_over_time synthesizes points.
+			Query:      "abs(absent_over_time(nonexistent[10s]))",
+			MaxSamples: 5,
+			Start:      time.Unix(0, 0),
+			End:        time.Unix(4, 0),
+			Interval:   time.Second,
+		},
+		{
+			// Dropping smoothed histograms in abs() must not underflow currentSamples
+			// and bypass MaxSamples for subsequent sibling expressions.
+			Query:      "abs(metricWith1HistogramEvery10Seconds smoothed) or bigmetric",
+			MaxSamples: 2002,
+			Start:      time.Unix(0, 0),
+			End:        time.Unix(998, 0),
+			Interval:   2 * time.Second,
 		},
 	}
 
@@ -6797,6 +6944,9 @@ load 10s
 		totals []int64
 	}{
 		{query: "metric", reads: 8, totals: []int64{2, 2, 2, 2}},
+		{query: "abs(metric)", reads: 8, totals: []int64{2, 2, 2, 2}},
+		{query: "timestamp(metric)", reads: 8, totals: []int64{2, 2, 2, 2}},
+		{query: "start_timestamp(metric)", reads: 8, totals: []int64{2, 2, 2, 2}},
 		{query: "rate(metric[20s])", reads: 16, totals: []int64{4, 4, 4, 4}},
 		{query: "metric + metric @ 100", reads: 10, totals: []int64{4, 4, 4, 4}},
 		// All child reads count against the budget, but totals include only consumed windows.
