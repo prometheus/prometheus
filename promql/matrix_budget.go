@@ -26,6 +26,8 @@ import (
 type matrixIterator struct {
 	*storage.BufferedSeriesIterator
 	guard *queryIterator
+	// Weighted histogram sample count in the current matrix window.
+	windowHistogramSamples int
 }
 
 func (ev *evaluator) newMatrixIterator(ctx context.Context, delta int64) *matrixIterator {
@@ -37,6 +39,7 @@ func (ev *evaluator) newMatrixIterator(ctx context.Context, delta int64) *matrix
 }
 
 func (it *matrixIterator) Reset(inner chunkenc.Iterator) {
+	it.windowHistogramSamples = 0
 	if it.guard != nil {
 		it.guard.beginFrame(-1)
 		it.guard.Iterator = inner
