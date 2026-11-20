@@ -198,6 +198,8 @@ func createMultiRuleTestFiles(path string) error {
     expr: grp1_rule1_expr
     labels:
         testlabel11: testlabelvalue12
+  - alert: grp1_alert1
+    expr: grp1_alert1_expr
 - name: group2
   rules:
   - record: grp2_rule1
