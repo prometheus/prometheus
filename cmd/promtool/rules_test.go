@@ -267,3 +267,62 @@ func TestBackfillLabels(t *testing.T) {
 		require.NoError(t, db.Close())
 	})
 }
+
+// TestBackfillIgnoresAlertingRules confirms that alerting rules in a rule file are ignored, as
+// documented in docs/storage.md, instead of being backfilled as series named after the alert.
+func TestBackfillIgnoresAlertingRules(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	ctx := context.Background()
+
+	start := time.Date(2009, time.November, 10, 6, 34, 0, 0, time.UTC)
+	mockAPISamples := []*model.SampleStream{
+		{
+			Metric: model.Metric{"name1": "val1"},
+			Values: []model.SamplePair{{Timestamp: model.Time(start.Add(-9 * time.Hour).Unix()), Value: 123}},
+		},
+	}
+	ruleImporter, err := newTestRuleImporter(ctx, start, tmpDir, mockAPISamples, defaultBlockDuration)
+	require.NoError(t, err)
+
+	path := filepath.Join(tmpDir, "test.file")
+	ruleFile := `groups:
+- name: group0
+  rules:
+  - record: recordname
+    expr: recordExpr
+  - alert: alertname
+    expr: alertExpr
+    labels:
+        severity: page
+`
+	require.NoError(t, os.WriteFile(path, []byte(ruleFile), 0o777))
+	errs := ruleImporter.loadGroups(ctx, []string{path})
+	for _, err := range errs {
+		require.NoError(t, err)
+	}
+
+	errs = ruleImporter.importAll(ctx)
+	for _, err := range errs {
+		require.NoError(t, err)
+	}
+
+	db, err := tsdb.Open(tmpDir, nil, nil, tsdb.DefaultOptions(), nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, db.Close()) })
+
+	q, err := db.Querier(math.MinInt64, math.MaxInt64)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, q.Close()) })
+
+	var names []string
+	selectedSeries := q.Select(ctx, true, nil, labels.MustNewMatcher(labels.MatchRegexp, "", ".*"))
+	for selectedSeries.Next() {
+		names = append(names, selectedSeries.At().Labels().Get(labels.MetricName))
+	}
+	require.NoError(t, selectedSeries.Err())
+	require.NotEmpty(t, names)
+	for _, name := range names {
+		require.Equal(t, "recordname", name, "only the recording rule should have been backfilled")
+	}
+}
