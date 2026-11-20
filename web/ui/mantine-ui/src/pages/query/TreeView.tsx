@@ -7,6 +7,7 @@ import { Card, CloseButton } from "@mantine/core";
 
 const TreeView: FC<{
   panelIdx: number;
+  endTime: number | null;
   selectedNode: {
     id: string;
     node: ASTNode;
@@ -18,7 +19,7 @@ const TreeView: FC<{
     } | null
   ) => void;
   closeTreeView: () => void;
-}> = ({ panelIdx, selectedNode, setSelectedNode, closeTreeView }) => {
+}> = ({ panelIdx, endTime, selectedNode, setSelectedNode, closeTreeView }) => {
   const { expr } = useAppSelector((state) => state.queryPage.panels[panelIdx]);
 
   const { data } = useSuspenseAPIQuery<ASTNode>({
@@ -43,6 +44,7 @@ const TreeView: FC<{
       <TreeNode
         childIdx={0}
         node={data.data}
+        endTime={endTime}
         selectedNode={selectedNode}
         setSelectedNode={setSelectedNode}
         reverse={false}

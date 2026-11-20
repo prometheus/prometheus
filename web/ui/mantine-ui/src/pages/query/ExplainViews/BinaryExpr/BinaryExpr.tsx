@@ -11,19 +11,25 @@ import { Card, Text } from "@mantine/core";
 
 interface BinaryExprExplainViewProps {
   node: BinaryExpr;
+  endTime: number | null;
 }
 
-const BinaryExprExplainView: FC<BinaryExprExplainViewProps> = ({ node }) => {
+const BinaryExprExplainView: FC<BinaryExprExplainViewProps> = ({
+  node,
+  endTime,
+}) => {
   const { data: lhs } = useSuspenseAPIQuery<InstantQueryResult>({
     path: `/query`,
     params: {
       query: serializeNode(node.lhs),
+      ...(endTime === null ? {} : { time: String(endTime / 1000) }),
     },
   });
   const { data: rhs } = useSuspenseAPIQuery<InstantQueryResult>({
     path: `/query`,
     params: {
       query: serializeNode(node.rhs),
+      ...(endTime === null ? {} : { time: String(endTime / 1000) }),
     },
   });
 
