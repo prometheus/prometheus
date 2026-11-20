@@ -74,10 +74,12 @@ func (m *MetricStreamingDecoder) NextMetricFamily() error {
 	if varIntLength == 0 || varIntLength > binary.MaxVarintLen32 {
 		return errInvalidVarint
 	}
-	totalLength := varIntLength + int(messageLength)
-	if totalLength > len(b) {
-		return fmt.Errorf("clientpb: insufficient length of buffer, expected at least %d bytes, got %d bytes", totalLength, len(b))
+	// Compare before converting: on 32-bit platforms int(messageLength) can
+	// wrap to a negative or too small value for lengths of 1<<31 and above.
+	if messageLength > uint64(len(b)-varIntLength) {
+		return fmt.Errorf("clientpb: insufficient length of buffer, expected at least %d bytes, got %d bytes", uint64(varIntLength)+messageLength, len(b))
 	}
+	totalLength := varIntLength + int(messageLength)
 	m.resetMetricFamily()
 	m.mfData = b[varIntLength:totalLength]
 
