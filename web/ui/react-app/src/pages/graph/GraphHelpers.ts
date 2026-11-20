@@ -131,7 +131,7 @@ export const getOptions = (stacked: boolean, useLocalTime: boolean): jquery.flot
               <span class="detail-swatch" style="background-color: ${color}"></span>
               <span>${labels.__name__ ? escapeHTML(labels.__name__) : 'value'}: <strong>${yval}</strong></span>
             </div>
-            <div class="mt-2 mb-1 font-weight-bold">${'seriesLabels' in both ? 'Trace exemplar:' : 'Series:'}</div>
+            <div class="mt-2 mb-1 font-weight-bold">${'startTimestamp' in both ? 'Start timestamp:' : 'seriesLabels' in both ? 'Trace exemplar:' : 'Series:'}</div>
             ${formatLabels(labels)}
             ${
               'seriesLabels' in both
@@ -161,7 +161,7 @@ export const getOptions = (stacked: boolean, useLocalTime: boolean): jquery.flot
   };
 };
 
-export const normalizeData = ({ queryParams, data, exemplars, displayMode }: GraphProps): GraphData => {
+export const normalizeData = ({ queryParams, data, exemplars, displayMode, startTimestamps }: GraphProps): GraphData => {
   // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
   const { startTime, endTime, resolution } = queryParams!;
 
@@ -220,8 +220,19 @@ export const normalizeData = ({ queryParams, data, exemplars, displayMode }: Gra
     };
   });
 
+  const startTimestampSeries = (startTimestamps?.result || []).map(({ values, metric }, index) => ({
+    labels: metric || {},
+    color: colorPool[index % colorPool.length],
+    data: (values || []).filter(([, value]) => Number(value) > 0).map(([timestamp, value]) => [Number(value) * 1000, 0]),
+    index,
+    startTimestamp: true,
+    lines: { show: false },
+    points: { show: true, radius: 4, symbol: startTimestampSymbol },
+  }));
+
   return {
     series: displayMode === GraphDisplayMode.Heatmap ? prepareHeatmapData(series) : series,
+    startTimestamps: startTimestampSeries,
     exemplars: Object.values(buckets).flatMap((bucket) => {
       if (bucket.length === 1) {
         return bucket[0];
@@ -274,6 +285,19 @@ const exemplarSymbol = (ctx: CanvasRenderingContext2D, x: number, y: number) => 
   ctx.strokeStyle = '#0275d8';
   ctx.lineWidth = 1;
   ctx.strokeRect(x, y, 7, 7);
+};
+
+const startTimestampSymbol = (ctx: CanvasRenderingContext2D, x: number, y: number) => {
+  ctx.beginPath();
+  ctx.moveTo(x, y - 4);
+  ctx.lineTo(x + 4, y);
+  ctx.lineTo(x, y + 4);
+  ctx.lineTo(x - 4, y);
+  ctx.closePath();
+  ctx.fillStyle = '#fff';
+  ctx.fill();
+  ctx.strokeStyle = '#333';
+  ctx.stroke();
 };
 
 const stdDeviation = (sum: number, values: number[]): number => {
