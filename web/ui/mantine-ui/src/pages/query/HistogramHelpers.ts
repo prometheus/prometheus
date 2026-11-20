@@ -1,142 +1,139 @@
-// Calculates a default width of exponential histogram bucket ranges, using the
-// preceding bucket if the last bucket is [0, 0], or a unit width for a sole zero bucket.
-export function calculateDefaultExpBucketWidth(
-  last: [number, string, string, string],
-  buckets: [number, string, string, string][],
-): number {
-  if (buckets.length === 1 && findZeroBucket(buckets) === 0) {
-    return 1;
+import { Histogram } from "../../types/types";
+
+type Bucket = NonNullable<Histogram["buckets"]>[number];
+
+const parseBoundary = (value: string): number => {
+  if (value === "-Inf") {
+    return -Infinity;
   }
-  if (parseFloat(last[2]) === 0 || parseFloat(last[1]) === 0) {
-    return Math.abs(
-      Math.log(Math.abs(parseFloat(buckets[buckets.length - 2][2]))) -
-        Math.log(Math.abs(parseFloat(buckets[buckets.length - 2][1]))),
+  if (value === "+Inf" || value === "Inf") {
+    return Infinity;
+  }
+  return Number(value);
+};
+
+// Projects bucket boundaries onto one continuous axis. Exponential scales are
+// linear around zero, and infinite end buckets use the adjacent finite width.
+// The input boundaries remain unchanged for labels and tooltips.
+export const getHistogramLayout = (buckets: Bucket[], scale: string) => {
+  if (scale !== "linear" && scale !== "exponential") {
+    throw new Error("Invalid scale");
+  }
+  const values = buckets.map(([, left, right, count]) => ({
+    left: parseBoundary(left),
+    right: parseBoundary(right),
+    count: Number(count),
+  }));
+  if (
+    values.length === 0 ||
+    values.some(
+      (b, i) =>
+        Number.isNaN(b.left) ||
+        Number.isNaN(b.right) ||
+        b.left === Infinity ||
+        b.right === -Infinity ||
+        b.left > b.right ||
+        !Number.isFinite(b.count) ||
+        b.count < 0 ||
+        (i > 0 && b.left < values[i - 1].right) ||
+        (i > 0 && b.left === -Infinity) ||
+        (i < values.length - 1 && b.right === Infinity),
+    )
+  ) {
+    return null;
+  }
+
+  const finiteBounds = values
+    .flatMap((b) => [b.left, b.right])
+    .filter(Number.isFinite);
+  const nonZeroBounds = finiteBounds.filter((v) => v !== 0).map(Math.abs);
+  const closest = nonZeroBounds.length ? Math.min(...nonZeroBounds) : 1;
+  const zeroBounds = values
+    .filter((b) => b.left <= 0 && b.right >= 0)
+    .flatMap((b) => [b.left, b.right])
+    .filter(Number.isFinite)
+    .map(Math.abs);
+  const threshold = Math.max(...zeroBounds, 0) || closest;
+  const logWidths = values
+    .filter(
+      (b) =>
+        Number.isFinite(b.left) &&
+        Number.isFinite(b.right) &&
+        ((b.left > 0 && b.right > 0) || (b.left < 0 && b.right < 0)),
+    )
+    .map((b) =>
+      Math.abs(Math.log(Math.abs(b.right)) - Math.log(Math.abs(b.left))),
+    )
+    .filter((width) => width > 0);
+  const zeroHalfWidth =
+    logWidths.length === 0
+      ? 0.5
+      : logWidths.reduce((sum, width) => sum + width, 0) / logWidths.length / 2;
+  const linearScale = Math.max(...finiteBounds.map(Math.abs), 1);
+  const project = (v: number): number => {
+    if (scale === "linear") {
+      return v / linearScale;
+    }
+    const absolute = Math.abs(v);
+    if (absolute <= threshold) {
+      return (v / threshold) * zeroHalfWidth;
+    }
+    return (
+      Math.sign(v) * (zeroHalfWidth + Math.log(absolute) - Math.log(threshold))
     );
-  } else {
-    return Math.abs(
-      Math.log(Math.abs(parseFloat(last[2]))) -
-        Math.log(Math.abs(parseFloat(last[1]))),
-    );
+  };
+  const ranges = values.map((b) => ({
+    left: project(b.left),
+    right: project(b.right),
+  }));
+  const finiteWidths = ranges
+    .filter(
+      (b) =>
+        Number.isFinite(b.left) && Number.isFinite(b.right) && b.right > b.left,
+    )
+    .map((b) => b.right - b.left);
+  const points = ranges
+    .flatMap((b) => [b.left, b.right])
+    .filter(Number.isFinite);
+  if (ranges[0].left === -Infinity) {
+    ranges[0].left = (points[0] ?? 0) - (finiteWidths[0] ?? 1);
   }
-}
-
-// Finds the lowest positive value from the bucket ranges
-// Returns 0 if no positive values are found or if there are no buckets.
-export function findMinPositive(buckets: [number, string, string, string][]) {
-  if (!buckets || buckets.length === 0) {
-    return 0; // no buckets
+  if (ranges[ranges.length - 1].right === Infinity) {
+    ranges[ranges.length - 1].right =
+      (points[points.length - 1] ?? 0) +
+      (finiteWidths[finiteWidths.length - 1] ?? 1);
   }
-  for (let i = 0; i < buckets.length; i++) {
-    const right = parseFloat(buckets[i][2]);
-    const left = parseFloat(buckets[i][1]);
-
-    if (left > 0) {
-      return left;
-    }
-    if (left < 0 && right > 0) {
-      return right;
-    }
-    if (i === buckets.length - 1) {
-      if (right > 0) {
-        return right;
-      }
-    }
+  // A sole zero-width bucket still represents observations at zero.
+  if (values.length === 1 && values[0].left === 0 && values[0].right === 0) {
+    ranges[0] = { left: -0.5, right: 0.5 };
   }
-  return 0; // all buckets are negative
-}
-
-// Finds the lowest negative value from the bucket ranges
-// Returns 0 if no negative values are found or if there are no buckets.
-export function findMaxNegative(buckets: [number, string, string, string][]) {
-  if (!buckets || buckets.length === 0) {
-    return 0; // no buckets
+  const min = ranges[0].left;
+  const max = ranges[ranges.length - 1].right;
+  const width = max - min;
+  if (!Number.isFinite(width) || width <= 0) {
+    return null;
   }
-  for (let i = 0; i < buckets.length; i++) {
-    const right = parseFloat(buckets[i][2]);
-    const left = parseFloat(buckets[i][1]);
-    const prevRight = i > 0 ? parseFloat(buckets[i - 1][2]) : 0;
-
-    if (right >= 0) {
-      if (i === 0) {
-        if (left < 0) {
-          return left; // return the first negative bucket
-        }
-        return 0; // all buckets are positive
-      }
-      return prevRight; // return the last negative bucket
-    }
-  }
-  console.log("findmaxneg returning: ", buckets[buckets.length - 1][2]);
-  return parseFloat(buckets[buckets.length - 1][2]); // all buckets are negative
-}
-
-// Calculates the left position of the zero axis as a percentage string.
-export function findZeroAxisLeft(
-  scale: string,
-  rangeMin: number,
-  rangeMax: number,
-  minPositive: number,
-  maxNegative: number,
-  zeroBucketIdx: number,
-  widthNegative: number,
-  widthTotal: number,
-  expBucketWidth: number,
-): string {
-  if (rangeMin === 0 && rangeMax === 0) {
-    return "50%";
-  }
-  if (scale === "linear") {
-    // Clamp the zero axis to the chart bounds, otherwise it is rendered
-    // outside of the chart for all-positive or all-negative histograms.
-    if (rangeMin > 0) {
-      return "0%";
-    }
-    if (rangeMax < 0) {
-      return "100%";
-    }
-    return ((0 - rangeMin) / (rangeMax - rangeMin)) * 100 + "%";
-  } else {
-    if (maxNegative === 0) {
-      return "0%";
-    }
-    if (minPositive === 0) {
-      return "100%";
-    }
-    if (zeroBucketIdx === -1) {
-      // if there is no zero bucket, we must zero axis between buckets around zero
-      return (widthNegative / widthTotal) * 100 + "%";
-    }
-    if ((widthNegative + 0.5 * expBucketWidth) / widthTotal > 0) {
-      return ((widthNegative + 0.5 * expBucketWidth) / widthTotal) * 100 + "%";
-    } else {
-      return "0%";
-    }
-  }
-}
-
-// Determines if the zero axis should be shown such that the zero label does not overlap with the range labels.
-// The zero axis is shown if it is between 5% and 95% of the graph.
-export function showZeroAxis(zeroAxisLeft: string) {
-  const axisNumber = parseFloat(zeroAxisLeft.slice(0, -1));
-  if (5 < axisNumber && axisNumber < 95) {
-    return true;
-  }
-  return false;
-}
-
-// Finds the index of the bucket whose range includes zero
-export function findZeroBucket(
-  buckets: [number, string, string, string][],
-): number {
-  for (let i = 0; i < buckets.length; i++) {
-    const left = parseFloat(buckets[i][1]);
-    const right = parseFloat(buckets[i][2]);
-    if (left <= 0 && right >= 0) {
-      return i;
-    }
-  }
-  return -1;
-}
+  const countMax = Math.max(...values.map((b) => b.count));
+  const widths = ranges.map((b) => b.right - b.left);
+  const positiveWidths = widths.filter((w) => w > 0);
+  const minWidth = positiveWidths.length ? Math.min(...positiveWidths) : 1;
+  // Normalize before dividing to avoid overflow for narrow or populous buckets.
+  const heights = values.map((b, i) =>
+    countMax === 0 || widths[i] === 0
+      ? 0
+      : (b.count / countMax) * (scale === "linear" ? minWidth / widths[i] : 1),
+  );
+  const heightMax = scale === "linear" ? Math.max(...heights) : 1;
+  return {
+    countMax,
+    zeroAxisLeft: Math.max(0, Math.min(100, ((0 - min) / width) * 100)),
+    bars: ranges.map((b, i) => ({
+      left: ((b.left - min) / width) * 100,
+      width: (widths[i] / width) * 100,
+      height: heightMax === 0 ? 0 : (heights[i] / heightMax) * 100,
+    })),
+  };
+};
 
 const leftDelim = (br: number): string => (br === 3 || br === 1 ? "[" : "(");
 const rightDelim = (br: number): string => (br === 3 || br === 0 ? "]" : ")");
