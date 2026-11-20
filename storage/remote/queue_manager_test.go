@@ -405,8 +405,8 @@ func TestWALMetadataDelivery(t *testing.T) {
 	qm.StoreSeries(recs.Series, 0)
 	qm.StoreMetadata(recs.Metadata)
 
-	require.Len(t, qm.seriesLabels, n)
-	require.Len(t, qm.seriesMetadata, n)
+	require.Equal(t, n, qm.series.activeLen())
+	require.Equal(t, n, qm.series.metadataLen())
 
 	c.expectSamples(recs.Samples, recs.Series)
 	c.expectMetadataForBatch(recs.Metadata, recs.Series, recs.Samples, nil, nil, nil)
@@ -532,18 +532,18 @@ func TestSeriesReset(t *testing.T) {
 				m.StoreSeries(series, i)
 				m.StoreMetadata(metadata)
 			}
-			require.Len(t, m.seriesLabels, numSegments*numSeries)
+			require.Equal(t, numSegments*numSeries, m.series.activeLen())
 			// V2 stores metadata in seriesMetadata map for inline sending.
 			// V1 sends metadata separately via MetadataWatcher, so seriesMetadata is not populated.
 			if protoMsg == remoteapi.WriteV2MessageType {
-				require.Len(t, m.seriesMetadata, numSegments*numSeries)
+				require.Equal(t, numSegments*numSeries, m.series.metadataLen())
 			}
 
 			m.SeriesReset(2)
-			require.Len(t, m.seriesLabels, numSegments*numSeries/2)
+			require.Equal(t, numSegments*numSeries/2, m.series.activeLen())
 			// Verify metadata is also reset for V2
 			if protoMsg == remoteapi.WriteV2MessageType {
-				require.Len(t, m.seriesMetadata, numSegments*numSeries/2)
+				require.Equal(t, numSegments*numSeries/2, m.series.metadataLen())
 			}
 		})
 	}
@@ -3923,7 +3923,7 @@ func TestAppendToConvertNHCBToClassic(t *testing.T) {
 	t.Run("shared bucket layouts", func(t *testing.T) {
 		m, stop := newTestNHCBQueueManager(t, NewTestWriteClient(remoteapi.WriteV1MessageType), nhcbQueueTestOptions{protoMsg: remoteapi.WriteV1MessageType})
 		defer stop()
-		other := record.RefSeries{Ref: 2, Labels: labels.FromStrings("__name__", "latency", "job", "web")}
+		other := record.RefSeries{Ref: seriesPageSize*numSeriesStripes + 2, Labels: labels.FromStrings("__name__", "latency", "job", "web")}
 		m.StoreSeries([]record.RefSeries{baseSeries, other}, 0)
 		appendTo := func(ref chunks.HeadSeriesRef, h *histogram.Histogram, ts int64) {
 			t.Helper()
@@ -3932,6 +3932,7 @@ func TestAppendToConvertNHCBToClassic(t *testing.T) {
 		appendTo(baseSeries.Ref, newHistogram(), 1000)
 		appendTo(other.Ref, newHistogram(), 1000)
 		require.Len(t, m.nhcbLayouts, 1)
+		require.Equal(t, int64(2), m.activeNHCBSeries.Load())
 		shared := m.nhcbSeriesBounds[baseSeries.Ref]
 		require.Same(t, shared, m.nhcbSeriesBounds[other.Ref])
 		require.Equal(t, 2, shared.refs)
@@ -3946,10 +3947,12 @@ func TestAppendToConvertNHCBToClassic(t *testing.T) {
 		appendTo(other.Ref, &histogram.Histogram{Sum: math.Float64frombits(value.StaleNaN)}, 3000)
 		require.Len(t, m.nhcbLayouts, 1, "a stale marker must release its layout")
 		require.NotContains(t, m.nhcbSeriesBounds, other.Ref)
+		require.Equal(t, int64(1), m.activeNHCBSeries.Load())
 
 		m.SeriesReset(1)
 		require.Empty(t, m.nhcbSeriesBounds)
 		require.Empty(t, m.nhcbLayouts, "garbage collection must release the last reference")
+		require.Zero(t, m.activeNHCBSeries.Load())
 	})
 
 	t.Run("exemplars", func(t *testing.T) {
