@@ -120,13 +120,13 @@ func TestBasicContentNegotiation(t *testing.T) {
 		{
 			name:           "v1 happy path with one 5xx retry",
 			senderProtoMsg: remoteapi.WriteV1MessageType, receiverProtoMsg: remoteapi.WriteV1MessageType,
-			injectErrs: []error{RecoverableError{errors.New("pretend 500"), 1}, nil},
+			injectErrs: []error{RecoverableError{error: errors.New("pretend 500"), reason: reasonServerError, retryAfter: 1}, nil},
 		},
 		// Repeat the above test but with v2. The request has a temporary delay but goes through on retry.
 		{
 			name:           "v2 happy path with one 5xx retry",
 			senderProtoMsg: remoteapi.WriteV2MessageType, receiverProtoMsg: remoteapi.WriteV2MessageType,
-			injectErrs: []error{RecoverableError{errors.New("pretend 500"), 1}, nil},
+			injectErrs: []error{RecoverableError{error: errors.New("pretend 500"), reason: reasonServerError, retryAfter: 1}, nil},
 		},
 		// A few error cases of v2 talking to v1.
 		{
@@ -185,14 +185,14 @@ func TestBasicContentNegotiation(t *testing.T) {
 			if !tc.expectFail {
 				// No error expected, so wait for data.
 				c.waitForExpectedData(t, 5*time.Second)
-				require.Equal(t, 0.0, client_testutil.ToFloat64(qm.metrics.failedSamplesTotal))
+				require.Equal(t, 0.0, client_testutil.ToFloat64(qm.metrics.failedSamplesTotal.WithLabelValues(string(reasonClientError))))
 			} else {
 				// Wait for failure to be recorded in metrics.
 				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 				defer cancel()
 				require.NoError(t, runutil.Retry(500*time.Millisecond, ctx.Done(), func() error {
-					if client_testutil.ToFloat64(qm.metrics.failedSamplesTotal) != 1.0 {
-						return fmt.Errorf("expected one sample failed in qm metrics; got %v", client_testutil.ToFloat64(qm.metrics.failedSamplesTotal))
+					if client_testutil.ToFloat64(qm.metrics.failedSamplesTotal.WithLabelValues(string(reasonClientError))) != 1.0 {
+						return fmt.Errorf("expected one sample failed in qm metrics; got %v", client_testutil.ToFloat64(qm.metrics.failedSamplesTotal.WithLabelValues(string(reasonClientError))))
 					}
 					return nil
 				}))
@@ -201,7 +201,7 @@ func TestBasicContentNegotiation(t *testing.T) {
 			// samplesTotal means attempts.
 			attempts := len(tc.injectErrs)
 			require.Equal(t, float64(attempts), client_testutil.ToFloat64(qm.metrics.samplesTotal))
-			require.Equal(t, float64(attempts-1), client_testutil.ToFloat64(qm.metrics.retriedSamplesTotal))
+			require.Equal(t, float64(attempts-1), client_testutil.ToFloat64(qm.metrics.retriedSamplesTotal.WithLabelValues(string(reasonServerError))))
 			if tc.senderProtoMsg == remoteapi.WriteV2MessageType {
 				for _, metadata := range []string{metadataFieldType, metadataFieldUnit, metadataFieldHelp} {
 					require.Equal(t, float64(attempts), client_testutil.ToFloat64(qm.metrics.samplesMetadataTotal.WithLabelValues(metadata)), metadata)
@@ -869,6 +869,7 @@ func TestDisableReshardOnRetry(t *testing.T) {
 
 				return WriteResponseStats{}, RecoverableError{
 					error:      errors.New("fake error"),
+					reason:     reasonServerError,
 					retryAfter: model.Duration(retryAfter),
 				}
 			},
@@ -1994,7 +1995,7 @@ func TestCalculateDesiredShardsDetail(t *testing.T) {
 					require.Equal(t, int64(10), peakInFlight.Load())
 					require.Equal(t, int64(10), calls.Load())
 					require.Equal(t, 10000, deepLen(c.receivedSamples))
-					require.Zero(t, client_testutil.ToFloat64(m.metrics.failedSamplesTotal))
+					require.Zero(t, client_testutil.ToFloat64(m.metrics.failedSamplesTotal.WithLabelValues(string(reasonClientError))))
 					require.Zero(t, client_testutil.ToFloat64(m.metrics.pendingSamples))
 					require.Equal(t, m.highestRecvTimestamp.Get(), m.metrics.highestSentTimestamp.Get())
 					require.Positive(t, m.dataIn.rate())
@@ -2459,7 +2460,7 @@ func TestSendSamplesWithBackoffWithSampleAgeLimit(t *testing.T) {
 			timeShift := -time.Millisecond * 5
 
 			// Inject RW error.
-			c.SetReturnError(RecoverableError{context.DeadlineExceeded, defaultBackoff})
+			c.SetReturnError(RecoverableError{error: context.DeadlineExceeded, reason: reasonNetworkError, retryAfter: defaultBackoff})
 			// Send current samples in various intervals.
 			appendData(maxSamplesPerSend/2, timeShift, true)
 			time.Sleep(sampleAgeLimit)
@@ -3180,7 +3181,7 @@ func TestAppendHistogramSchemaValidation(t *testing.T) {
 			}
 
 			// Verify no failed histograms (this would indicate a different type of error)
-			require.Equal(t, 0.0, client_testutil.ToFloat64(m.metrics.failedHistogramsTotal))
+			require.Equal(t, 0.0, client_testutil.ToFloat64(m.metrics.failedHistogramsTotal.WithLabelValues(string(reasonClientError))))
 		})
 	}
 }
@@ -3527,7 +3528,7 @@ func TestAppendToConvertNHCBToClassic(t *testing.T) {
 
 			finalDroppedConversionError := client_testutil.ToFloat64(m.metrics.droppedHistogramsTotal.WithLabelValues(reasonNHCBConversionError))
 			require.Equal(t, initialDroppedConversionError, finalDroppedConversionError, "No conversion errors should occur")
-			require.Equal(t, 0.0, client_testutil.ToFloat64(m.metrics.failedHistogramsTotal))
+			require.Equal(t, 0.0, client_testutil.ToFloat64(m.metrics.failedHistogramsTotal.WithLabelValues(string(reasonClientError))))
 
 			if tc.expectedSamplesCount > 0 {
 				expectedST := int64(0)
