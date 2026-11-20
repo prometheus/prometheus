@@ -10,16 +10,19 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import App from "../../App";
 import QueryPage from "./QueryPage";
 import TreeNode from "./TreeNode";
 import { nodeType } from "../../promql/ast";
 import { InstantQueryResult } from "../../api/responseTypes/query";
+import { setPanels } from "../../state/queryPageSlice";
 
 const { dispatch } = vi.hoisted(() => ({ dispatch: vi.fn() }));
 vi.mock("../../state/settingsSlice", () => ({
-  useSettings: () => ({ pathPrefix: "/prometheus" }),
+  useSettings: () => ({ pathPrefix: "/prometheus", ready: true }),
 }));
 vi.mock("../../state/hooks", () => ({
   useAppSelector: () => [],
@@ -51,8 +54,40 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   client.clear();
+  window.history.replaceState(null, "", "/");
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+});
+
+it.each(["Back", "Query link", "same URL"])("handles %s", async (navigation) => {
+  window.history.replaceState(null, "", "/prometheus/query");
+  vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => {})));
+  render(<App />);
+  const header = within(screen.getByRole("banner"));
+  const link = header.getByRole("link", { name: "Query" });
+  dispatch.mockClear();
+
+  if (navigation === "same URL") {
+    const entries = window.history.length;
+    fireEvent.click(link);
+    expect(window.history.length).toBe(entries);
+    expect(dispatch).not.toHaveBeenCalled();
+    return;
+  }
+
+  window.history.pushState({}, "", "?g0.expr=up&g0.tab=graph");
+  if (navigation === "Query link") {
+    fireEvent.click(link);
+    expect(location.search).toBe("");
+    expect(dispatch).toHaveBeenLastCalledWith(
+      setPanels([expect.objectContaining({ expr: "" })]),
+    );
+    dispatch.mockClear();
+  }
+  window.history.back();
+  const expr = navigation === "Back" ? "" : "up";
+  const restored = setPanels([expect.objectContaining({ expr })]);
+  await waitFor(() => expect(dispatch).toHaveBeenCalledWith(restored));
 });
 
 describe("query diagnostics", () => {
