@@ -45,6 +45,8 @@ const (
 
 	// AlertStateLabel is the label name indicating the state of an alert.
 	alertStateLabel = "alertstate"
+
+	alertTemplateDefinitions = "{{$labels := .Labels}}{{$externalLabels := .ExternalLabels}}{{$externalURL := .ExternalURL}}{{$value := .Value}}"
 )
 
 var _ Rule = (*AlertingRule)(nil)
@@ -405,49 +407,50 @@ func (r *AlertingRule) Eval(ctx context.Context, queryOffset time.Duration, ts t
 	sb := labels.NewScratchBuilder(0)
 	var vec promql.Vector
 	alerts := make(map[uint64]*Alert, len(res))
+	var (
+		expander            *template.Expander
+		labelTemplates      map[string]template.BoundTemplate
+		annotationTemplates map[string]template.BoundTemplate
+	)
+	if len(res) > 1 {
+		labelTemplates = make(map[string]template.BoundTemplate, r.labels.Len())
+		annotationTemplates = make(map[string]template.BoundTemplate, r.annotations.Len())
+	}
+	expand := func(templates map[string]template.BoundTemplate, fieldName, text string, data any) string {
+		if expander == nil {
+			expander = template.NewTemplateExpander(ctx, "", "__alert_"+r.Name(), nil,
+				model.Time(timestamp.FromTime(ts)), template.QueryFunc(query), externalURL, nil)
+		}
+		bound, ok := templates[fieldName]
+		if !ok {
+			bound = expander.CompileText(alertTemplateDefinitions + text)
+			if templates != nil {
+				templates[fieldName] = bound
+			}
+		}
+		result, err := bound.Expand(data)
+		if err != nil {
+			result = fmt.Sprintf("<error expanding template: %s>", err)
+			r.logger.Warn("Expanding alert template failed", "err", err, "data", data)
+		}
+		return result
+	}
 	for _, smpl := range res {
 		// Provide the alert information to the template.
 		l := smpl.Metric.Map()
 
 		tmplData := template.AlertTemplateData(l, r.externalLabels, r.externalURL, smpl)
-		// Inject some convenience variables that are easier to remember for users
-		// who are not used to Go's templating system.
-		defs := []string{
-			"{{$labels := .Labels}}",
-			"{{$externalLabels := .ExternalLabels}}",
-			"{{$externalURL := .ExternalURL}}",
-			"{{$value := .Value}}",
-		}
-
-		expand := func(text string) string {
-			tmpl := template.NewTemplateExpander(
-				ctx,
-				strings.Join(append(defs, text), ""),
-				"__alert_"+r.Name(),
-				tmplData,
-				model.Time(timestamp.FromTime(ts)),
-				template.QueryFunc(query),
-				externalURL,
-				nil,
-			)
-			result, err := tmpl.Expand()
-			if err != nil {
-				result = fmt.Sprintf("<error expanding template: %s>", err)
-				r.logger.Warn("Expanding alert template failed", "err", err, "data", tmplData)
-			}
-			return result
-		}
 
 		lb.Reset(smpl.Metric)
 		lb.Del(labels.MetricName)
 		r.labels.Range(func(l labels.Label) {
-			lb.Set(l.Name, expand(l.Value))
+			lb.Set(l.Name, expand(labelTemplates, l.Name, l.Value, tmplData))
 		})
 		lb.Set(labels.AlertName, r.Name())
 
 		sb.Reset()
 		r.annotations.Range(func(a labels.Label) {
-			sb.Add(a.Name, expand(a.Value))
+			sb.Add(a.Name, expand(annotationTemplates, a.Name, a.Value, tmplData))
 		})
 		annotations := sb.Labels()
 
