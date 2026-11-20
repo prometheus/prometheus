@@ -2255,6 +2255,99 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 			},
 			response: []metricMetadata{},
 		},
+		// With target limit covering multiple targets when metric is omitted.
+		{
+			endpoint: api.targetMetadata,
+			query: url.Values{
+				"limit": []string{"2"},
+			},
+			metadata: []targetMetadata{
+				{
+					identifier: "test",
+					metadata: []scrape.MetricMetadata{
+						{
+							MetricFamily: "go_threads",
+							Type:         model.MetricTypeGauge,
+							Help:         "Number of OS threads created.",
+							Unit:         "",
+						},
+						{
+							MetricFamily: "go_goroutines",
+							Type:         model.MetricTypeGauge,
+							Help:         "Number of goroutines.",
+							Unit:         "",
+						},
+					},
+				},
+				{
+					identifier: "blackbox",
+					metadata: []scrape.MetricMetadata{
+						{
+							MetricFamily: "prometheus_tsdb_storage_blocks_bytes",
+							Type:         model.MetricTypeGauge,
+							Help:         "The number of bytes that are currently used for local storage by all blocks.",
+							Unit:         "",
+						},
+					},
+				},
+			},
+			response: []metricMetadata{
+				{
+					Target: labels.FromMap(map[string]string{
+						"job": "test",
+					}),
+					MetricFamily: "go_goroutines",
+					Help:         "Number of goroutines.",
+					Type:         model.MetricTypeGauge,
+					Unit:         "",
+				},
+				{
+					Target: labels.FromMap(map[string]string{
+						"job": "test",
+					}),
+					MetricFamily: "go_threads",
+					Help:         "Number of OS threads created.",
+					Type:         model.MetricTypeGauge,
+					Unit:         "",
+				},
+				{
+					Target: labels.FromMap(map[string]string{
+						"job": "blackbox",
+					}),
+					MetricFamily: "prometheus_tsdb_storage_blocks_bytes",
+					Help:         "The number of bytes that are currently used for local storage by all blocks.",
+					Type:         model.MetricTypeGauge,
+					Unit:         "",
+				},
+			},
+			sorter: func(m any) {
+				sort.Slice(m.([]metricMetadata), func(i, j int) bool {
+					mm := m.([]metricMetadata)
+					return mm[i].MetricFamily < mm[j].MetricFamily
+				})
+			},
+		},
+		// With a target limit of zero.
+		{
+			endpoint: api.targetMetadata,
+			query: url.Values{
+				"limit": []string{"0"},
+			},
+			metadata: []targetMetadata{
+				{
+					identifier: "test",
+					metadata: []scrape.MetricMetadata{
+						{
+							MetricFamily: "go_threads",
+							Type:         model.MetricTypeGauge,
+							Help:         "Number of OS threads created.",
+							Unit:         "",
+						},
+					},
+				},
+			},
+			response: []metricMetadata{},
+		},
 		{
 			endpoint: api.alertmanagers,
 			response: &AlertmanagerDiscovery{
