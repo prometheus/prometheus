@@ -558,6 +558,136 @@ func TestRuntimeRetentionConfigChange(t *testing.T) {
 	require.Positive(t, int(prom_testutil.ToFloat64(db.metrics.timeRetentionCount)), "time retention count should be incremented")
 }
 
+func TestRetentionOverrides(t *testing.T) {
+	t.Parallel()
+	var (
+		debugSeries = labels.FromStrings(labels.MetricName, "debug_requests", "job", "api")
+		keepSeries  = labels.FromStrings(labels.MetricName, "http_requests", "job", "api")
+		noisySeries = labels.FromStrings(labels.MetricName, "http_requests", "job", "noisy")
+	)
+	testCases := []struct {
+		name              string
+		retentionDuration int64
+		overrides         []config.TSDBRetentionOverride
+		// expMinTime is the oldest sample timestamp expected to remain per series.
+		expMinTime map[string]int64
+		// expRewritten is the number of blocks expected to be rewritten.
+		expRewritten int
+	}{
+		{
+			name: "matching series are dropped from blocks beyond the override",
+			overrides: []config.TSDBRetentionOverride{
+				{Matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, labels.MetricName, "debug_.*")}, Time: model.Duration(1000 * time.Millisecond)},
+			},
+			expMinTime: map[string]int64{
+				debugSeries.String(): 1000,
+				keepSeries.String():  0,
+				noisySeries.String(): 0,
+			},
+			expRewritten: 2,
+		},
+		{
+			name: "multiple overrides with different durations",
+			overrides: []config.TSDBRetentionOverride{
+				{Matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, labels.MetricName, "debug_.*")}, Time: model.Duration(1000 * time.Millisecond)},
+				{Matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "job", "noisy")}, Time: model.Duration(1500 * time.Millisecond)},
+			},
+			expMinTime: map[string]int64{
+				debugSeries.String(): 1000,
+				keepSeries.String():  0,
+				noisySeries.String(): 500,
+			},
+			expRewritten: 2,
+		},
+		{
+			name: "override matching no series does not rewrite blocks",
+			overrides: []config.TSDBRetentionOverride{
+				{Matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "missing")}, Time: model.Duration(1000 * time.Millisecond)},
+			},
+			expMinTime: map[string]int64{
+				debugSeries.String(): 0,
+				keepSeries.String():  0,
+				noisySeries.String(): 0,
+			},
+		},
+		{
+			name:              "blocks beyond time retention are not rewritten",
+			retentionDuration: 1000,
+			overrides: []config.TSDBRetentionOverride{
+				{Matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, labels.MetricName, "debug_.*")}, Time: model.Duration(500 * time.Millisecond)},
+			},
+			expMinTime: map[string]int64{
+				debugSeries.String(): 1500,
+				keepSeries.String():  1000,
+				noisySeries.String(): 1000,
+			},
+			expRewritten: 1,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			opts := DefaultOptions()
+			opts.RetentionDuration = tc.retentionDuration
+			// A single range disables compaction of blocks into larger ones.
+			db := newTestDB(t, withOpts(opts), withRngs(500))
+			db.DisableCompactions()
+
+			// Ages of blocks relative to the newest block are 1500, 1000, 500 and 0.
+			for mint := int64(0); mint < 2000; mint += 500 {
+				var series []storage.Series
+				for _, lset := range []labels.Labels{debugSeries, keepSeries, noisySeries} {
+					var samples []chunks.Sample
+					for ts := mint; ts < mint+500; ts += 100 {
+						samples = append(samples, sample{t: ts, f: float64(ts)})
+					}
+					series = append(series, storage.NewListSeries(lset, samples))
+				}
+				createBlock(t, db.Dir(), series)
+			}
+			require.NoError(t, db.reloadBlocks())
+
+			require.NoError(t, db.ApplyConfig(&config.Config{StorageConfig: config.StorageConfig{TSDBConfig: &config.TSDBConfig{
+				Retention: &config.TSDBRetentionConfig{
+					Time:      model.Duration(time.Duration(tc.retentionDuration) * time.Millisecond),
+					Overrides: tc.overrides,
+				},
+			}}}))
+
+			before := make(map[ulid.ULID]struct{})
+			for _, b := range db.Blocks() {
+				before[b.Meta().ULID] = struct{}{}
+			}
+			require.NoError(t, db.Compact(context.Background()))
+			rewritten := 0
+			after := make([]ulid.ULID, 0, len(db.Blocks()))
+			for _, b := range db.Blocks() {
+				if _, ok := before[b.Meta().ULID]; !ok {
+					rewritten++
+				}
+				after = append(after, b.Meta().ULID)
+			}
+			require.Equal(t, tc.expRewritten, rewritten)
+
+			// Compacting again must not rewrite blocks that were already processed.
+			require.NoError(t, db.Compact(context.Background()))
+			for i, b := range db.Blocks() {
+				require.Equal(t, after[i], b.Meta().ULID)
+			}
+
+			q, err := db.Querier(math.MinInt64, math.MaxInt64)
+			require.NoError(t, err)
+			defer q.Close()
+			res := query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "job", ".+"))
+			actMinTime := make(map[string]int64, len(res))
+			for lset, samples := range res {
+				actMinTime[lset] = samples[0].T()
+			}
+			require.Equal(t, tc.expMinTime, actMinTime)
+		})
+	}
+}
+
 // TestApplyConfigRetentionDurationMetricUnit verifies that after a config
 // reload the prometheus_tsdb_retention_limit_seconds metric reports the
 // retention in seconds.

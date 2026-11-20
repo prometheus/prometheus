@@ -1833,6 +1833,13 @@ var expectedConf = &Config{
 				Time:       model.Duration(24 * time.Hour),
 				Size:       1 * units.GiB,
 				Percentage: 28,
+				Overrides: []TSDBRetentionOverride{
+					{
+						Selector: `{__name__=~"debug_.*"}`,
+						Time:     model.Duration(2 * time.Hour),
+						Matchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, labels.MetricName, "debug_.*")},
+					},
+				},
 			},
 		},
 	},
@@ -2297,6 +2304,7 @@ func TestLoadConfig(t *testing.T) {
 		cmpopts.IgnoreUnexported(regexp.Regexp{}),
 		cmpopts.IgnoreUnexported(hetzner.SDConfig{}),
 		cmpopts.IgnoreUnexported(Config{}),
+		cmp.Comparer(func(a, b *labels.Matcher) bool { return a.String() == b.String() }),
 	})
 }
 
@@ -2887,6 +2895,18 @@ var expectedErrors = []struct {
 	{
 		filename: "tsdb_retention_percentage_negative.bad.yml",
 		errMsg:   "'storage.tsdb.retention.percentage' must be in the range [0, 100]",
+	},
+	{
+		filename: "tsdb_retention_override_no_selector.bad.yml",
+		errMsg:   "'storage.tsdb.retention.overrides' entries must have a selector",
+	},
+	{
+		filename: "tsdb_retention_override_selector.bad.yml",
+		errMsg:   `invalid selector "{job=\"api\"" in 'storage.tsdb.retention.overrides'`,
+	},
+	{
+		filename: "tsdb_retention_override_time.bad.yml",
+		errMsg:   `'storage.tsdb.retention.overrides' time for selector "{job=\"api\"}" must be greater than 0`,
 	},
 	{
 		filename: "tsdb_chunk_encoding_floats.bad.yml",
