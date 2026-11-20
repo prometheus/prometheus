@@ -14,20 +14,29 @@
 package tsdb
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"os"
+	"strconv"
+	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
 
+	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/tsdb/record"
+	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/tsdb/wlog"
+	"github.com/prometheus/prometheus/util/compression"
 )
 
 func TestWALReplayPreservesMappedChunksAcrossSeriesRefs(t *testing.T) {
@@ -204,6 +213,274 @@ func TestMergeReplayMmappedChunks(t *testing.T) {
 			require.Equal(t, tc.want, mergeReplayMmappedChunks(tc.existing, tc.incoming, tc.lastRef, tc.ooo))
 			require.Equal(t, existing, tc.existing, "do not modify the attached chunk list")
 			require.Equal(t, incoming, tc.incoming, "do not modify the replay inventory")
+		})
+	}
+}
+
+// recordingExemplarStorage records the series of the exemplars added to it.
+type recordingExemplarStorage struct {
+	ExemplarStorage
+	added sync.Map
+}
+
+func (s *recordingExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemplar) error {
+	err := s.ExemplarStorage.AddExemplar(l, e)
+	if err == nil {
+		s.added.Store(l.String(), struct{}{})
+	}
+	return err
+}
+
+// exemplarCheckingSeriesCallback counts the deleted series whose exemplar has not been added yet.
+type exemplarCheckingSeriesCallback struct {
+	// Keep missing first so that it is 64-bit aligned on 32-bit platforms.
+	missing atomic.Int64
+	noopSeriesLifecycleCallback
+	exemplars *recordingExemplarStorage
+}
+
+func (c *exemplarCheckingSeriesCallback) PostDeletion(deleted map[chunks.HeadSeriesRef]labels.Labels) {
+	for _, l := range deleted {
+		if _, ok := c.exemplars.added.Load(l.String()); !ok {
+			c.missing.Inc()
+		}
+	}
+}
+
+// TestHead_WALReplay_ExemplarsBeforeFullRangeTombstone verifies that a series deleted by
+// a full-range tombstone during WAL replay is only deleted after the exemplars preceding
+// the tombstone have been replayed, so that they are not counted as unknown references.
+func TestHead_WALReplay_ExemplarsBeforeFullRangeTombstone(t *testing.T) {
+	// The exemplar of the last series is queued behind the others when its tombstone
+	// is replayed.
+	const numSeries = 1000
+	series := make([]record.RefSeries, 0, numSeries)
+	samples := make([]record.RefSample, 0, numSeries)
+	exemplars := make([]record.RefExemplar, 0, numSeries)
+	for i := range numSeries {
+		ref := chunks.HeadSeriesRef(i + 1)
+		series = append(series, record.RefSeries{Ref: ref, Labels: labels.FromStrings("a", strconv.Itoa(i))})
+		samples = append(samples, record.RefSample{Ref: ref, T: 100, V: 1})
+		exemplars = append(exemplars, record.RefExemplar{Ref: ref, T: 100, V: 1, Labels: labels.FromStrings("trace_id", strconv.Itoa(i))})
+	}
+	stones := []tombstones.Stone{{Ref: numSeries, Intervals: tombstones.Intervals{{Mint: math.MinInt64, Maxt: math.MaxInt64}}}}
+	entries := []any{series, samples, exemplars, stones}
+
+	cb := &exemplarCheckingSeriesCallback{}
+	opts := newTestHeadDefaultOptions(1000, false)
+	opts.SeriesCallback = cb
+	head, w := newTestHeadWithOptions(t, compression.None, opts)
+	defer func() {
+		require.NoError(t, head.Close())
+	}()
+	populateTestWL(t, w, entries, nil, false)
+
+	cb.exemplars = &recordingExemplarStorage{ExemplarStorage: head.exemplars}
+	head.exemplars = cb.exemplars
+
+	require.NoError(t, head.Init(math.MinInt64))
+
+	require.Equal(t, uint64(numSeries-1), head.NumSeries())
+	require.Zero(t, cb.missing.Load(), "series must not be deleted before their exemplars are replayed")
+	require.Zero(t, prom_testutil.ToFloat64(head.metrics.walReplayUnknownRefsTotal.WithLabelValues("exemplars")))
+
+	q, err := head.ExemplarQuerier(context.Background())
+	require.NoError(t, err)
+	res, err := q.Select(0, 100, []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "a", ".+")})
+	require.NoError(t, err)
+	require.Len(t, res, numSeries)
+	for _, r := range res {
+		require.Len(t, r.Exemplars, 1)
+		require.Equal(t, r.SeriesLabels.Get("a"), r.Exemplars[0].Labels.Get("trace_id"))
+	}
+}
+
+// exemplarReplayDeletionGate keeps the old series in the by-ref index until the
+// exemplar worker has processed records on both sides of its tombstone.
+type exemplarReplayDeletionGate struct {
+	noopSeriesLifecycleCallback
+	ExemplarStorage
+	blockerRef       chunks.HeadSeriesRef
+	sentinelLabels   labels.Labels
+	sentinelReplayed chan struct{}
+}
+
+func (g *exemplarReplayDeletionGate) PostDeletion(deleted map[chunks.HeadSeriesRef]labels.Labels) {
+	if _, ok := deleted[g.blockerRef]; !ok {
+		return
+	}
+	// The synctest bubble detects a deadlock if replay stalls before the sentinel.
+	<-g.sentinelReplayed
+}
+
+func (g *exemplarReplayDeletionGate) AddExemplar(l labels.Labels, e exemplar.Exemplar) error {
+	err := g.ExemplarStorage.AddExemplar(l, e)
+	if err == nil && labels.Equal(l, g.sentinelLabels) {
+		close(g.sentinelReplayed)
+	}
+	return err
+}
+
+func TestHead_WALReplay_ExemplarAfterFullRangeTombstone(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		const (
+			blockerRef   = 2
+			oldRef       = 4
+			aliasRef     = 5
+			recreatedRef = 7
+			sentinelRef  = 9
+		)
+		seriesLabels := labels.FromStrings("a", "recreated")
+		sentinelLabels := labels.FromStrings("a", "sentinel")
+		fullRange := tombstones.Intervals{{Mint: math.MinInt64, Maxt: math.MaxInt64}}
+
+		// The blocker and old ref share a shard. Only the old ref's deletion needs
+		// to queue behind the callback. Later series and samples use the other shard.
+		opts := newTestHeadDefaultOptions(1000, false)
+		opts.WALReplayConcurrency = 2
+		var processor walSubsetProcessor
+		processor.setup()
+		require.NotZero(t, cap(processor.input), "the blocked shard must be able to queue one deletion")
+
+		gate := &exemplarReplayDeletionGate{
+			blockerRef:       blockerRef,
+			sentinelLabels:   sentinelLabels,
+			sentinelReplayed: make(chan struct{}),
+		}
+		opts.SeriesCallback = gate
+		head, w := newTestHeadWithOptions(t, compression.None, opts)
+		gate.ExemplarStorage = head.exemplars
+		head.exemplars = gate
+
+		populateTestWL(t, w, []any{
+			[]record.RefSeries{
+				{Ref: blockerRef, Labels: labels.FromStrings("a", "blocker")},
+				{Ref: oldRef, Labels: seriesLabels},
+				{Ref: aliasRef, Labels: seriesLabels},
+				{Ref: sentinelRef, Labels: sentinelLabels},
+			},
+			[]record.RefSample{
+				{Ref: blockerRef, T: 100, V: 1},
+				{Ref: oldRef, T: 100, V: 1},
+				{Ref: sentinelRef, T: 100, V: 1},
+			},
+			[]tombstones.Stone{{Ref: blockerRef, Intervals: fullRange}},
+			// Keep this tombstone in a separate record so its deletion queues
+			// behind the callback. Use aliasRef to verify that replay remaps the
+			// tombstone to oldRef and skips the late exemplar below.
+			[]tombstones.Stone{{Ref: aliasRef, Intervals: fullRange}},
+			// An exemplar-only appender can commit after its series was evicted.
+			// If replay accepts that exemplar, the recreated series' exemplar
+			// below is rejected as out of order.
+			[]record.RefExemplar{{Ref: oldRef, T: 500, V: 1, Labels: labels.FromStrings("trace_id", "evicted")}},
+			[]record.RefSeries{{Ref: recreatedRef, Labels: seriesLabels}},
+			[]record.RefSample{{Ref: recreatedRef, T: 300, V: 1}},
+			[]record.RefExemplar{
+				{Ref: recreatedRef, T: 300, V: 1, Labels: labels.FromStrings("trace_id", "recreated")},
+				{Ref: sentinelRef, T: 300, V: 1, Labels: labels.FromStrings("trace_id", "sentinel")},
+			},
+		}, nil, false)
+		first, last, err := wlog.Segments(w.Dir())
+		require.NoError(t, err)
+		require.Equal(t, first, last, "replay drains the sample shards at each segment boundary")
+
+		require.NoError(t, head.Init(math.MinInt64))
+		require.Equal(t, uint64(2), head.NumSeries(), "the recreated and sentinel series must survive replay")
+
+		q, err := head.ExemplarQuerier(t.Context())
+		require.NoError(t, err)
+		res, err := q.Select(0, 500, []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "a", "recreated")})
+		require.NoError(t, err)
+		require.Len(t, res, 1)
+		require.Len(t, res[0].Exemplars, 1)
+		require.Equal(t, "recreated", res[0].Exemplars[0].Labels.Get("trace_id"))
+		require.Equal(t, int64(300), res[0].Exemplars[0].Ts)
+		require.Equal(t, float64(1), prom_testutil.ToFloat64(head.metrics.walReplayUnknownRefsTotal.WithLabelValues("exemplars")))
+	})
+}
+
+// BenchmarkHead_WALReplay_FullRangeTombstones measures WAL replay of exemplars around
+// the full-range tombstones logged when series are evicted.
+func BenchmarkHead_WALReplay_FullRangeTombstones(b *testing.B) {
+	// Series, sample and exemplar records have the size of a large scrape. Eviction
+	// logs a single tombstone record for all the series it deletes.
+	const recordSize = 1000
+	fullRange := tombstones.Intervals{{Mint: math.MinInt64, Maxt: math.MaxInt64}}
+
+	for _, c := range []struct {
+		// Series that receive an exemplar in every round and are never evicted.
+		liveSeries int
+		// Series evicted per round, each with an exemplar logged before its tombstone.
+		evictedSeriesPerRound int
+		rounds                int
+	}{
+		// The exemplars of many series precede a single large tombstone record, so
+		// replay has many deletions in flight at once.
+		{liveSeries: 0, evictedSeriesPerRound: 100000, rounds: 1},
+		// Live series keep receiving exemplars between evictions, so most exemplars
+		// are replayed after a full-range tombstone.
+		{liveSeries: 100000, evictedSeriesPerRound: 1000, rounds: 10},
+	} {
+		name := fmt.Sprintf("liveSeries=%d,evictedSeriesPerRound=%d,rounds=%d", c.liveSeries, c.evictedSeriesPerRound, c.rounds)
+		b.Run(name, func(b *testing.B) {
+			// Replayed exemplars that repeat the labels and value of a series' newest
+			// exemplar are dropped as duplicates regardless of their timestamps, so
+			// every exemplar gets its own trace ID.
+			var traceID int
+			exemplarRecords := func(from, to int, t int64) []any {
+				var recs []any
+				for start := from; start < to; start += recordSize {
+					exemplars := make([]record.RefExemplar, 0, recordSize)
+					for i := start; i < min(start+recordSize, to); i++ {
+						traceID++
+						exemplars = append(exemplars, record.RefExemplar{Ref: chunks.HeadSeriesRef(i + 1), T: t, V: 1, Labels: labels.FromStrings("trace_id", strconv.Itoa(traceID))})
+					}
+					recs = append(recs, exemplars)
+				}
+				return recs
+			}
+
+			// The live series take the first refs, followed by the series evicted in
+			// each round.
+			numSeries := c.liveSeries + c.rounds*c.evictedSeriesPerRound
+			var recs []any
+			for start := 0; start < numSeries; start += recordSize {
+				series := make([]record.RefSeries, 0, recordSize)
+				samples := make([]record.RefSample, 0, recordSize)
+				for i := start; i < min(start+recordSize, numSeries); i++ {
+					ref := chunks.HeadSeriesRef(i + 1)
+					series = append(series, record.RefSeries{Ref: ref, Labels: labels.FromStrings("a", strconv.Itoa(i))})
+					samples = append(samples, record.RefSample{Ref: ref, T: 100, V: 1})
+				}
+				recs = append(recs, series, samples)
+			}
+			for round := range c.rounds {
+				t := int64(200 + round)
+				from := c.liveSeries + round*c.evictedSeriesPerRound
+				to := from + c.evictedSeriesPerRound
+				recs = append(recs, exemplarRecords(from, to, t)...)
+				stones := make([]tombstones.Stone, 0, c.evictedSeriesPerRound)
+				for i := from; i < to; i++ {
+					stones = append(stones, tombstones.Stone{Ref: storage.SeriesRef(i + 1), Intervals: fullRange})
+				}
+				recs = append(recs, stones)
+				recs = append(recs, exemplarRecords(0, c.liveSeries, t)...)
+			}
+
+			dir := b.TempDir()
+			w, err := wlog.New(nil, nil, dir, compression.None)
+			require.NoError(b, err)
+			populateTestWL(b, w, recs, nil, false)
+
+			for b.Loop() {
+				// The options enable exemplar storage.
+				opts := newTestHeadDefaultOptions(1000, false)
+				opts.ChunkDirRoot = dir
+				h, err := NewHead(nil, nil, w, nil, opts, nil)
+				require.NoError(b, err)
+				require.NoError(b, h.Init(math.MinInt64))
+			}
+			require.NoError(b, w.Close())
 		})
 	}
 }
