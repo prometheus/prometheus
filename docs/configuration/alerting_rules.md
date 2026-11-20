@@ -54,8 +54,9 @@ The `annotations` clause specifies a set of informational labels that can be use
 
 ### Templating
 
-Label and annotation values can be templated using [console
-templates](https://prometheus.io/docs/visualization/consoles).  The `$labels`
+Label and annotation values can be templated using Go templates, see the
+[template reference](template_reference.md) for the available functions and the
+[template examples](template_examples.md) for more ideas. The `$labels`
 variable holds the label key/value pairs of an alert instance. The configured
 external labels can be accessed via the `$externalLabels` variable. The
 `$value` variable holds the evaluated value of an alert instance.
@@ -90,6 +91,68 @@ groups:
       summary: "High request latency on {{ $labels.instance }}"
       description: "{{ $labels.instance }} has a median request latency above 1s (current value: {{ $value }}s)"
 ```
+
+### Querying additional data in annotations
+
+The alert expression often doesn't carry everything you'd like to see in a
+notification. The `query` template function runs a PromQL expression every time
+the rule is evaluated, so you can pull extra context into labels and
+annotations. It returns a list of samples, which you can feed through `first`,
+`value`, `label` and the humanizing functions described in the [template
+reference](template_reference.md).
+
+Wrap the query in `with` so nothing is rendered when it returns no results,
+since `first` fails on an empty result. To reuse labels of the firing alert in
+the query, build the query string with `printf`. Use single quotes for label
+matchers inside the query so they don't clash with the YAML and template
+quoting.
+
+```yaml
+groups:
+- name: example
+  rules:
+
+  # Alert when more than 5% of requests of a job fail, and show the
+  # job's total request rate next to the error ratio.
+  - alert: HighErrorRatio
+    expr: |
+      sum by (job) (rate(http_requests_total{code=~"5.."}[5m]))
+        /
+      sum by (job) (rate(http_requests_total[5m]))
+        > 0.05
+    for: 10m
+    labels:
+      severity: page
+    annotations:
+      summary: "High error ratio for {{ $labels.job }}"
+      description: |
+        {{ $labels.job }} is failing {{ $value | humanizePercentage }} of its requests.
+        {{ with printf "sum(rate(http_requests_total{job='%s'}[5m]))" $labels.job | query }}
+        Total request rate is {{ . | first | value | humanize }} requests per second.
+        {{ end }}
+
+  # Alert when a filesystem is almost full, and include its total size,
+  # which isn't part of the alert expression.
+  - alert: FilesystemAlmostFull
+    expr: |
+      node_filesystem_avail_bytes{fstype!="tmpfs"}
+        / node_filesystem_size_bytes{fstype!="tmpfs"}
+        < 0.1
+    for: 15m
+    labels:
+      severity: warning
+    annotations:
+      summary: "{{ $labels.mountpoint }} on {{ $labels.instance }} is almost full"
+      description: |
+        Only {{ $value | humanizePercentage }} of {{ $labels.mountpoint }} is left.
+        {{ with printf "node_filesystem_size_bytes{instance='%s',mountpoint='%s'}" $labels.instance $labels.mountpoint | query }}
+        The filesystem is {{ . | first | value | humanize1024 }}B in total.
+        {{ end }}
+```
+
+The queries run against the local Prometheus on every rule evaluation, once
+per alert, so keep them cheap. They can only return instant vectors, not range
+vectors.
 
 ## Inspecting alerts during runtime
 
