@@ -26,6 +26,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -1384,9 +1385,19 @@ func formatPromQL(query string, p parser.Parser) error {
 }
 
 func labelsSetPromQL(query, labelMatchType, name, value string, p parser.Parser) error {
-	expr, err := p.ParseExpr(query)
+	out, err := setPromQLLabelMatchers(query, labelMatchType, name, value, p)
 	if err != nil {
 		return err
+	}
+
+	fmt.Println(out)
+	return nil
+}
+
+func setPromQLLabelMatchers(query, labelMatchType, name, value string, p parser.Parser) (string, error) {
+	expr, err := p.ParseExpr(query)
+	if err != nil {
+		return "", err
 	}
 
 	var matchType labels.MatchType
@@ -1400,11 +1411,18 @@ func labelsSetPromQL(query, labelMatchType, name, value string, p parser.Parser)
 	case parser.ItemType(parser.NEQ_REGEX).String():
 		matchType = labels.MatchNotRegexp
 	default:
-		return fmt.Errorf("invalid label match type: %s", labelMatchType)
+		return "", fmt.Errorf("invalid label match type: %s", labelMatchType)
 	}
 
 	parser.Inspect(expr, func(node parser.Node, _ []parser.Node) error {
 		if n, ok := node.(*parser.VectorSelector); ok {
+			if name == labels.MetricName {
+				if matchType == labels.MatchEqual {
+					n.Name = value
+				} else {
+					n.Name = ""
+				}
+			}
 			var found bool
 			for i, l := range n.LabelMatchers {
 				if l.Name == name {
@@ -1424,27 +1442,36 @@ func labelsSetPromQL(query, labelMatchType, name, value string, p parser.Parser)
 		return nil
 	})
 
-	fmt.Println(expr.Pretty(0))
-	return nil
+	return expr.Pretty(0), nil
 }
 
 func labelsDeletePromQL(query, name string, p parser.Parser) error {
-	expr, err := p.ParseExpr(query)
+	out, err := deletePromQLLabelMatchers(query, name, p)
 	if err != nil {
 		return err
 	}
 
+	fmt.Println(out)
+	return nil
+}
+
+func deletePromQLLabelMatchers(query, name string, p parser.Parser) (string, error) {
+	expr, err := p.ParseExpr(query)
+	if err != nil {
+		return "", err
+	}
+
 	parser.Inspect(expr, func(node parser.Node, _ []parser.Node) error {
 		if n, ok := node.(*parser.VectorSelector); ok {
-			for i, l := range n.LabelMatchers {
-				if l.Name == name {
-					n.LabelMatchers = append(n.LabelMatchers[:i], n.LabelMatchers[i+1:]...)
-				}
+			if name == labels.MetricName {
+				n.Name = ""
 			}
+			n.LabelMatchers = slices.DeleteFunc(n.LabelMatchers, func(m *labels.Matcher) bool {
+				return m.Name == name
+			})
 		}
 		return nil
 	})
 
-	fmt.Println(expr.Pretty(0))
-	return nil
+	return expr.Pretty(0), nil
 }

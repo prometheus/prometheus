@@ -864,3 +864,181 @@ http_requests_total{code="200"} 2 1624528800.000
 		})
 	}
 }
+
+func TestPromQLLabelMatchersSet(t *testing.T) {
+	t.Parallel()
+	p := parser.NewParser(parser.Options{})
+
+	tests := []struct {
+		name        string
+		query       string
+		matchType   string
+		labelName   string
+		value       string
+		expected    string
+		expectError bool
+	}{
+		{
+			name:      "rename metric name",
+			query:     `http_requests_total{job="api"}`,
+			matchType: "=",
+			labelName: "__name__",
+			value:     "new_requests",
+			expected:  "new_requests{job=\"api\"}",
+		},
+		{
+			name:      "set regex matcher on __name__",
+			query:     `http_requests_total{job="api"}`,
+			matchType: "=~",
+			labelName: "__name__",
+			value:     "http_.*",
+			expected:  "{__name__=~\"http_.*\",job=\"api\"}",
+		},
+		{
+			name:      "set not-equal matcher on __name__",
+			query:     `http_requests_total{job="api"}`,
+			matchType: "!=",
+			labelName: "__name__",
+			value:     "old_metric",
+			expected:  "{__name__!=\"old_metric\",job=\"api\"}",
+		},
+		{
+			name:      "set not-regex matcher on __name__",
+			query:     `http_requests_total{job="api"}`,
+			matchType: "!~",
+			labelName: "__name__",
+			value:     "old_.*",
+			expected:  "{__name__!~\"old_.*\",job=\"api\"}",
+		},
+		{
+			name:      "set metric name on selector without metric name",
+			query:     `{job="api"}`,
+			matchType: "=",
+			labelName: "__name__",
+			value:     "http_requests_total",
+			expected:  "http_requests_total{job=\"api\"}",
+		},
+		{
+			name:      "set regular label",
+			query:     `http_requests_total{job="api"}`,
+			matchType: "=",
+			labelName: "env",
+			value:     "prod",
+			expected:  "http_requests_total{env=\"prod\",job=\"api\"}",
+		},
+		{
+			name:      "update existing regular label",
+			query:     `http_requests_total{job="api"}`,
+			matchType: "=",
+			labelName: "job",
+			value:     "worker",
+			expected:  "http_requests_total{job=\"worker\"}",
+		},
+		{
+			name:      "nested expression inside rate",
+			query:     `rate(http_requests_total{job="api"}[5m])`,
+			matchType: "=",
+			labelName: "__name__",
+			value:     "rpc_requests_total",
+			expected:  "rate(rpc_requests_total{job=\"api\"}[5m])",
+		},
+		{
+			name:        "invalid query syntax",
+			query:       `http_requests_total{`,
+			matchType:   "=",
+			labelName:   "job",
+			value:       "api",
+			expectError: true,
+		},
+		{
+			name:        "invalid label match type",
+			query:       `http_requests_total{job="api"}`,
+			matchType:   "~",
+			labelName:   "job",
+			value:       "api",
+			expectError: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := setPromQLLabelMatchers(tc.query, tc.matchType, tc.labelName, tc.value, p)
+			if tc.expectError {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.expected, got)
+		})
+	}
+}
+
+func TestPromQLLabelMatchersDelete(t *testing.T) {
+	t.Parallel()
+	p := parser.NewParser(parser.Options{})
+
+	tests := []struct {
+		name        string
+		query       string
+		labelName   string
+		expected    string
+		expectError bool
+	}{
+		{
+			name:      "delete metric name from selector with labels",
+			query:     `http_requests_total{job="api"}`,
+			labelName: "__name__",
+			expected:  "{job=\"api\"}",
+		},
+		{
+			name:      "delete metric name with no other labels",
+			query:     `http_requests_total`,
+			labelName: "__name__",
+			expected:  "",
+		},
+		{
+			name:      "delete regular label",
+			query:     `http_requests_total{env="prod",job="api"}`,
+			labelName: "env",
+			expected:  "http_requests_total{job=\"api\"}",
+		},
+		{
+			name:      "delete consecutive duplicated label matchers",
+			query:     `http_requests_total{env="prod",env="stage",job="api"}`,
+			labelName: "env",
+			expected:  "http_requests_total{job=\"api\"}",
+		},
+		{
+			name:      "delete nonexistent label",
+			query:     `http_requests_total{job="api"}`,
+			labelName: "nonexistent",
+			expected:  "http_requests_total{job=\"api\"}",
+		},
+		{
+			name:      "nested expression inside rate",
+			query:     `rate(http_requests_total{job="api"}[5m])`,
+			labelName: "__name__",
+			expected:  "rate({job=\"api\"}[5m])",
+		},
+		{
+			name:        "invalid query syntax",
+			query:       `http_requests_total{`,
+			labelName:   "job",
+			expectError: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := deletePromQLLabelMatchers(tc.query, tc.labelName, p)
+			if tc.expectError {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.expected, got)
+		})
+	}
+}
