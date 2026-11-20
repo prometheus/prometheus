@@ -91,3 +91,24 @@ func BenchmarkSymbolsTable(b *testing.B) {
 		st.Reset()
 	}
 }
+
+func TestRefsOutsideSymbolsAreRejected(t *testing.T) {
+	symbols := []string{"", "a", "b"}
+	// 1<<31 and above wrap negative in a 32-bit int; they must still be rejected.
+	for _, ref := range []uint32{uint32(len(symbols)), 1 << 31, 1<<32 - 1} {
+		var b labels.ScratchBuilder
+
+		_, err := TimeSeries{LabelsRefs: []uint32{ref, 1}}.ToLabels(&b, symbols)
+		require.Error(t, err, "label name ref %d", ref)
+		_, err = TimeSeries{LabelsRefs: []uint32{1, ref}}.ToLabels(&b, symbols)
+		require.Error(t, err, "label value ref %d", ref)
+
+		_, err = TimeSeries{Metadata: Metadata{UnitRef: ref}}.ToMetadata(symbols)
+		require.Error(t, err, "unit ref %d", ref)
+		_, err = TimeSeries{Metadata: Metadata{HelpRef: ref}}.ToMetadata(symbols)
+		require.Error(t, err, "help ref %d", ref)
+
+		_, err = Exemplar{LabelsRefs: []uint32{ref, 1}}.ToExemplar(&b, symbols)
+		require.Error(t, err, "exemplar label ref %d", ref)
+	}
+}

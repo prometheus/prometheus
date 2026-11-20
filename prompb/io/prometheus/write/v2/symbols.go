@@ -87,7 +87,9 @@ func desymbolizeLabels(b *labels.ScratchBuilder, labelRefs []uint32, symbols []s
 	b.Reset()
 	for i := 0; i < len(labelRefs); i += 2 {
 		nameRef, valueRef := labelRefs[i], labelRefs[i+1]
-		if int(nameRef) >= len(symbols) || int(valueRef) >= len(symbols) {
+		// Compare as uint64: on 32-bit platforms int(ref) is negative for refs
+		// of 1<<31 and above, which would pass the check and panic below.
+		if uint64(nameRef) >= uint64(len(symbols)) || uint64(valueRef) >= uint64(len(symbols)) {
 			return labels.EmptyLabels(), fmt.Errorf("labelRefs %d (name) = %d (value) outside of symbols table (size %d)", nameRef, valueRef, len(symbols))
 		}
 		b.Add(symbols[nameRef], symbols[valueRef])
