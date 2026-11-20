@@ -386,10 +386,15 @@ func (h *Histogram) ToFloat(fh *FloatHistogram) *FloatHistogram {
 		copy(fh.NegativeSpans, h.NegativeSpans)
 
 		fh.NegativeBuckets = resize(fh.NegativeBuckets, len(h.NegativeBuckets))
-		var currentNegative float64
+		// Accumulate the deltas in int64, matching the integer bucket
+		// iterator, and convert each absolute count to float64 individually.
+		// Accumulating in float64 would let the rounding of one large count
+		// corrupt the following counts (even making them negative), see
+		// https://github.com/prometheus/prometheus/pull/20197.
+		var currentNegative int64
 		for i, b := range h.NegativeBuckets {
-			currentNegative += float64(b)
-			fh.NegativeBuckets[i] = currentNegative
+			currentNegative += b
+			fh.NegativeBuckets[i] = float64(currentNegative)
 		}
 		// Custom values are interned, no need to reset.
 		fh.CustomValues = nil
@@ -399,10 +404,11 @@ func (h *Histogram) ToFloat(fh *FloatHistogram) *FloatHistogram {
 	copy(fh.PositiveSpans, h.PositiveSpans)
 
 	fh.PositiveBuckets = resize(fh.PositiveBuckets, len(h.PositiveBuckets))
-	var currentPositive float64
+	// See the comment on the negative buckets above.
+	var currentPositive int64
 	for i, b := range h.PositiveBuckets {
-		currentPositive += float64(b)
-		fh.PositiveBuckets[i] = currentPositive
+		currentPositive += b
+		fh.PositiveBuckets[i] = float64(currentPositive)
 	}
 
 	return fh

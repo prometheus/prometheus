@@ -632,6 +632,69 @@ func TestHistogramToFloat(t *testing.T) {
 	}
 }
 
+// TestHistogramToFloatPreservesBucketCounts ensures that ToFloat accumulates
+// bucket deltas in int64 and converts each resulting absolute count to float64
+// individually. Accumulating in float64 lets the rounding of one large absolute
+// count corrupt the following counts, even turning them negative, for input
+// histograms that pass Validate. See
+// https://github.com/prometheus/prometheus/pull/20197.
+func TestHistogramToFloatPreservesBucketCounts(t *testing.T) {
+	cases := []struct {
+		name        string
+		histogram   Histogram
+		expPositive []float64
+		expNegative []float64
+	}{
+		{
+			name: "large first positive count does not corrupt later counts",
+			histogram: Histogram{
+				Schema:          0,
+				Count:           2 + (uint64(1) << 53),
+				Sum:             100,
+				PositiveSpans:   []Span{{Offset: 0, Length: 3}},
+				PositiveBuckets: []int64{1<<53 + 1, -(1 << 53), -1},
+			},
+			// The first absolute count is above 2^53, so converting it to
+			// float64 has to round it to 2^53. The later absolute counts,
+			// 1 and 0, are small and must be preserved exactly.
+			expPositive: []float64{float64(uint64(1) << 53), 1, 0},
+		},
+		{
+			name: "large first negative count does not corrupt later counts",
+			histogram: Histogram{
+				Schema:          0,
+				Count:           2 + (uint64(1) << 53),
+				Sum:             100,
+				NegativeSpans:   []Span{{Offset: 0, Length: 3}},
+				NegativeBuckets: []int64{1<<53 + 1, -(1 << 53), -1},
+			},
+			expNegative: []float64{float64(uint64(1) << 53), 1, 0},
+		},
+		{
+			name: "small counts are converted exactly",
+			histogram: Histogram{
+				Schema:          0,
+				Count:           14,
+				Sum:             100,
+				PositiveSpans:   []Span{{Offset: 0, Length: 3}},
+				PositiveBuckets: []int64{10, -7, -2},
+			},
+			expPositive: []float64{10, 3, 1},
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			require.NoError(t, c.histogram.Validate())
+			fh := c.histogram.ToFloat(nil)
+			require.Equal(t, c.expPositive, fh.PositiveBuckets)
+			if c.expNegative != nil {
+				require.Equal(t, c.expNegative, fh.NegativeBuckets)
+			}
+		})
+	}
+}
+
 func TestCustomBucketsHistogramToFloat(t *testing.T) {
 	h := Histogram{
 		Schema: CustomBucketsSchema,
