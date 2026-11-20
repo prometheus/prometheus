@@ -1607,7 +1607,7 @@ func TestClientTLSCertRotationWithoutCAFile(t *testing.T) {
 		ClientAuth: tls.RequireAnyClientCert,
 	}
 	target.StartTLS()
-	defer target.Close()
+	t.Cleanup(target.Close)
 
 	clientCertFile := filepath.Join(tmpDir, "client.cer")
 	clientKeyFile := filepath.Join(tmpDir, "client.key")
@@ -1657,9 +1657,9 @@ scrape_configs:
 			return false
 		}
 		return v == seriesCreatedBeforeRotation
-	}, startupTime, 500*time.Millisecond)
+	}, readyTimeout, 100*time.Millisecond)
 
-	// Overwrite client cert files (content doesn't matter) to trigger a
+	// Rotate to a different valid cert/key pair with CN=localhost to trigger a
 	// transport rebuild.
 	cpFile(t, clientCertFile, filepath.Join("..", "..", "scrape", "testdata", "server.cer"))
 	cpFile(t, clientKeyFile, filepath.Join("..", "..", "scrape", "testdata", "server.key"))
@@ -1670,5 +1670,5 @@ scrape_configs:
 			return false
 		}
 		return v > seriesCreatedBeforeRotation
-	}, 5*time.Second, 1*time.Second, "scrape should keep working after cert rotation")
+	}, 5*time.Second, 100*time.Millisecond, "scrape should keep working after cert rotation")
 }
