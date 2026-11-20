@@ -41,7 +41,7 @@ type FloatHistogramChunk struct {
 
 // NewFloatHistogramChunk returns a new chunk with float histogram encoding.
 func NewFloatHistogramChunk() *FloatHistogramChunk {
-	b := make([]byte, histogramHeaderSize, chunkAllocationSize)
+	b := make([]byte, histogramHeaderSize, chunkInitialCapacity)
 	return &FloatHistogramChunk{b: bstream{stream: b, count: 0}}
 }
 
