@@ -496,3 +496,78 @@ func TestConvertNHCBToClassicIntFloatAgreement(t *testing.T) {
 	}
 	require.Equal(t, count, infBucket)
 }
+
+func TestClassicBucketCountsIntegerPrecision(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		counts []int64 // Absolute counts, including empty buckets and +Inf.
+	}{
+		{"empty", []int64{0, 0, 0}},
+		{"small", []int64{0, 10, 0, 1, 0}},
+		{"below_float_precision", []int64{1<<53 - 1, 1, 1, 1, 0}},
+		{"at_float_precision", []int64{1 << 53, 1, 0, 1, 0}},
+		{"above_float_precision", []int64{1<<53 + 1, 1, 1, 0}},
+		{"max_int64_total", []int64{math.MaxInt64 - 2047, 1024, 1023, 0}},
+		{"above_int64_total", []int64{math.MaxInt64 - 2047, 1024, 1024, 0}},
+		{"below_uint64_limit", []int64{math.MaxInt64 - 2047, 0, 1024, 1023, math.MaxInt64, 0}},
+		{"max_uint64_total", []int64{math.MaxInt64 - 2047, 0, 1024, 1024, math.MaxInt64, 0}},
+	} {
+		for _, layout := range []string{"dense", "sparse"} {
+			t.Run(tc.name+"/"+layout, func(t *testing.T) {
+				h := &Histogram{
+					Schema:        CustomBucketsSchema,
+					Sum:           123,
+					PositiveSpans: []Span{{Length: uint32(len(tc.counts))}},
+				}
+				fh := &FloatHistogram{
+					Schema:        CustomBucketsSchema,
+					Sum:           h.Sum,
+					PositiveSpans: []Span{{Length: uint32(len(tc.counts))}},
+				}
+				var prev int64
+				var floatPrefix float64
+				var wantInteger, wantFloat []float64
+				for i, n := range tc.counts {
+					h.PositiveBuckets = append(h.PositiveBuckets, n-prev)
+					prev = n
+					h.Count += uint64(n)
+					fh.PositiveBuckets = append(fh.PositiveBuckets, float64(n))
+					// Sum the original counts exactly, then round each prefix once.
+					wantInteger = append(wantInteger, float64(h.Count))
+					// Float histograms retain their floating-point summation order.
+					floatPrefix += float64(n)
+					wantFloat = append(wantFloat, floatPrefix)
+					if i < len(tc.counts)-1 {
+						h.CustomValues = append(h.CustomValues, float64(i+1))
+					}
+				}
+				fh.Count = float64(h.Count)
+				fh.CustomValues = h.CustomValues
+				if layout == "sparse" {
+					h.Compact(0)
+					fh.Compact(0)
+				}
+				require.NoError(t, h.Validate())
+				require.NoError(t, fh.Validate())
+
+				for _, hist := range []struct {
+					name string
+					nhcb any
+					want []float64
+				}{
+					{"integer", h, wantInteger},
+					{"float", fh, wantFloat},
+				} {
+					t.Run(hist.name, func(t *testing.T) {
+						buf := slices.Repeat([]float64{42}, len(tc.counts)+1)
+						buckets, count, sum, err := ClassicBucketCounts(hist.nhcb, buf)
+						require.NoError(t, err)
+						require.Equal(t, hist.want, buckets, "cumulative bucket counts")
+						require.Equal(t, float64(h.Count), count)
+						require.Equal(t, h.Sum, sum)
+					})
+				}
+			})
+		}
+	}
+}
