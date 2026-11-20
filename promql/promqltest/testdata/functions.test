@@ -1753,6 +1753,46 @@ eval instant at 1m quantile_over_time(0, data{test="negative infinity"}[2m])
 	expect no_warn
 	{test="negative infinity"} -Inf
 
+# Quantile scratch must be overwritten across series and steps, including
+# sparse windows and a scalar quantile that changes between steps.
+clear
+load 1m
+  quantile_scratch{series="a"} 1 4 2 8 3 9
+  quantile_scratch{series="b"} 10 40 _ 80 30 90
+  quantile_scratch{series="c"} 5 _ _ 7 _ 11
+
+eval range from 2m to 5m step 1m quantile_over_time(0.5, quantile_scratch[3m])
+  {series="a"} 2 4 3 8
+  {series="b"} 25 60 55 80
+  {series="c"} 5 7 7 9
+
+eval range from 2m to 5m step 1m quantile_over_time((time() % 120) / 60, quantile_scratch[3m])
+  {series="a"} 1 8 2 9
+  {series="b"} 10 80 30 90
+  {series="c"} 5 7 7 11
+
+# Quantile sorting must also handle larger windows and repeated NaN values.
+clear
+load 1m
+  quantile_sort{case="descending"} 15 14 13 12 11 10 9 8 7 6 5 4 3 2 1
+  quantile_sort{case="NaNs"} NaN NaN 13 12 11 10 9 8 7 6 5 4 3 2 1
+
+eval instant at 14m quantile_over_time(0, quantile_sort[15m])
+  {case="descending"} 1
+  {case="NaNs"} NaN
+
+eval instant at 14m quantile_over_time(0.5, quantile_sort[15m])
+  {case="descending"} 8
+  {case="NaNs"} 6
+
+eval instant at 14m quantile_over_time(1, quantile_sort[15m])
+  {case="descending"} 15
+  {case="NaNs"} 13
+
+eval instant at 14m mad_over_time(quantile_sort[15m])
+  {case="descending"} 4
+  {case="NaNs"} NaN
+
 clear
 
 # Test time-related functions.
