@@ -1241,15 +1241,18 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 
 	if initErr := db.head.Init(minValidTime); initErr != nil {
 		db.head.metrics.walCorruptionsTotal.Inc()
+		walErr := initErr
 		if e, ok := errors.AsType[*errLoadWbl](initErr); ok {
 			db.logger.Warn("Encountered WBL read error, attempting repair", "err", initErr)
 			if err := wbl.Repair(e.err); err != nil {
 				return nil, fmt.Errorf("repair corrupted WBL: %w", err)
 			}
 			db.logger.Info("Successfully repaired WBL")
-		} else {
-			db.logger.Warn("Encountered WAL read error, attempting repair", "err", initErr)
-			if err := wal.Repair(initErr); err != nil {
+			walErr = e.walErr
+		}
+		if walErr != nil {
+			db.logger.Warn("Encountered WAL read error, attempting repair", "err", walErr)
+			if err := wal.Repair(walErr); err != nil {
 				return nil, fmt.Errorf("repair corrupted WAL: %w", err)
 			}
 			db.logger.Info("Successfully repaired WAL")

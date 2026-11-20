@@ -1041,6 +1041,11 @@ func (h *Head) Init(minValidTime int64) error {
 	if snapIdx > startFrom {
 		startFrom = snapIdx
 	}
+	// A corrupted WAL record, such as a torn record at the tail after a crash,
+	// ends the WAL replay. DB.Open repairs the WAL after Init returns, so the WBL
+	// is still replayed first: its out-of-order samples may be older than the
+	// blocks, and then the WBL holds their only copy.
+	var walCorruptionErr error
 	// Backfill segments from the most recent checkpoint onwards.
 	for i := startFrom; i <= endAt; i++ {
 		walSegmentStart := time.Now()
@@ -1065,6 +1070,10 @@ func (h *Head) Init(minValidTime int64) error {
 		if err := sr.Close(); err != nil {
 			h.logger.Warn("Error while closing the wal segments reader", "err", err)
 		}
+		if _, ok := errors.AsType[*wlog.CorruptionErr](err); ok {
+			walCorruptionErr = err
+			break
+		}
 		if err != nil {
 			return err
 		}
@@ -1078,14 +1087,14 @@ func (h *Head) Init(minValidTime int64) error {
 		// Replay WBL.
 		startFrom, endAt, e = wlog.Segments(h.wbl.Dir())
 		if e != nil {
-			return &errLoadWbl{fmt.Errorf("finding WBL segments: %w", e)}
+			return &errLoadWbl{err: fmt.Errorf("finding WBL segments: %w", e), walErr: walCorruptionErr}
 		}
 		h.startWALReplayStatus(startFrom, endAt)
 
 		for i := startFrom; i <= endAt; i++ {
 			s, err := wlog.OpenReadSegment(wlog.SegmentName(h.wbl.Dir(), i))
 			if err != nil {
-				return &errLoadWbl{fmt.Errorf("open WBL segment: %d: %w", i, err)}
+				return &errLoadWbl{err: fmt.Errorf("open WBL segment: %d: %w", i, err), walErr: walCorruptionErr}
 			}
 
 			sr := wlog.NewSegmentBufReader(s)
@@ -1094,7 +1103,7 @@ func (h *Head) Init(minValidTime int64) error {
 				h.logger.Warn("Error while closing the wbl segments reader", "err", err)
 			}
 			if err != nil {
-				return &errLoadWbl{err}
+				return &errLoadWbl{err: err, walErr: walCorruptionErr}
 			}
 			h.logger.Info("WBL segment loaded", "segment", i, "maxSegment", endAt)
 			h.updateWALReplayStatusRead(i)
@@ -1114,6 +1123,10 @@ func (h *Head) Init(minValidTime int64) error {
 		"mmap_chunk_replay_duration", mmapChunkReplayDuration.String(),
 		"total_replay_duration", totalReplayDuration.String(),
 	)
+
+	if walCorruptionErr != nil {
+		return walCorruptionErr
+	}
 
 	// TODO(RushabhMehta2005): Remove this 'if' block and always run the series state ticker when the feature is fully implemented.
 	if h.opts.EnableFastStartup {
