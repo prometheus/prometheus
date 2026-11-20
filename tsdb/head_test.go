@@ -1539,10 +1539,18 @@ func TestHead_Truncate(t *testing.T) {
 	}
 	s4.mmappedChunks = []*mmappedChunk{}
 
+	// a=1, a=2, b=1, b=2 and c=1.
+	require.Equal(t, uint64(5), h.NumLabelPairs())
+	require.Equal(t, 5.0, prom_testutil.ToFloat64(h.metrics.labelPairs))
+
 	// Truncation need not be aligned.
 	require.NoError(t, h.Truncate(1))
 
 	require.NoError(t, h.Truncate(2000))
+
+	// b=2 and c=1 went away with s3 and s4.
+	require.Equal(t, uint64(3), h.NumLabelPairs())
+	require.Equal(t, 3.0, prom_testutil.ToFloat64(h.metrics.labelPairs))
 
 	require.Equal(t, []*mmappedChunk{
 		{minTime: 2000, maxTime: 2999},

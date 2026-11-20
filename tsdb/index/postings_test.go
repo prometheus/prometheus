@@ -979,6 +979,32 @@ func TestMemPostingsStats(t *testing.T) {
 	require.Equal(t, 3, stats.NumLabelPairs)
 }
 
+func TestMemPostings_NumLabelPairs(t *testing.T) {
+	p := NewMemPostings()
+	require.Equal(t, 0, p.NumLabelPairs())
+
+	p.Add(1, labels.FromStrings("a", "1", "b", "1"))
+	p.Add(2, labels.FromStrings("a", "2", "b", "1"))
+	p.Add(3, labels.FromStrings("a", "2", "c", "1"))
+	// a=1, a=2, b=1 and c=1. The all-postings key isn't counted.
+	require.Equal(t, 4, p.NumLabelPairs())
+	require.Equal(t, p.Stats("a", 10, func(_, _ string, n uint64) uint64 { return n }).NumLabelPairs, p.NumLabelPairs())
+
+	// Deleting series 3 drops c=1, but a=2 is still used by series 2.
+	p.Delete(map[storage.SeriesRef]struct{}{3: {}}, map[labels.Label]struct{}{
+		{Name: "a", Value: "2"}: {},
+		{Name: "c", Value: "1"}: {},
+	})
+	require.Equal(t, 3, p.NumLabelPairs())
+
+	p.Delete(map[storage.SeriesRef]struct{}{1: {}, 2: {}}, map[labels.Label]struct{}{
+		{Name: "a", Value: "1"}: {},
+		{Name: "a", Value: "2"}: {},
+		{Name: "b", Value: "1"}: {},
+	})
+	require.Equal(t, 0, p.NumLabelPairs())
+}
+
 func TestMemPostings_Delete(t *testing.T) {
 	p := NewMemPostings()
 	p.Add(1, labels.FromStrings("lbl1", "a"))
