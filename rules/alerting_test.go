@@ -16,6 +16,7 @@ package rules
 import (
 	"context"
 	"errors"
+	"math"
 	"runtime"
 	"testing"
 	"time"
@@ -28,6 +29,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -582,35 +584,95 @@ func BenchmarkAlertingRuleAtomicField(b *testing.B) {
 }
 
 func TestAlertingRuleDuplicate(t *testing.T) {
-	storage := teststorage.New(t)
-
-	opts := promql.EngineOpts{
-		Logger:     nil,
-		Reg:        nil,
-		MaxSamples: 10,
-		Timeout:    10 * time.Second,
+	evalTime := time.Unix(600, 0).UTC()
+	cases := []struct {
+		name                    string
+		series                  []labels.Labels
+		expr                    string
+		ruleLabels              labels.Labels
+		enableTypeAndUnitLabels bool
+	}{
+		{
+			name:       "rule_label_override",
+			expr:       `vector(0) or label_replace(vector(0),"test","x","","")`,
+			ruleLabels: labels.FromStrings("test", "test"),
+		},
+		{
+			name: "differing_only_by_type",
+			series: []labels.Labels{
+				labels.FromStrings(
+					model.MetricNameLabel, "http_errors_total",
+					model.MetricTypeLabel, string(model.MetricTypeCounter),
+					"job", "api",
+				),
+				labels.FromStrings(
+					model.MetricNameLabel, "http_errors_total",
+					model.MetricTypeLabel, string(model.MetricTypeGauge),
+					"job", "api",
+				),
+			},
+			expr:                    `http_errors_total > 10`,
+			ruleLabels:              labels.EmptyLabels(),
+			enableTypeAndUnitLabels: true,
+		},
+		{
+			name: "differing_only_by_unit",
+			series: []labels.Labels{
+				labels.FromStrings(
+					model.MetricNameLabel, "http_errors_total",
+					model.MetricTypeLabel, string(model.MetricTypeCounter),
+					model.MetricUnitLabel, "errors",
+					"job", "api",
+				),
+				labels.FromStrings(
+					model.MetricNameLabel, "http_errors_total",
+					model.MetricTypeLabel, string(model.MetricTypeCounter),
+					model.MetricUnitLabel, "requests",
+					"job", "api",
+				),
+			},
+			expr:                    `http_errors_total > 10`,
+			ruleLabels:              labels.EmptyLabels(),
+			enableTypeAndUnitLabels: true,
+		},
 	}
 
-	engine := promqltest.NewTestEngineWithOpts(t, opts)
-	ctx := t.Context()
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			st := teststorage.New(t)
+			if len(tc.series) > 0 {
+				app := st.AppenderV2(t.Context())
+				for _, lbls := range tc.series {
+					_, err := app.Append(0, lbls, 0, timestamp.FromTime(evalTime), 42, nil, nil, storage.AOptions{})
+					require.NoError(t, err)
+				}
+				require.NoError(t, app.Commit())
+			}
 
-	now := time.Now()
+			engine := promqltest.NewTestEngineWithOpts(t, promql.EngineOpts{
+				MaxSamples:              10,
+				Timeout:                 10 * time.Second,
+				EnableTypeAndUnitLabels: tc.enableTypeAndUnitLabels,
+			})
 
-	expr, _ := testParser.ParseExpr(`vector(0) or label_replace(vector(0),"test","x","","")`)
-	rule := NewAlertingRule(
-		"foo",
-		expr,
-		time.Minute,
-		0,
-		labels.FromStrings("test", "test"),
-		labels.EmptyLabels(),
-		labels.EmptyLabels(),
-		"",
-		true, promslog.NewNopLogger(),
-	)
-	_, err := rule.Eval(ctx, 0, now, EngineQueryFunc(engine, storage), nil, 0)
-	require.Error(t, err)
-	require.ErrorIs(t, err, ErrDuplicateAlertLabelSet)
+			expr, err := testParser.ParseExpr(tc.expr)
+			require.NoError(t, err)
+			rule := NewAlertingRule(
+				"foo",
+				expr,
+				time.Minute,
+				0,
+				tc.ruleLabels,
+				labels.EmptyLabels(),
+				labels.EmptyLabels(),
+				"",
+				true,
+				promslog.NewNopLogger(),
+			)
+			_, err = rule.Eval(t.Context(), 0, evalTime, EngineQueryFunc(engine, st), nil, 0)
+			require.ErrorIs(t, err, ErrDuplicateAlertLabelSet)
+		})
+	}
 }
 
 func TestAlertingRuleLimit(t *testing.T) {
@@ -1187,4 +1249,452 @@ func TestFiringAlertResetToPendingOnHoldDurationIncrease(t *testing.T) {
 			require.Equal(t, "firing", smpl.Metric.Get("alertstate"))
 		}
 	}
+}
+
+func TestAlertingRuleStripsMetadataLabels(t *testing.T) {
+	st := teststorage.New(t)
+	app := st.AppenderV2(t.Context())
+	evalTime := time.Unix(600, 0).UTC()
+	_, err := app.Append(
+		0,
+		labels.FromStrings(
+			model.MetricNameLabel, "http_errors_total",
+			model.MetricTypeLabel, string(model.MetricTypeCounter),
+			model.MetricUnitLabel, "errors",
+			"job", "api",
+		),
+		0,
+		timestamp.FromTime(evalTime),
+		42,
+		nil,
+		nil,
+		storage.AOptions{},
+	)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	ng := promqltest.NewTestEngineWithOpts(t, promql.EngineOpts{
+		MaxSamples:              10000,
+		Timeout:                 100 * time.Second,
+		EnableTypeAndUnitLabels: true,
+	})
+
+	expr, err := testParser.ParseExpr(`http_errors_total > 10`)
+	require.NoError(t, err)
+
+	rule := NewAlertingRule(
+		"HighErrors",
+		expr,
+		5*time.Minute,
+		0,
+		labels.FromStrings("severity", "page"),
+		labels.FromStrings("summary", "{{ $labels.__name__ }} {{ $labels.__type__ }} {{ $labels.__unit__ }}"),
+		labels.EmptyLabels(),
+		"",
+		true,
+		promslog.NewNopLogger(),
+	)
+
+	res, err := rule.Eval(t.Context(), 0, evalTime, EngineQueryFunc(ng, st), nil, 0)
+	require.NoError(t, err)
+	require.Len(t, res, 2)
+
+	active := rule.ActiveAlerts()
+	require.Len(t, active, 1)
+	testutil.RequireEqual(t, labels.FromStrings(labels.AlertName, "HighErrors", "job", "api", "severity", "page"), active[0].Labels)
+	testutil.RequireEqual(t, labels.FromStrings("summary", "http_errors_total counter errors"), active[0].Annotations)
+
+	expected := promql.Vector{
+		{
+			Metric: labels.FromStrings(
+				model.MetricNameLabel, alertMetricName,
+				labels.AlertName, "HighErrors",
+				alertStateLabel, "pending",
+				"job", "api",
+				"severity", "page",
+			),
+			T: timestamp.FromTime(evalTime),
+			F: 1,
+		},
+		{
+			Metric: labels.FromStrings(
+				model.MetricNameLabel, alertForStateMetricName,
+				labels.AlertName, "HighErrors",
+				"job", "api",
+				"severity", "page",
+			),
+			T: timestamp.FromTime(evalTime),
+			F: float64(evalTime.Unix()),
+		},
+	}
+	testutil.RequireEqual(t, expected, res)
+
+	// Verify RestoreForState matches ALERTS_FOR_STATE even when stored with __type__ and __unit__.
+	app = st.AppenderV2(t.Context())
+	_, err = app.Append(
+		0,
+		labels.FromStrings(
+			model.MetricNameLabel, alertForStateMetricName,
+			model.MetricTypeLabel, string(model.MetricTypeGauge),
+			model.MetricUnitLabel, "errors",
+			labels.AlertName, "HighErrors",
+			"job", "api",
+			"severity", "page",
+		),
+		0,
+		timestamp.FromTime(evalTime),
+		float64(evalTime.Add(-4*time.Minute).Unix()),
+		nil,
+		nil,
+		storage.AOptions{},
+	)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	restoredRule := NewAlertingRule(
+		"HighErrors",
+		expr,
+		5*time.Minute,
+		0,
+		labels.FromStrings("severity", "page"),
+		labels.EmptyLabels(),
+		labels.EmptyLabels(),
+		"",
+		false,
+		promslog.NewNopLogger(),
+	)
+	var notified []*Alert
+	g := NewGroup(GroupOptions{
+		Name:          "default",
+		Interval:      time.Minute,
+		Rules:         []Rule{restoredRule},
+		ShouldRestore: true,
+		Opts: &ManagerOptions{
+			Context:                 t.Context(),
+			Queryable:               st,
+			QueryFunc:               EngineQueryFunc(ng, st),
+			AppendableV2:            st,
+			NotifyFunc:              func(_ context.Context, _ string, alerts ...*Alert) { notified = append(notified, alerts...) },
+			OutageTolerance:         time.Hour,
+			ForGracePeriod:          30 * time.Second,
+			Logger:                  promslog.NewNopLogger(),
+			EnableTypeAndUnitLabels: true,
+		},
+	})
+	g.Eval(t.Context(), evalTime)
+	require.NoError(t, restoredRule.LastError())
+	g.RestoreForState(evalTime.Add(30 * time.Second))
+	require.True(t, restoredRule.Restored())
+
+	restoredActive := restoredRule.ActiveAlerts()
+	require.Len(t, restoredActive, 1)
+	require.Equal(t, evalTime.Add(-3*time.Minute-30*time.Second), restoredActive[0].ActiveAt)
+
+	// Evaluate past the hold duration so Group.Eval fires NotifyFunc and persists ALERTS.
+	fireTime := evalTime.Add(2 * time.Minute)
+	app = st.AppenderV2(t.Context())
+	_, err = app.Append(
+		0,
+		labels.FromStrings(
+			model.MetricNameLabel, "http_errors_total",
+			model.MetricTypeLabel, string(model.MetricTypeCounter),
+			model.MetricUnitLabel, "errors",
+			"job", "api",
+		),
+		0,
+		timestamp.FromTime(fireTime),
+		42,
+		nil,
+		nil,
+		storage.AOptions{},
+	)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	g.Eval(t.Context(), fireTime)
+	require.NoError(t, restoredRule.LastError())
+	require.Len(t, notified, 1)
+	require.Equal(t, StateFiring, notified[0].State)
+	testutil.RequireEqual(t, labels.FromStrings(labels.AlertName, "HighErrors", "job", "api", "severity", "page"), notified[0].Labels)
+
+	q, err := st.Querier(timestamp.FromTime(fireTime), timestamp.FromTime(fireTime))
+	require.NoError(t, err)
+	ss := q.Select(t.Context(), false, nil, labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, alertMetricName))
+	require.True(t, ss.Next())
+	testutil.RequireEqual(t, labels.FromStrings(
+		model.MetricNameLabel, alertMetricName,
+		labels.AlertName, "HighErrors",
+		alertStateLabel, "firing",
+		"job", "api",
+		"severity", "page",
+	), ss.At().Labels())
+	require.False(t, ss.Next())
+	require.NoError(t, ss.Err())
+	require.NoError(t, q.Close())
+
+	t.Run("restore_colliding_for_state_series", func(t *testing.T) {
+		type storedForState struct {
+			lbls labels.Labels
+			ts   time.Time
+			val  float64
+		}
+		stale := math.Float64frombits(value.StaleNaN)
+		activeVal := float64(evalTime.Add(-4 * time.Minute).Unix())
+		wantRestored := evalTime.Add(-3*time.Minute - 30*time.Second)
+
+		untypedLbls := labels.FromStrings(
+			model.MetricNameLabel, alertForStateMetricName,
+			labels.AlertName, "HighErrors",
+			"job", "api",
+			"severity", "page",
+		)
+		typedGaugeLbls := labels.FromStrings(
+			model.MetricNameLabel, alertForStateMetricName,
+			model.MetricTypeLabel, string(model.MetricTypeGauge),
+			labels.AlertName, "HighErrors",
+			"job", "api",
+			"severity", "page",
+		)
+		leakedCounterLbls := labels.FromStrings(
+			model.MetricNameLabel, alertForStateMetricName,
+			model.MetricTypeLabel, string(model.MetricTypeCounter),
+			model.MetricUnitLabel, "errors",
+			labels.AlertName, "HighErrors",
+			"job", "api",
+			"severity", "page",
+		)
+
+		cases := []struct {
+			name         string
+			series       []storedForState
+			wantActiveAt time.Time
+		}{
+			{
+				name: "newer_typed_beats_older_stale_untyped",
+				series: []storedForState{
+					{lbls: typedGaugeLbls, ts: evalTime, val: activeVal},
+					{lbls: untypedLbls, ts: evalTime.Add(-time.Minute), val: stale},
+				},
+				wantActiveAt: wantRestored,
+			},
+			{
+				name: "newer_stale_untyped_beats_older_active_leaked",
+				series: []storedForState{
+					{lbls: untypedLbls, ts: evalTime, val: stale},
+					{lbls: leakedCounterLbls, ts: evalTime.Add(-time.Minute), val: activeVal},
+				},
+				wantActiveAt: evalTime,
+			},
+			{
+				name: "same_timestamp_active_first_beats_stale",
+				series: []storedForState{
+					{lbls: untypedLbls, ts: evalTime, val: activeVal},
+					{lbls: leakedCounterLbls, ts: evalTime, val: stale},
+				},
+				wantActiveAt: wantRestored,
+			},
+			{
+				name: "same_timestamp_stale_first_loses_to_active",
+				series: []storedForState{
+					{lbls: leakedCounterLbls, ts: evalTime, val: stale},
+					{lbls: untypedLbls, ts: evalTime, val: activeVal},
+				},
+				wantActiveAt: wantRestored,
+			},
+		}
+
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				caseStore := teststorage.New(t)
+				app := caseStore.AppenderV2(t.Context())
+				_, err := app.Append(
+					0,
+					labels.FromStrings(
+						model.MetricNameLabel, "http_errors_total",
+						model.MetricTypeLabel, string(model.MetricTypeCounter),
+						model.MetricUnitLabel, "errors",
+						"job", "api",
+					),
+					0,
+					timestamp.FromTime(evalTime),
+					42,
+					nil,
+					nil,
+					storage.AOptions{},
+				)
+				require.NoError(t, err)
+				for _, s := range tc.series {
+					_, err := app.Append(0, s.lbls, 0, timestamp.FromTime(s.ts), s.val, nil, nil, storage.AOptions{})
+					require.NoError(t, err)
+				}
+				require.NoError(t, app.Commit())
+
+				r := NewAlertingRule(
+					"HighErrors",
+					expr,
+					5*time.Minute,
+					0,
+					labels.FromStrings("severity", "page"),
+					labels.EmptyLabels(),
+					labels.EmptyLabels(),
+					"",
+					false,
+					promslog.NewNopLogger(),
+				)
+				grp := NewGroup(GroupOptions{
+					Name:          "default",
+					Interval:      time.Minute,
+					Rules:         []Rule{r},
+					ShouldRestore: true,
+					Opts: &ManagerOptions{
+						Context:                 t.Context(),
+						Queryable:               caseStore,
+						QueryFunc:               EngineQueryFunc(ng, caseStore),
+						AppendableV2:            caseStore,
+						NotifyFunc:              func(context.Context, string, ...*Alert) {},
+						OutageTolerance:         time.Hour,
+						ForGracePeriod:          30 * time.Second,
+						Logger:                  promslog.NewNopLogger(),
+						EnableTypeAndUnitLabels: true,
+					},
+				})
+				grp.Eval(t.Context(), evalTime)
+				require.NoError(t, r.LastError())
+				grp.RestoreForState(evalTime.Add(30 * time.Second))
+				require.True(t, r.Restored())
+
+				got := r.ActiveAlerts()
+				require.Len(t, got, 1)
+				require.Equal(t, tc.wantActiveAt, got[0].ActiveAt)
+			})
+		}
+	})
+
+	t.Run("rule_labels_cannot_reinject_metadata_labels", func(t *testing.T) {
+		ruleLbls := labels.FromStrings(
+			model.MetricTypeLabel, string(model.MetricTypeGauge),
+			model.MetricUnitLabel, "seconds",
+			"job", "override",
+			"severity", "page",
+		)
+		r := NewAlertingRule(
+			"HighErrors",
+			expr,
+			5*time.Minute,
+			0,
+			ruleLbls,
+			labels.EmptyLabels(),
+			labels.EmptyLabels(),
+			"",
+			true,
+			promslog.NewNopLogger(),
+		)
+		vec, err := r.Eval(t.Context(), 0, evalTime, EngineQueryFunc(ng, st), nil, 0)
+		require.NoError(t, err)
+		require.Len(t, vec, 2)
+
+		wantAlertLbls := labels.FromStrings(labels.AlertName, "HighErrors", "job", "override", "severity", "page")
+		gotActive := r.ActiveAlerts()
+		require.Len(t, gotActive, 1)
+		testutil.RequireEqual(t, wantAlertLbls, gotActive[0].Labels)
+
+		testutil.RequireEqual(t, promql.Vector{
+			{
+				Metric: labels.FromStrings(
+					model.MetricNameLabel, alertMetricName,
+					labels.AlertName, "HighErrors",
+					alertStateLabel, "pending",
+					"job", "override",
+					"severity", "page",
+				),
+				T: timestamp.FromTime(evalTime),
+				F: 1,
+			},
+			{
+				Metric: labels.FromStrings(
+					model.MetricNameLabel, alertForStateMetricName,
+					labels.AlertName, "HighErrors",
+					"job", "override",
+					"severity", "page",
+				),
+				T: timestamp.FromTime(evalTime),
+				F: float64(evalTime.Unix()),
+			},
+		}, vec)
+
+		// Verify RestoreForState still matches stored ALERTS_FOR_STATE when rule labels contain __type__/__unit__.
+		restoreStore := teststorage.New(t)
+		app := restoreStore.AppenderV2(t.Context())
+		_, err = app.Append(
+			0,
+			labels.FromStrings(
+				model.MetricNameLabel, "http_errors_total",
+				model.MetricTypeLabel, string(model.MetricTypeCounter),
+				model.MetricUnitLabel, "errors",
+				"job", "api",
+			),
+			0,
+			timestamp.FromTime(evalTime),
+			42,
+			nil,
+			nil,
+			storage.AOptions{},
+		)
+		require.NoError(t, err)
+		_, err = app.Append(
+			0,
+			labels.FromStrings(
+				model.MetricNameLabel, alertForStateMetricName,
+				labels.AlertName, "HighErrors",
+				"job", "override",
+				"severity", "page",
+			),
+			0,
+			timestamp.FromTime(evalTime),
+			float64(evalTime.Add(-4*time.Minute).Unix()),
+			nil,
+			nil,
+			storage.AOptions{},
+		)
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+
+		restored := NewAlertingRule(
+			"HighErrors",
+			expr,
+			5*time.Minute,
+			0,
+			ruleLbls,
+			labels.EmptyLabels(),
+			labels.EmptyLabels(),
+			"",
+			false,
+			promslog.NewNopLogger(),
+		)
+		grp := NewGroup(GroupOptions{
+			Name:          "default",
+			Interval:      time.Minute,
+			Rules:         []Rule{restored},
+			ShouldRestore: true,
+			Opts: &ManagerOptions{
+				Context:                 t.Context(),
+				Queryable:               restoreStore,
+				QueryFunc:               EngineQueryFunc(ng, restoreStore),
+				AppendableV2:            restoreStore,
+				NotifyFunc:              func(context.Context, string, ...*Alert) {},
+				OutageTolerance:         time.Hour,
+				ForGracePeriod:          30 * time.Second,
+				Logger:                  promslog.NewNopLogger(),
+				EnableTypeAndUnitLabels: true,
+			},
+		})
+		grp.Eval(t.Context(), evalTime)
+		require.NoError(t, restored.LastError())
+		grp.RestoreForState(evalTime.Add(30 * time.Second))
+		require.True(t, restored.Restored())
+
+		gotRestored := restored.ActiveAlerts()
+		require.Len(t, gotRestored, 1)
+		require.Equal(t, evalTime.Add(-3*time.Minute-30*time.Second), gotRestored[0].ActiveAt)
+	})
 }

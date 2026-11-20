@@ -3282,12 +3282,13 @@ groups:
 			opt.EnableMetadataWALRecords = true
 		})
 
+		var notified []*Alert
 		mgr := NewManager(&ManagerOptions{
 			Context:                 t.Context(),
 			AppendableV2:            appendStore,
 			Queryable:               schemaQueryStore,
 			QueryFunc:               EngineQueryFunc(schemaEngine, schemaQueryStore),
-			NotifyFunc:              func(context.Context, string, ...*Alert) {},
+			NotifyFunc:              func(_ context.Context, _ string, alerts ...*Alert) { notified = append(notified, alerts...) },
 			Logger:                  promslog.NewNopLogger(),
 			AppendMetadata:          true,
 			EnableTypeAndUnitLabels: true,
@@ -3303,6 +3304,9 @@ groups:
 				require.NoError(t, r.LastError())
 			}
 		}
+		require.Len(t, notified, 1)
+		require.Equal(t, StateFiring, notified[0].State)
+		prom_testutil.RequireEqual(t, labels.FromStrings(labels.AlertName, "HighRequests", "job", "api"), notified[0].Labels)
 
 		q, err := appendStore.Querier(0, timestamp.FromTime(evalTime))
 		require.NoError(t, err)
@@ -3340,6 +3344,17 @@ groups:
 			"job:latency_seconds:rate5m": labels.FromStrings(
 				model.MetricNameLabel, "job:latency_seconds:rate5m",
 				model.MetricTypeLabel, "gaugehistogram",
+				"job", "api",
+			),
+			alertMetricName: labels.FromStrings(
+				model.MetricNameLabel, alertMetricName,
+				labels.AlertName, "HighRequests",
+				alertStateLabel, "firing",
+				"job", "api",
+			),
+			alertForStateMetricName: labels.FromStrings(
+				model.MetricNameLabel, alertForStateMetricName,
+				labels.AlertName, "HighRequests",
 				"job", "api",
 			),
 		}

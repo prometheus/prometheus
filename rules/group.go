@@ -874,9 +874,13 @@ func (g *Group) RestoreForState(ts time.Time) {
 		}
 
 		// While not technically the same number of series we expect, it's as good of an approximation as any.
-		seriesByLabels := make(map[string]storage.Series, alertRule.ActiveAlertsCount())
+		// Multiple ALERTS_FOR_STATE series can share a key after stripping metadata labels
+		// (for example, across upgrades or when type-and-unit-labels changes).
+		seriesByLabels := make(map[string][]storage.Series, alertRule.ActiveAlertsCount())
 		for sset.Next() {
-			seriesByLabels[sset.At().Labels().DropReserved(func(n string) bool { return n == labels.MetricName }).String()] = sset.At()
+			s := sset.At()
+			key := s.Labels().DropReserved(schema.IsMetadataLabel).String()
+			seriesByLabels[key] = append(seriesByLabels[key], s)
 		}
 
 		// No results for this alert rule.
@@ -887,25 +891,44 @@ func (g *Group) RestoreForState(ts time.Time) {
 		}
 
 		alertRule.ForEachActiveAlert(func(a *Alert) {
-			var s storage.Series
-
-			s, ok := seriesByLabels[a.Labels.String()]
+			seriesList, ok := seriesByLabels[a.Labels.String()]
 			if !ok {
 				return
 			}
-			// Series found for the 'for' state.
-			var t int64
-			var v float64
-			it := s.Iterator(nil)
-			for it.Next() == chunkenc.ValFloat {
-				t, v = it.At()
+			// Series found for the 'for' state. When multiple series share the same key
+			// after stripping metadata labels, pick the latest sample across all of them.
+			var (
+				t     int64
+				v     float64
+				found bool
+				it    chunkenc.Iterator
+			)
+			for _, s := range seriesList {
+				var (
+					st     int64
+					sv     float64
+					sFound bool
+				)
+				it = s.Iterator(it)
+				for it.Next() == chunkenc.ValFloat {
+					st, sv = it.At()
+					sFound = true
+				}
+				if it.Err() != nil {
+					g.logger.Error("Failed to restore 'for' state",
+						labels.AlertName, alertRule.Name(), "stage", "Iterator", "err", it.Err())
+					return
+				}
+				if !sFound {
+					continue
+				}
+				// Prefer a non-stale sample on exact timestamp ties, which happen when an old
+				// series is marked stale on the same eval timestamp a replacement starts.
+				if !found || st > t || (st == t && value.IsStaleNaN(v) && !value.IsStaleNaN(sv)) {
+					t, v, found = st, sv, true
+				}
 			}
-			if it.Err() != nil {
-				g.logger.Error("Failed to restore 'for' state",
-					labels.AlertName, alertRule.Name(), "stage", "Iterator", "err", it.Err())
-				return
-			}
-			if value.IsStaleNaN(v) { // Alert was not active.
+			if !found || value.IsStaleNaN(v) { // Alert was not active.
 				return
 			}
 
