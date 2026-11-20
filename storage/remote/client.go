@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"net"
 	"net/http"
 	"net/http/httptrace"
 	"strconv"
@@ -140,6 +141,7 @@ type ClientConfig struct {
 	ChunkedReadLimit      uint64
 	RoundRobinDNS         bool
 	AcceptedResponseTypes []prompb.ReadRequest_ResponseType
+	UnixSocketPath        string
 }
 
 // ReadClient will request the STREAMED_XOR_CHUNKS method of remote read but can
@@ -186,6 +188,16 @@ func NewWriteClient(name string, conf *ClientConfig) (WriteClient, error) {
 	var httpOpts []config_util.HTTPClientOption
 	if conf.RoundRobinDNS {
 		httpOpts = []config_util.HTTPClientOption{config_util.WithDialContextFunc(newDialContextWithRoundRobinDNS().dialContextFn())}
+	}
+	if conf.UnixSocketPath != "" {
+		socketPath := conf.UnixSocketPath
+		// No KeepAlive: keep-alive probes do not apply to unix-domain sockets.
+		dialer := &net.Dialer{Timeout: 30 * time.Second}
+		httpOpts = append(httpOpts, config_util.WithDialContextFunc(
+			func(ctx context.Context, _, _ string) (net.Conn, error) {
+				return dialer.DialContext(ctx, "unix", socketPath)
+			},
+		))
 	}
 	httpClient, err := config_util.NewClientFromConfig(conf.HTTPClientConfig, "remote_storage_write_client", httpOpts...)
 	if err != nil {

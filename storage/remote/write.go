@@ -208,6 +208,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			Headers:          rwConf.Headers,
 			RetryOnRateLimit: rwConf.QueueConfig.RetryOnRateLimit,
 			RoundRobinDNS:    rwConf.RoundRobinDNS,
+			UnixSocketPath:   rwConf.UnixSocketPath,
 		})
 		if err != nil {
 			return err
