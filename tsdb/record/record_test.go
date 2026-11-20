@@ -20,6 +20,7 @@ import (
 	"math"
 	"math/rand"
 	"runtime"
+	"slices"
 	"testing"
 	"unsafe"
 
@@ -135,6 +136,57 @@ func TestRecord_EncodeDecode(t *testing.T) {
 	decSamples, err = dec.Samples(enc.Samples(samplesWithConstST, nil), nil)
 	require.NoError(t, err)
 	require.Equal(t, samplesWithConstST, decSamples)
+
+	t.Run("Samples append", func(t *testing.T) {
+		for _, tc := range []struct {
+			name       string
+			recordType Type
+			samples    []RefSample
+		}{
+			{"V1/empty", Samples, nil},
+			{"V1/one sample", Samples, []RefSample{{Ref: 1, T: 10, V: 1}}},
+			{"V1/two samples", Samples, []RefSample{{Ref: 1, T: 10, V: 1}, {Ref: 2, T: 11, V: 2}}},
+			{"V2/empty", SamplesV2, nil},
+			{"V2/one sample", SamplesV2, []RefSample{{Ref: 1, T: 10, V: 1}}},
+			{"V2/two samples", SamplesV2, []RefSample{{Ref: 1, T: 10, V: 1}, {Ref: 2, T: 11, V: 2}}},
+			// Initial ST=5, same ST, absent ST, then ST=4 as a delta to the first.
+			{"V2/ST markers", SamplesV2, []RefSample{{Ref: 1, ST: 5, T: 10, V: 1}, {Ref: 2, ST: 5, T: 11, V: 2}, {Ref: 3, T: 12, V: 3}, {Ref: 4, ST: 4, T: 13, V: 4}}},
+		} {
+			// Small capacities exercise growth; ample capacity isolates V2 initialization.
+			for _, dst := range []struct {
+				name     string
+				prefix   bool
+				capacity int
+			}{
+				{"nil", false, 0},
+				{"empty", false, 64},
+				{"prefix/cap1", true, 1},
+				{"prefix/cap2", true, 2},
+				{"prefix/cap64", true, 64},
+			} {
+				t.Run(tc.name+"/"+dst.name, func(t *testing.T) {
+					var destination []RefSample
+					if dst.capacity > 0 {
+						destination = make([]RefSample, 0, dst.capacity)
+					}
+					if dst.prefix {
+						destination = append(destination, RefSample{Ref: 7, ST: 3, T: 5, V: 2})
+					}
+					want := slices.Clone(destination)
+					enc := Encoder{EnableSTStorage: tc.recordType == SamplesV2}
+					wire := enc.Samples(tc.samples, nil)
+					require.Equal(t, tc.recordType, dec.Type(wire))
+					for range 2 {
+						var err error
+						destination, err = dec.Samples(wire, destination)
+						require.NoError(t, err)
+						want = append(want, tc.samples...)
+						require.Equal(t, want, destination)
+					}
+				})
+			}
+		}
+	})
 
 	// Intervals get split up into single entries. So we don't get back exactly
 	// what we put in.
