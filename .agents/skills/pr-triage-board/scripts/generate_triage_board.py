@@ -1377,8 +1377,8 @@ def main():
         "--limit",
         "-l",
         type=int,
-        default=100,
-        help="Max open PRs to fetch per repository (ordered by recently updated). Default: 100.",
+        default=150,
+        help="Max open PRs to fetch per repository (ordered by recently updated). Default: 150.",
     )
     parser.add_argument(
         "--maintainer",
