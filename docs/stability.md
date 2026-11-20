@@ -15,6 +15,7 @@ Things considered stable for 3.x:
 * The ingestion exposition format
 * v1 HTTP API (used by dashboards and UIs), excluding endpoints explicitly marked as experimental
 * Configuration file format (minus the service discovery remote read/write, see below)
+* Command-line flags
 * Rule/alert file format
 * Console template syntax and semantics
 * Remote write sending, per the [1.0 specification](https://prometheus.io/docs/concepts/remote_write_spec/) and receiving
@@ -39,5 +40,237 @@ Prometheus 2.x stability guarantees can be found [in the 2.x documentation](http
 As long as you are not using any features marked as experimental/unstable, an
 upgrade within a major version can usually be performed without any operational
 adjustments and very little risk that anything will break. Any breaking changes
-will be marked as `CHANGE` in release notes.
+will be marked as `CHANGE` in release notes. See
+[Deprecation notices](#deprecation-notices) for items flagged for removal.
 
+## Deprecation notices
+
+Prometheus reports deprecated items as it uses them, so you can tell whether
+an instance is affected before you upgrade. Nothing is broken when one is
+reported, and a notice is never withdrawn while Prometheus runs: only a
+restart clears one.
+
+Reporting is best effort, an item is reported the moment Prometheus reaches
+it, which can be well after startup. A notice proves an item is in use, its
+absence does not prove the opposite.
+
+Each one is a `prometheus_deprecation_notice` gauge sample with value `1`.
+Almost all are logged too, always as `Deprecated item in use`, so one filter
+finds them all. Run at debug level for the rest, and for details.
+
+| Label                 | Description                                              |
+|-----------------------|----------------------------------------------------------|
+| `name`                | Identifier of the deprecated item.                       |
+| `expected_removal_in` | `next_major_release` when the item is covered by the stable-for-3.x guarantees above; `future_minor_release` otherwise. |
+| `details_url`         | Link to the Deprecation notices section.                 |
+| `scope`               | `user` or `internal`.                         |
+
+The `scope` label says whether the notice is yours to clear:
+
+* `user`: it is. Apply the fix below and restart, and the notice goes. Clear
+  all of these before you upgrade.
+* `internal`: it is not. Prometheus itself does the deprecated thing and
+  cannot tell whether anything depends on it, so the notice stays until
+  `expected_removal_in` removes the item. Apply the fix below before then.
+
+Go API deprecations visible only to library consumers are marked with a
+`// Deprecated:` comment per Go convention but are not tracked by this metric.
+
+The following items are currently deprecated:
+
+### Using a non-standard /api/v1 query stats parameter
+
+`stats` accepts `"true"` and `"all"` on `/api/v1/query`, `/api/v1/query_range`,
+`/api/v1/query_cost` and `/api/v1/query_range_cost`, see
+[query statistics](querying/api.md#query-statistics). Any other non-empty value
+behaves like `"true"` today and will be rejected in the next major release.
+
+Fix the client that sends it; it also receives the deprecation as a response
+warning. To find which client that is, Prometheus logs every such request at
+`debug` with the value, URL, client address and user agent.
+
+### Using --enable-feature=auto-reload-config
+
+Automatic configuration reloading now has a dedicated top-level flag. Replace
+this option with
+[`--config.auto-reload`](command-line/prometheus.md#flags).
+
+### Using --enable-feature=extra-scrape-metrics
+
+[Extra scrape metrics](feature_flags.md#extra-scrape-metrics) such as
+`scrape_body_size_bytes` are now enabled per scrape job, and globally, through
+the `extra_scrape_metrics`
+[configuration field](configuration/configuration.md#scrape_config). Remove
+the flag and set it on the jobs that need it.
+
+### Using --enable-feature=native-histograms
+
+Native histogram scraping is now configured per scrape job through the
+`scrape_native_histograms`
+[configuration field](configuration/configuration.md#scrape_config). Remove
+the flag and set it on the jobs that need it.
+
+### Using --enable-feature=ooo-native-histograms
+
+Out-of-order ingestion of native histograms is permanently enabled, so the
+option is a no-op. Remove it.
+
+### Using --enable-feature=otlp-deltatocumulative
+
+Converting OTLP delta metrics to cumulative is superseded by
+[native delta ingestion](feature_flags.md#otlp-native-delta-support), which
+stores the delta values as they are. Replace this option with
+`--enable-feature=otlp-native-delta-ingestion`.
+
+### Using --enable-feature=promql-duration-expr
+
+Duration expressions in PromQL, for example `1h30m` instead of `5400s`, are
+part of the standard query language, so the option is a no-op. Remove it.
+
+### Using --enable-feature=promql-extended-range-selectors
+
+[Extended range selectors](feature_flags.md#extended-range-selectors) are part
+of the standard query language, so the option is a no-op. Remove it.
+
+### Using --enable-feature=xor2-encoding
+
+The [XOR2 chunk encoding](feature_flags.md#xor2-chunk-encoding) for float
+samples is stable and selectable in the configuration file. Remove the flag
+and set `storage.tsdb.chunk_encoding.floats` to `xor2`
+[there](configuration/configuration.md#tsdb) instead.
+
+### Using the --log.level CLI flag
+
+The log level has moved to the configuration file. Remove the flag and set
+[`runtime.log_level`](configuration/configuration.md#configuration-file)
+instead.
+
+### Using the --scrape.adjust-timestamps CLI flag
+
+This flag controlled whether scrape timestamps were shifted, by up to the
+configured tolerance, to align them to the intended schedule. Alignment is now
+always on, so remove the flag. See
+[#7846](https://github.com/prometheus/prometheus/issues/7846).
+
+### Using the --scrape.timestamp-tolerance CLI flag
+
+This flag set how far scrape timestamps could be shifted when aligning them.
+There is no replacement, the tolerance is fixed at `2ms`, so remove the flag.
+See [#7846](https://github.com/prometheus/prometheus/issues/7846).
+
+### Using the --storage.tsdb.retention.time CLI flag
+
+Time-based retention has moved to the configuration file. Remove the flag and
+set `retention.time` under
+[`storage.tsdb`](configuration/configuration.md#tsdb) instead.
+
+### Using the --storage.tsdb.retention.size CLI flag
+
+Size-based retention has moved to the configuration file. Remove the flag and
+set `retention.size` under
+[`storage.tsdb`](configuration/configuration.md#tsdb) instead.
+
+### Using the consul_sd_configs username or password configuration fields
+
+Superseded by the standard `basic_auth` block, which is how every other
+HTTP-based service discovery integration configures authentication. Move the
+credentials into `basic_auth` in
+[`consul_sd_configs`](configuration/configuration.md#consul_sd_config).
+
+### Using the consul_sd_configs node_meta configuration field
+
+Superseded by `filter`, which takes full Consul query filter expressions,
+including logical operators and regular expressions. Replace it with an
+equivalent `filter` in
+[`consul_sd_configs`](configuration/configuration.md#consul_sd_config).
+
+### Using the consul_sd_configs tags configuration field
+
+Superseded by `filter` and `health_filter`, which take full Consul query
+filter expressions. Replace it with an equivalent expression in
+[`consul_sd_configs`](configuration/configuration.md#consul_sd_config).
+
+### Using the kubernetes_sd_configs role: endpoints configuration field
+
+The Kubernetes Endpoints API is deprecated upstream in favour of
+EndpointSlice, which scales better in large clusters. Use
+[`role: endpointslice`](configuration/configuration.md#endpointslice) instead.
+
+### Using the ElastiCache SD serverless cache meta labels
+
+These names are inconsistent with the rest of the ElastiCache labels: some
+put `endpoint` before the role, others run two words together. Replace them in
+your [`relabel_configs`](configuration/configuration.md#relabel_config):
+
+| Deprecated | Replacement |
+|------------|-------------|
+| `__meta_elasticache_serverless_cache_endpoint_reader_address` | `__meta_elasticache_serverless_cache_reader_endpoint_address` |
+| `__meta_elasticache_serverless_cache_endpoint_reader_port` | `__meta_elasticache_serverless_cache_reader_endpoint_port` |
+| `__meta_elasticache_serverless_cache_cache_usage_limit_data_storagemaximum` | `__meta_elasticache_serverless_cache_cache_usage_limit_data_storage_maximum` |
+| `__meta_elasticache_serverless_cache_cache_usage_limit_data_storageminimum` | `__meta_elasticache_serverless_cache_cache_usage_limit_data_storage_minimum` |
+| `__meta_elasticache_serverless_cache_cache_usage_limit_data_storageunit` | `__meta_elasticache_serverless_cache_cache_usage_limit_data_storage_unit` |
+| `__meta_elasticache_serverless_cache_cache_usage_limit_ecpu_per_secondmaximum` | `__meta_elasticache_serverless_cache_cache_usage_limit_ecpu_per_second_maximum` |
+| `__meta_elasticache_serverless_cache_cache_usage_limit_ecpu_per_secondminimum` | `__meta_elasticache_serverless_cache_cache_usage_limit_ecpu_per_second_minimum` |
+
+### Using the Hetzner robot SD meta label __meta_hetzner_datacenter
+
+This label is only set for the `robot` role, but its name does not say so,
+unlike every other robot label. Replace it with
+`__meta_hetzner_robot_datacenter` in your
+[`relabel_configs`](configuration/configuration.md#hetzner_sd_config).
+
+### Using the Hetzner hcloud SD meta label __meta_hetzner_hcloud_datacenter_location
+
+The value is the server's location, not its datacenter, so the name is
+misleading. Replace it with `__meta_hetzner_hcloud_location` in your
+[`relabel_configs`](configuration/configuration.md#hetzner_sd_config).
+
+### Using the Hetzner hcloud SD meta label __meta_hetzner_hcloud_datacenter_location_network_zone
+
+The value is the network zone of the server's location, not of its
+datacenter, so the name is misleading. Replace it with
+`__meta_hetzner_hcloud_location_network_zone` in your
+[`relabel_configs`](configuration/configuration.md#hetzner_sd_config).
+
+### Using the Kubernetes SD meta label __meta_kubernetes_service_loadbalancer_ip
+
+A service can have several load balancer IPs, which the singular name cannot
+express. Replace it with `__meta_kubernetes_service_loadbalancer_ips` in your
+[`relabel_configs`](configuration/configuration.md#service).
+
+### Exposing the prometheus_remote_storage_samples_in_total metric
+
+One counter for the whole process, with no label tying it to a `remote_write`
+entry: relabeling on one entry can drop most samples while this keeps climbing
+with all scrape traffic.
+
+Use `prometheus_remote_storage_samples_dropped_total`, labelled with the
+entry's `url`, and `prometheus_wal_watcher_records_read_total` with
+`type="samples"`.
+
+### Exposing the prometheus_remote_storage_exemplars_in_total metric
+
+One counter for the whole process, with no label tying it to a `remote_write`
+entry.
+
+Use `prometheus_remote_storage_exemplars_dropped_total`, labelled with the
+entry's `url`, and `prometheus_wal_watcher_records_read_total` with
+`type="exemplars"`.
+
+### Exposing the prometheus_remote_storage_histograms_in_total metric
+
+One counter for the whole process, with no label tying it to a `remote_write`
+entry.
+
+Use `prometheus_remote_storage_histograms_dropped_total`, labelled with the
+entry's `url`, and `prometheus_wal_watcher_records_read_total` with `type`
+matching `.*histogram_samples`.
+
+### Exposing the prometheus_remote_storage_highest_timestamp_in_seconds metric
+
+One gauge for the whole process. It advances for any series entering remote
+write, including ones an entry later drops via relabeling, so lag alerts built
+on it fire when an entry simply does not select those series.
+
+Use `prometheus_remote_storage_queue_highest_timestamp_seconds` instead, which
+advances only for data actually sent to that entry.

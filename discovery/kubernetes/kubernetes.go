@@ -48,6 +48,7 @@ import (
 
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"github.com/prometheus/prometheus/util/deprecation"
 	"github.com/prometheus/prometheus/util/strutil"
 )
 
@@ -125,6 +126,10 @@ func (*SDConfig) Name() string { return "kubernetes" }
 
 // NewDiscoverer returns a Discoverer for the Config.
 func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
+	if c.Role == RoleEndpoint {
+		deprecation.MarkDeprecated("Using the kubernetes_sd_configs role: endpoints configuration field", deprecation.FutureMinorRelease)
+		deprecation.Warn(opts.Logger, "Using the kubernetes_sd_configs role: endpoints configuration field")
+	}
 	return New(opts.Logger, opts.Metrics, c)
 }
 

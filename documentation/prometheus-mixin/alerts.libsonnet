@@ -21,6 +21,22 @@
             },
           },
           {
+            alert: 'PrometheusDeprecationNotice',
+            expr: |||
+              # Without max_over_time, failed scrapes could create false negatives, see
+              # https://www.robustperception.io/alerting-on-gauges-in-prometheus-2-0 for details.
+              max_over_time(prometheus_deprecation_notice{%(prometheusSelector)s, scope="user"}[5m]) == 1
+            ||| % $._config,
+            'for': '1h',
+            labels: {
+              severity: 'warning',
+            },
+            annotations: {
+              summary: 'Deprecated Prometheus feature or configuration in use.',
+              description: 'Prometheus %(prometheusName)s has used "{{ $labels.name }}" since it started, due to be removed in {{ $labels.expected_removal_in }}. Nothing is broken, but the next upgrade past that release will break it. Fix it as described at {{ $labels.details_url }}, then restart Prometheus to clear the notice. Only scope="user" notices alert, the ones you can clear.' % $._config,
+            },
+          },
+          {
             alert: 'PrometheusSDRefreshFailure',
             expr: |||
               increase(prometheus_sd_refresh_failures_total{%(prometheusSelector)s}[10m]) > 0

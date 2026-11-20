@@ -28,6 +28,7 @@ import (
 
 	"github.com/prometheus/prometheus/discovery/refresh"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"github.com/prometheus/prometheus/util/deprecation"
 	"github.com/prometheus/prometheus/util/strutil"
 )
 
@@ -58,13 +59,15 @@ type hcloudDiscovery struct {
 	client        *hcloud.Client
 	port          int
 	labelSelector string
+	logger        *slog.Logger
 }
 
 // newHcloudDiscovery returns a new hcloudDiscovery which periodically refreshes its targets.
-func newHcloudDiscovery(conf *SDConfig, _ *slog.Logger) (*hcloudDiscovery, error) {
+func newHcloudDiscovery(conf *SDConfig, logger *slog.Logger) (*hcloudDiscovery, error) {
 	d := &hcloudDiscovery{
 		port:          conf.Port,
 		labelSelector: conf.LabelSelector,
+		logger:        logger,
 	}
 
 	rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "hetzner_sd")
@@ -104,18 +107,23 @@ func (d *hcloudDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, er
 			hetznerLabelPublicIPv6Network: model.LabelValue(server.PublicNet.IPv6.Network.String()),
 			hetznerLabelServerStatus:      model.LabelValue(server.Status),
 
-			hetznerLabelHcloudLocation:                      model.LabelValue(server.Location.Name),
-			hetznerLabelHcloudLocationNetworkZone:           model.LabelValue(server.Location.NetworkZone),
-			hetznerLabelHcloudDatacenterLocation:            model.LabelValue(server.Location.Name),        // Label name kept for backward compatibility
-			hetznerLabelHcloudDatacenterLocationNetworkZone: model.LabelValue(server.Location.NetworkZone), // Label name kept for backward compatibility
-			hetznerLabelHcloudType:                          model.LabelValue(server.ServerType.Name),
-			hetznerLabelHcloudCPUCores:                      model.LabelValue(strconv.Itoa(server.ServerType.Cores)),
-			hetznerLabelHcloudCPUType:                       model.LabelValue(server.ServerType.CPUType),
-			hetznerLabelHcloudMemoryGB:                      model.LabelValue(strconv.Itoa(int(server.ServerType.Memory))),
-			hetznerLabelHcloudDiskGB:                        model.LabelValue(strconv.Itoa(server.ServerType.Disk)),
+			hetznerLabelHcloudLocation:            model.LabelValue(server.Location.Name),
+			hetznerLabelHcloudLocationNetworkZone: model.LabelValue(server.Location.NetworkZone),
+			hetznerLabelHcloudType:                model.LabelValue(server.ServerType.Name),
+			hetznerLabelHcloudCPUCores:            model.LabelValue(strconv.Itoa(server.ServerType.Cores)),
+			hetznerLabelHcloudCPUType:             model.LabelValue(server.ServerType.CPUType),
+			hetznerLabelHcloudMemoryGB:            model.LabelValue(strconv.Itoa(int(server.ServerType.Memory))),
+			hetznerLabelHcloudDiskGB:              model.LabelValue(strconv.Itoa(server.ServerType.Disk)),
 
 			model.AddressLabel: model.LabelValue(net.JoinHostPort(server.PublicNet.IPv4.IP.String(), strconv.FormatUint(uint64(d.port), 10))),
 		}
+		// Label names kept for backward compatibility.
+		labels[hetznerLabelHcloudDatacenterLocation] = model.LabelValue(server.Location.Name)
+		deprecation.MarkDeprecatedInternal("Using the Hetzner hcloud SD meta label __meta_hetzner_hcloud_datacenter_location", deprecation.FutureMinorRelease)
+		deprecation.Debug(d.logger, "Using the Hetzner hcloud SD meta label __meta_hetzner_hcloud_datacenter_location", "replacement", hetznerLabelHcloudLocation)
+		labels[hetznerLabelHcloudDatacenterLocationNetworkZone] = model.LabelValue(server.Location.NetworkZone)
+		deprecation.MarkDeprecatedInternal("Using the Hetzner hcloud SD meta label __meta_hetzner_hcloud_datacenter_location_network_zone", deprecation.FutureMinorRelease)
+		deprecation.Debug(d.logger, "Using the Hetzner hcloud SD meta label __meta_hetzner_hcloud_datacenter_location_network_zone", "replacement", hetznerLabelHcloudLocationNetworkZone)
 
 		if server.Image != nil {
 			labels[hetznerLabelHcloudImageName] = model.LabelValue(server.Image.Name)

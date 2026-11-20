@@ -53,6 +53,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/tsdb/wlog"
 	"github.com/prometheus/prometheus/util/compression"
+	"github.com/prometheus/prometheus/util/deprecation"
 )
 
 const (
@@ -365,9 +366,6 @@ func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManager
 func (m *queueManagerMetrics) register(protoMsg remoteapi.WriteMessageType) {
 	if m.reg != nil {
 		m.reg.MustRegister(
-			m.samplesTotal,
-			m.exemplarsTotal,
-			m.histogramsTotal,
 			m.failedSamplesTotal,
 			m.failedExemplarsTotal,
 			m.failedHistogramsTotal,
@@ -379,7 +377,6 @@ func (m *queueManagerMetrics) register(protoMsg remoteapi.WriteMessageType) {
 			m.droppedHistogramsTotal,
 			m.enqueueRetriesTotal,
 			m.sentBatchDuration,
-			m.highestTimestamp,
 			m.highestSentTimestamp,
 			m.pendingSamples,
 			m.pendingExemplars,
@@ -392,6 +389,16 @@ func (m *queueManagerMetrics) register(protoMsg remoteapi.WriteMessageType) {
 			m.sentBytesTotal,
 			m.maxSamplesPerSend,
 		)
+		m.reg.MustRegister(
+			m.samplesTotal,
+			m.exemplarsTotal,
+			m.histogramsTotal,
+			m.highestTimestamp,
+		)
+		deprecation.MarkDeprecatedInternal("Exposing the prometheus_remote_storage_samples_in_total metric", deprecation.FutureMinorRelease)
+		deprecation.MarkDeprecatedInternal("Exposing the prometheus_remote_storage_exemplars_in_total metric", deprecation.FutureMinorRelease)
+		deprecation.MarkDeprecatedInternal("Exposing the prometheus_remote_storage_histograms_in_total metric", deprecation.FutureMinorRelease)
+		deprecation.MarkDeprecatedInternal("Exposing the prometheus_remote_storage_highest_timestamp_in_seconds metric", deprecation.FutureMinorRelease)
 		if protoMsg == remoteapi.WriteV1MessageType {
 			m.reg.MustRegister(
 				m.metadataTotal,

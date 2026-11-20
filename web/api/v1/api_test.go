@@ -980,6 +980,7 @@ func TestStats(t *testing.T) {
 		Queryable:   s,
 		QueryEngine: testEngine(t),
 		parser:      testParser,
+		logger:      promslog.NewNopLogger(),
 		now: func() time.Time {
 			return time.Unix(123, 0)
 		},
@@ -5344,6 +5345,7 @@ func newQueryCostTestAPI(t *testing.T, enabled, isAgent bool) *API {
 		config:          func() config.Config { return samplePrometheusCfg },
 		ready:           func(f http.HandlerFunc) http.HandlerFunc { return f },
 		parser:          testParser,
+		logger:          promslog.NewNopLogger(),
 		statsRenderer:   DefaultStatsRenderer,
 		enableQueryCost: enabled,
 		isAgent:         isAgent,

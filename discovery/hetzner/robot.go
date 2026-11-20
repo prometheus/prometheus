@@ -31,6 +31,7 @@ import (
 
 	"github.com/prometheus/prometheus/discovery/refresh"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"github.com/prometheus/prometheus/util/deprecation"
 )
 
 const (
@@ -49,13 +50,15 @@ type robotDiscovery struct {
 	client   *http.Client
 	port     int
 	endpoint string
+	logger   *slog.Logger
 }
 
 // newRobotDiscovery returns a new robotDiscovery which periodically refreshes its targets.
-func newRobotDiscovery(conf *SDConfig, _ *slog.Logger) (*robotDiscovery, error) {
+func newRobotDiscovery(conf *SDConfig, logger *slog.Logger) (*robotDiscovery, error) {
 	d := &robotDiscovery{
 		port:     conf.Port,
 		endpoint: conf.robotEndpoint,
+		logger:   logger,
 	}
 
 	rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "hetzner_sd")
@@ -109,7 +112,6 @@ func (d *robotDiscovery) refresh(context.Context) ([]*targetgroup.Group, error) 
 			hetznerLabelRole:            model.LabelValue(HetznerRoleRobot),
 			hetznerLabelServerID:        model.LabelValue(strconv.Itoa(server.Server.ServerNumber)),
 			hetznerLabelServerName:      model.LabelValue(server.Server.ServerName),
-			hetznerLabelDatacenter:      model.LabelValue(strings.ToLower(server.Server.Dc)), // Label name kept for backward compatibility
 			hetznerLabelPublicIPv4:      model.LabelValue(server.Server.ServerIP),
 			hetznerLabelServerStatus:    model.LabelValue(server.Server.Status),
 			hetznerLabelRobotDatacenter: model.LabelValue(strings.ToLower(server.Server.Dc)),
@@ -118,6 +120,10 @@ func (d *robotDiscovery) refresh(context.Context) ([]*targetgroup.Group, error) 
 
 			model.AddressLabel: model.LabelValue(net.JoinHostPort(server.Server.ServerIP, strconv.FormatUint(uint64(d.port), 10))),
 		}
+		// Label name kept for backward compatibility.
+		labels[hetznerLabelDatacenter] = model.LabelValue(strings.ToLower(server.Server.Dc))
+		deprecation.MarkDeprecatedInternal("Using the Hetzner robot SD meta label __meta_hetzner_datacenter", deprecation.FutureMinorRelease)
+		deprecation.Debug(d.logger, "Using the Hetzner robot SD meta label __meta_hetzner_datacenter", "replacement", hetznerLabelRobotDatacenter)
 		for _, subnet := range server.Server.Subnet {
 			ip := net.ParseIP(subnet.IP)
 			if ip.To4() == nil {
