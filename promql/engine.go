@@ -1818,6 +1818,10 @@ type EvalNodeHelper struct {
 	lblBuf       []byte
 	lblResultBuf []byte
 
+	// For quantile_over_time and mad_over_time: the values to sort, reused
+	// across series and steps.
+	floatBuf []float64
+
 	// For binary vector matching.
 	rightSigs          []Sample
 	sigsPresent        []bool
@@ -4307,6 +4311,7 @@ type groupedAggregation struct {
 	histogramKahanC *histogram.FloatHistogram // Compensation histogram for Kahan summation.
 	groupCount      float64
 	heap            vectorByValueHeap
+	floats          []float64 // The values of a quantile's group, reused across steps.
 
 	// All bools together for better packing within the struct.
 	seen                     bool // Was this output groups seen in the input at this timestamp.
@@ -4348,6 +4353,7 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 				incompatibleHistograms: false,
 				groupCount:             1,
 				dropName:               inputMatrix[si].DropName,
+				floats:                 group.floats[:0],
 			}
 			switch op {
 			case parser.AVG, parser.SUM:
@@ -4383,8 +4389,7 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 					group.seen = false
 					annos.Add(annotations.NewHistogramIgnoredInAggregationInfo("quantile", e.Expr.PositionRange()))
 				}
-				group.heap = make(vectorByValueHeap, 1)
-				group.heap[0] = Sample{F: f}
+				group.floats = append(group.floats, f)
 			case parser.GROUP:
 				group.floatValue = 1
 			case parser.MIN, parser.MAX:
@@ -4591,7 +4596,7 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 				annos.Add(annotations.NewHistogramIgnoredInAggregationInfo("quantile", e.Expr.PositionRange()))
 				continue
 			}
-			group.heap = append(group.heap, Sample{F: f})
+			group.floats = append(group.floats, f)
 
 		default:
 			panic(fmt.Errorf("expected aggregation operator but got %q", op))
@@ -4649,7 +4654,7 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 			aggr.floatValue = math.Sqrt(aggr.floatValue / aggr.groupCount)
 
 		case parser.QUANTILE:
-			aggr.floatValue = quantile(q, aggr.heap)
+			aggr.floatValue = quantile(q, aggr.floats)
 
 		case parser.SUM:
 			if aggr.hasFloat && aggr.hasHistogram {
