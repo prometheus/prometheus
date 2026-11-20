@@ -459,6 +459,53 @@ func BenchmarkJoinQuery(b *testing.B) {
 	}
 }
 
+// BenchmarkComparisonQuery measures vector comparisons with different filtering rates.
+func BenchmarkComparisonQuery(b *testing.B) {
+	stor := teststorage.New(b)
+	stor.DisableCompactions()
+	engine := promqltest.NewTestEngineWithOpts(b, promql.EngineOpts{
+		MaxSamples: 1000000,
+		Timeout:    30 * time.Second,
+	})
+
+	const numInstances = 512
+	require.NoError(b, setupJoinQueryTestData(stor, engine, 10000, 1, numInstances))
+
+	for _, tc := range []struct {
+		name string
+		expr string
+		want int
+	}{
+		{"none", "rpc_request_success_total > on(instance) rpc_request_error_total", 0},
+		{"half", "rpc_request_success_total > on(instance) (rpc_request_error_total % 0.5)", numInstances / 2},
+		{"all", "rpc_request_success_total < on(instance) rpc_request_error_total", numInstances},
+	} {
+		b.Run(tc.name, func(b *testing.B) {
+			ctx := context.Background()
+			queryFn := func() {
+				q, err := engine.NewInstantQuery(ctx, stor, nil, tc.expr, time.Unix(0, 0))
+				if err != nil {
+					b.Fatal(err)
+				}
+				res := q.Exec(ctx)
+				if res.Err != nil {
+					b.Fatal(res.Err)
+				}
+				if got := len(res.Value.(promql.Vector)); got != tc.want {
+					b.Fatalf("expected %d samples, got %d", tc.want, got)
+				}
+				q.Close()
+			}
+			queryFn()
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				queryFn()
+			}
+		})
+	}
+}
+
 func BenchmarkNativeHistograms(b *testing.B) {
 	testStorage := teststorage.New(b)
 
