@@ -21,6 +21,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -547,8 +548,22 @@ func TestAWSSDConfigUnmarshalYAML_NoRegionResolution(t *testing.T) {
 // rejected unless it is positive. A zero value makes errgroup.SetLimit block
 // Go() forever on an unbuffered channel, which hangs the refresh regardless of
 // the context deadline, and a negative one silently means "no limit at all".
+// aws_sd_config must behave the same as the dedicated configs for every role
+// that uses the field.
 func TestRequestConcurrencyUnmarshalYAML(t *testing.T) {
 	t.Parallel()
+
+	// parseSD parses an aws_sd_config with the given role and returns the
+	// request_concurrency of the resulting role config.
+	parseSD := func(role Role, get func(*SDConfig) int) func(string) (int, error) {
+		return func(s string) (int, error) {
+			var cfg SDConfig
+			if err := yaml.Unmarshal([]byte("role: "+string(role)+"\n"+s), &cfg); err != nil {
+				return 0, err
+			}
+			return get(&cfg), nil
+		}
+	}
 
 	// Every AWS SD config that exposes request_concurrency, along with the
 	// default it falls back to when the field is omitted.
@@ -593,6 +608,31 @@ func TestRequestConcurrencyUnmarshalYAML(t *testing.T) {
 				return cfg.RequestConcurrency, err
 			},
 		},
+		{
+			name:               "aws_sd/ecs",
+			defaultConcurrency: DefaultECSSDConfig.RequestConcurrency,
+			parse:              parseSD(RoleECS, func(c *SDConfig) int { return c.ECSSDConfig.RequestConcurrency }),
+		},
+		{
+			name:               "aws_sd/elasticache",
+			defaultConcurrency: DefaultElasticacheSDConfig.RequestConcurrency,
+			parse:              parseSD(RoleElasticache, func(c *SDConfig) int { return c.ElasticacheSDConfig.RequestConcurrency }),
+		},
+		{
+			name:               "aws_sd/mq",
+			defaultConcurrency: DefaultMQSDConfig.RequestConcurrency,
+			parse:              parseSD(RoleMQ, func(c *SDConfig) int { return c.MQSDConfig.RequestConcurrency }),
+		},
+		{
+			name:               "aws_sd/msk",
+			defaultConcurrency: DefaultMSKSDConfig.RequestConcurrency,
+			parse:              parseSD(RoleMSK, func(c *SDConfig) int { return c.MSKSDConfig.RequestConcurrency }),
+		},
+		{
+			name:               "aws_sd/rds",
+			defaultConcurrency: DefaultRDSSDConfig.RequestConcurrency,
+			parse:              parseSD(RoleRDS, func(c *SDConfig) int { return c.RDSSDConfig.RequestConcurrency }),
+		},
 	}
 
 	cases := []struct {
@@ -631,7 +671,9 @@ func TestRequestConcurrencyUnmarshalYAML(t *testing.T) {
 				got, err := cfg.parse("region: us-west-2\n" + tt.yaml + "\n")
 
 				if tt.expectedErr != "" {
-					require.EqualError(t, err, cfg.name+": "+tt.expectedErr)
+					// The error prefix is the config name without the role.
+					prefix, _, _ := strings.Cut(cfg.name, "/")
+					require.EqualError(t, err, prefix+": "+tt.expectedErr)
 					return
 				}
 
@@ -643,6 +685,28 @@ func TestRequestConcurrencyUnmarshalYAML(t *testing.T) {
 				require.Equal(t, expected, got)
 			})
 		}
+	}
+
+	// ec2 and lightsail do not use request_concurrency: a positive value is
+	// ignored, but a non-positive one is still rejected.
+	for _, role := range []Role{RoleEC2, RoleLightsail} {
+		base := "role: " + string(role) + "\nregion: us-west-2\n"
+
+		t.Run("aws_sd/"+string(role)+"/Ignored", func(t *testing.T) {
+			t.Parallel()
+			var want, got SDConfig
+			require.NoError(t, yaml.Unmarshal([]byte(base), &want))
+			require.NoError(t, yaml.Unmarshal([]byte(base+"request_concurrency: 5\n"), &got))
+			require.Equal(t, want.EC2SDConfig, got.EC2SDConfig)
+			require.Equal(t, want.LightsailSDConfig, got.LightsailSDConfig)
+		})
+
+		t.Run("aws_sd/"+string(role)+"/Zero", func(t *testing.T) {
+			t.Parallel()
+			var cfg SDConfig
+			err := yaml.Unmarshal([]byte(base+"request_concurrency: 0\n"), &cfg)
+			require.EqualError(t, err, "aws_sd: request_concurrency must be positive, got 0")
+		})
 	}
 }
 
