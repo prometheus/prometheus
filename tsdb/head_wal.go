@@ -15,6 +15,7 @@ package tsdb
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -22,6 +23,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -1054,12 +1056,30 @@ func (h *Head) loadWBL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 			h.wlReplaySamplesPool.Put(v)
 		case []record.RefMmapMarker:
 			markers := v
-			for _, rm := range markers {
-				seq, off := rm.MmapRef.Unpack()
-				if seq > lastSeq || (seq == lastSeq && off > lastOff) {
-					// This m-map chunk from markers was not present during
-					// the load of mmapped chunks that happened in the head
-					// initialization.
+			for len(markers) > 0 {
+				// A head chunk m-mapped into several chunks, such as one holding
+				// both floats and histograms, logs one marker per chunk, next to
+				// each other. Its samples are spread over those chunks, so the
+				// markers are handled together.
+				n := 1
+				for n < len(markers) && markers[n].Ref == markers[0].Ref {
+					n++
+				}
+				rm := markers[0]
+				mmapRefs := make([]chunks.ChunkDiskMapperRef, 0, n)
+				notLoaded := false
+				for _, m := range markers[:n] {
+					seq, off := m.MmapRef.Unpack()
+					if seq > lastSeq || (seq == lastSeq && off > lastOff) {
+						// This m-map chunk from markers was not present during
+						// the load of mmapped chunks that happened in the head
+						// initialization.
+						notLoaded = true
+					}
+					mmapRefs = append(mmapRefs, m.MmapRef)
+				}
+				markers = markers[n:]
+				if notLoaded {
 					continue
 				}
 
@@ -1075,7 +1095,7 @@ func (h *Head) loadWBL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 					continue
 				}
 				idx := uint64(ms.ref) % uint64(concurrency)
-				processors[idx].input <- wblSubsetProcessorInputItem{mmappedSeries: ms}
+				processors[idx].input <- wblSubsetProcessorInputItem{mmappedSeries: ms, mmapRefs: mmapRefs}
 			}
 		case []record.RefHistogramSample:
 			samples := v
@@ -1202,6 +1222,7 @@ type wblSubsetProcessor struct {
 
 type wblSubsetProcessorInputItem struct {
 	mmappedSeries    *memSeries
+	mmapRefs         []chunks.ChunkDiskMapperRef
 	samples          []record.RefSample
 	histogramSamples []histogramRecord
 }
@@ -1270,7 +1291,16 @@ func (wp *wblSubsetProcessor) processWBLSamples(h *Head) (map[chunks.HeadSeriesR
 			// chunk size parameters, we are not taking care of that here.
 			// TODO(codesome): see if there is a way to avoid duplicate m-map chunks if
 			// the size of ooo chunk was reduced between restart.
-			in.mmappedSeries.ooo.oooHeadChunk = nil
+			//
+			// A marker can name a chunk that is not on disk: ref 0 when a new head chunk was
+			// cut with nothing to m-map, which also follows an OOO compaction that m-mapped the
+			// previous head chunk without writing a marker, or a chunk that was still in the
+			// chunk disk mapper's write buffer when the process died. The samples replayed so
+			// far are then only in the WBL, so keep them unless this series has every
+			// chunk the markers name.
+			if hasOOOMmappedChunks(in.mmappedSeries, in.mmapRefs) {
+				in.mmappedSeries.ooo.oooHeadChunk = nil
+			}
 			continue
 		}
 		for _, s := range in.samples {
@@ -1334,6 +1364,21 @@ func (wp *wblSubsetProcessor) processWBLSamples(h *Head) (map[chunks.HeadSeriesR
 	h.updateMinOOOMaxOOOTime(mint, maxt)
 
 	return missingSeries, unknownSampleRefs, unknownHistogramRefs
+}
+
+// hasOOOMmappedChunks reports whether s has an m-mapped OOO chunk for each of
+// the given refs. The chunks are sorted by ref, as loadMmappedChunks reads them
+// in file order and later chunks get higher refs.
+func hasOOOMmappedChunks(s *memSeries, refs []chunks.ChunkDiskMapperRef) bool {
+	for _, ref := range refs {
+		_, found := slices.BinarySearchFunc(s.ooo.oooMmappedChunks, ref, func(c *mmappedChunk, ref chunks.ChunkDiskMapperRef) int {
+			return cmp.Compare(c.ref, ref)
+		})
+		if !found {
+			return false
+		}
+	}
+	return true
 }
 
 const (
