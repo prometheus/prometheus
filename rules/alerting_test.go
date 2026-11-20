@@ -566,9 +566,10 @@ instance: {{ $v.Labels.instance }}, value: {{ printf "%.0f" $v.Value }};
 func BenchmarkAlertingRuleAtomicField(b *testing.B) {
 	b.ReportAllocs()
 	rule := NewAlertingRule("bench", nil, 0, 0, labels.EmptyLabels(), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil)
+	iterations := b.N
 	done := make(chan struct{})
 	go func() {
-		for b.Loop() {
+		for range iterations {
 			rule.GetEvaluationTimestamp()
 		}
 		close(done)
