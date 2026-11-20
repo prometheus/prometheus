@@ -30,6 +30,7 @@ import (
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/refresh"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"github.com/prometheus/prometheus/util/strutil"
 )
 
 const (
@@ -45,6 +46,8 @@ const (
 	nomadServicePort    = nomadService + "_port"
 	nomadServiceID      = nomadService + "_id"
 	nomadTags           = nomadLabel + "tags"
+	nomadTag            = nomadLabel + "tag_"
+	nomadTagPresent     = nomadLabel + "tagpresent_"
 )
 
 // DefaultSDConfig is the default nomad SD configuration.
@@ -206,6 +209,7 @@ func (d *Discovery) refresh(context.Context) ([]*targetgroup.Group, error) {
 				if len(instance.Tags) > 0 {
 					tags := d.tagSeparator + strings.Join(instance.Tags, d.tagSeparator) + d.tagSeparator
 					labels[nomadTags] = model.LabelValue(tags)
+					addTagLabels(labels, instance.Tags)
 				}
 
 				tg.Targets = append(tg.Targets, labels)
@@ -213,4 +217,23 @@ func (d *Discovery) refresh(context.Context) ([]*targetgroup.Group, error) {
 		}
 	}
 	return []*targetgroup.Group{tg}, nil
+}
+
+// addTagLabels adds a label for each of the given tags, so they can be picked
+// up with labelmap instead of matching on the joined tags label. A "key=value"
+// tag is exposed as __meta_nomad_tag_<key>="value", and every tag gets
+// __meta_nomad_tagpresent_<key>="true", where key is the part before the
+// first "=" (or the whole tag if there is none).
+func addTagLabels(labels model.LabelSet, tags []string) {
+	for _, tag := range tags {
+		key, value, hasValue := strings.Cut(tag, "=")
+		if key == "" {
+			continue
+		}
+		name := model.LabelName(strutil.SanitizeLabelName(key))
+		labels[nomadTagPresent+name] = "true"
+		if hasValue {
+			labels[nomadTag+name] = model.LabelValue(value)
+		}
+	}
 }
