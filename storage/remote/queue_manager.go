@@ -1785,6 +1785,21 @@ func (s *shards) stop() {
 	s.hardShutdown()
 	<-s.done
 
+	// Workers share the generation's pending counters. Account for the
+	// remainder once, after all in-flight requests have updated their metrics.
+	droppedSamples := s.enqueuedSamples.Swap(0)
+	droppedExemplars := s.enqueuedExemplars.Swap(0)
+	droppedHistograms := s.enqueuedHistograms.Swap(0)
+	s.qm.metrics.pendingSamples.Sub(float64(droppedSamples))
+	s.qm.metrics.pendingExemplars.Sub(float64(droppedExemplars))
+	s.qm.metrics.pendingHistograms.Sub(float64(droppedHistograms))
+	s.qm.metrics.failedSamplesTotal.Add(float64(droppedSamples))
+	s.qm.metrics.failedExemplarsTotal.Add(float64(droppedExemplars))
+	s.qm.metrics.failedHistogramsTotal.Add(float64(droppedHistograms))
+	s.samplesDroppedOnHardShutdown.Add(uint32(droppedSamples))
+	s.exemplarsDroppedOnHardShutdown.Add(uint32(droppedExemplars))
+	s.histogramsDroppedOnHardShutdown.Add(uint32(droppedHistograms))
+
 	// Log error for any dropped samples, exemplars, or histograms.
 	logDroppedError := func(t string, counter atomic.Uint32) {
 		if dropped := counter.Load(); dropped > 0 {
@@ -2058,20 +2073,7 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 	for {
 		select {
 		case <-ctx.Done():
-			// In this case we drop all samples in the buffer and the queue.
-			// Remove them from pending and mark them as failed.
-			droppedSamples := int(s.enqueuedSamples.Load())
-			droppedExemplars := int(s.enqueuedExemplars.Load())
-			droppedHistograms := int(s.enqueuedHistograms.Load())
-			s.qm.metrics.pendingSamples.Sub(float64(droppedSamples))
-			s.qm.metrics.pendingExemplars.Sub(float64(droppedExemplars))
-			s.qm.metrics.pendingHistograms.Sub(float64(droppedHistograms))
-			s.qm.metrics.failedSamplesTotal.Add(float64(droppedSamples))
-			s.qm.metrics.failedExemplarsTotal.Add(float64(droppedExemplars))
-			s.qm.metrics.failedHistogramsTotal.Add(float64(droppedHistograms))
-			s.samplesDroppedOnHardShutdown.Add(uint32(droppedSamples))
-			s.exemplarsDroppedOnHardShutdown.Add(uint32(droppedExemplars))
-			s.histogramsDroppedOnHardShutdown.Add(uint32(droppedHistograms))
+			// stop accounts for unsent queued items after all workers exit.
 			return
 
 		case batch, ok := <-batchQueue:
