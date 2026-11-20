@@ -166,8 +166,6 @@ func (StaticConfig) NewDiscovererMetrics(prometheus.Registerer, RefreshMetricsIn
 type staticDiscoverer []*targetgroup.Group
 
 func (c staticDiscoverer) Run(ctx context.Context, up chan<- []*targetgroup.Group) {
-	// TODO: existing implementation closes up chan, but documentation explicitly forbids it...?
-	defer close(up)
 	select {
 	case <-ctx.Done():
 	case up <- c:
