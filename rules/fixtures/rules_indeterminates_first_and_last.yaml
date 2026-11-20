@@ -1,0 +1,18 @@
+groups:
+  - name: indeterminate_first_and_last
+    rules:
+      # First rule is indeterminate (no __name__ matcher).
+      - record: indeterminate_first
+        expr: count({job=~".+"})
+      # Four independent rules in the middle.
+      - record: job:http_requests:rate1m
+        expr: sum by (job)(rate(http_requests_total[1m]))
+      - record: job:http_requests:rate5m
+        expr: sum by (job)(rate(http_requests_total[5m]))
+      - record: job:http_requests:rate15m
+        expr: sum by (job)(rate(http_requests_total[15m]))
+      - record: job:http_requests:rate30m
+        expr: sum by (job)(rate(http_requests_total[30m]))
+      # Last rule is also indeterminate (no __name__ matcher).
+      - alert: IndeterminateLast
+        expr: max({job=~".+"}) > 1e15
