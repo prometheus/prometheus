@@ -1575,3 +1575,34 @@ func TestFeatureFlagsDocumented(t *testing.T) {
 	require.True(t, slices.IsSorted(helpFlags))
 	require.ElementsMatch(t, helpFlags, docFlags)
 }
+
+func TestAgentOptions_ToAgentOptions(t *testing.T) {
+	tests := []struct {
+		name                 string
+		outOfOrderTimeWindow int64
+		expectedOOO          int64
+	}{
+		{
+			name:                 "positive out-of-order time window",
+			outOfOrderTimeWindow: 10000,
+			expectedOOO:          10000,
+		},
+		{
+			name:                 "zero out-of-order time window",
+			outOfOrderTimeWindow: 0,
+			expectedOOO:          0,
+		},
+		{
+			name:                 "negative out-of-order time window clamped to zero",
+			outOfOrderTimeWindow: -500,
+			expectedOOO:          0,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := agentOptions{}.ToAgentOptions(tc.outOfOrderTimeWindow).OutOfOrderTimeWindow
+			require.Equal(t, tc.expectedOOO, got)
+		})
+	}
+}
