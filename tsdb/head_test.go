@@ -2834,6 +2834,52 @@ func TestIsolationSeek(t *testing.T) {
 	}
 }
 
+func TestIsolationSeekAcrossChunks(t *testing.T) {
+	if defaultIsolationDisabled {
+		t.Skip("skipping test since tsdb isolation is disabled")
+	}
+	db := newTestDB(t)
+	lbls := labels.FromStrings("foo", "bar")
+	appendRange := func(from, to int64) {
+		app := db.AppenderV2(t.Context())
+		for ts := from; ts <= to; ts++ {
+			_, err := app.Append(0, lbls, 0, ts, float64(ts), nil, nil, storage.AOptions{})
+			require.NoError(t, err)
+		}
+		require.NoError(t, app.Commit())
+	}
+	appendRange(1, 1000)
+	var queriers []storage.Querier
+	for _, mint := range []int64{0, 3} {
+		q, err := db.Querier(mint, 2000)
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, q.Close()) })
+		queriers = append(queriers, q)
+	}
+	// Rotate chunks after taking the snapshots, including a partially visible chunk.
+	appendRange(1001, 1500)
+	for _, q := range queriers {
+		ss := q.Select(t.Context(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+		require.True(t, ss.Next())
+		it := ss.At().Iterator(nil)
+		require.Equal(t, chunkenc.ValFloat, it.Next())
+		require.Equal(t, chunkenc.ValFloat, it.Seek(800))
+		require.Equal(t, int64(800), it.AtT())
+		require.Equal(t, chunkenc.ValFloat, it.Seek(980))
+		for ts := int64(980); ts <= 1000; ts++ {
+			require.Equal(t, ts, it.AtT())
+			if ts < 1000 {
+				require.Equal(t, chunkenc.ValFloat, it.Next())
+			}
+		}
+		require.Equal(t, chunkenc.ValNone, it.Seek(1001))
+		require.Equal(t, chunkenc.ValNone, it.Next())
+		require.NoError(t, it.Err())
+		require.False(t, ss.Next())
+		require.NoError(t, ss.Err())
+	}
+}
+
 func testHeadSeriesChunkRace(t *testing.T) {
 	h, _ := newTestHead(t, 1000, compression.None, false)
 	require.NoError(t, h.Init(0))
