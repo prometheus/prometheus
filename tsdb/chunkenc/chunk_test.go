@@ -324,3 +324,23 @@ func TestChunkAppenderAfterReload(t *testing.T) {
 		})
 	}
 }
+
+func TestFromDataRejectsDataShorterThanHeader(t *testing.T) {
+	for _, enc := range []Encoding{EncXOR, EncHistogram, EncFloatHistogram, EncXOR2, EncHistogramST, EncFloatHistogramST} {
+		t.Run(enc.String(), func(t *testing.T) {
+			empty, err := NewEmptyChunk(enc)
+			require.NoError(t, err)
+			header := len(empty.Bytes())
+
+			for size := range header {
+				_, err := FromData(enc, make([]byte, size))
+				require.Error(t, err, "%d bytes", size)
+			}
+
+			// A chunk of just the header is valid and has no samples.
+			c, err := FromData(enc, make([]byte, header))
+			require.NoError(t, err)
+			require.Equal(t, ValNone, c.Iterator(nil).Next())
+		})
+	}
+}
