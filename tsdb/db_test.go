@@ -972,6 +972,76 @@ func TestOverlappingBlocksDetectsAllOverlaps(t *testing.T) {
 	}, OverlappingBlocks(nc1))
 }
 
+func TestDBReadOnlyQuerierMissingWAL(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name string
+		// setup prepares the DB directory.
+		setup func(t *testing.T, dir string)
+		// expectErr is nil when the queriers must succeed.
+		expectErr func(t *testing.T, err error)
+	}{
+		{
+			name:  "empty dir",
+			setup: func(*testing.T, string) {},
+			expectErr: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, os.ErrNotExist)
+			},
+		},
+		{
+			name: "blocks only",
+			setup: func(t *testing.T, dir string) {
+				createBlock(t, dir, genSeries(1, 1, 0, 10))
+			},
+		},
+		{
+			name: "blocks and an invalid wal",
+			setup: func(t *testing.T, dir string) {
+				createBlock(t, dir, genSeries(1, 1, 0, 10))
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "wal"), []byte("not a directory"), 0o666))
+			},
+			expectErr: func(t *testing.T, err error) {
+				require.ErrorContains(t, err, "read WAL")
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			tc.setup(t, dir)
+
+			for _, chunkQuerier := range []bool{false, true} {
+				db, err := OpenDBReadOnly(dir, t.TempDir(), nil)
+				require.NoError(t, err)
+
+				if chunkQuerier {
+					var q storage.ChunkQuerier
+					q, err = db.ChunkQuerier(math.MinInt64, math.MaxInt64)
+					if err == nil {
+						series := queryAndExpandChunks(t, q, labels.MustNewMatcher(labels.MatchRegexp, defaultLabelName, ".+"))
+						require.Len(t, series, 1)
+					}
+				} else {
+					var q storage.Querier
+					q, err = db.Querier(math.MinInt64, math.MaxInt64)
+					if err == nil {
+						series := query(t, q, labels.MustNewMatcher(labels.MatchRegexp, defaultLabelName, ".+"))
+						require.Len(t, series, 1)
+					}
+				}
+				if tc.expectErr == nil {
+					require.NoError(t, err)
+				} else {
+					tc.expectErr(t, err)
+				}
+
+				require.NoError(t, db.Close())
+				require.NoDirExists(t, db.sandboxDir)
+			}
+		})
+	}
+}
+
 // TestDBReadOnlyClosing ensures that after closing the db
 // all api methods return an ErrClosed.
 func TestDBReadOnlyClosing(t *testing.T) {

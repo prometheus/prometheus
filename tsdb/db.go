@@ -705,11 +705,18 @@ func (db *DBReadOnly) loadDataAsQueryable(maxt int64) (storage.SampleAndChunkQue
 	}
 
 	// Also add the WAL if the current blocks don't cover the requests time range.
-	if maxBlockTime <= maxt {
+	walDir := filepath.Join(db.dir, "wal")
+	readWAL := maxBlockTime <= maxt
+	if readWAL && len(blocks) > 0 {
+		// Snapshots and backfilled databases may contain only blocks.
+		_, err := os.Stat(walDir)
+		readWAL = !os.IsNotExist(err)
+	}
+	if readWAL {
 		if err := head.Close(); err != nil {
 			return nil, err
 		}
-		w, err := wlog.Open(db.logger, filepath.Join(db.dir, "wal"))
+		w, err := wlog.Open(db.logger, walDir)
 		if err != nil {
 			return nil, err
 		}
@@ -730,7 +737,11 @@ func (db *DBReadOnly) loadDataAsQueryable(maxt int64) (storage.SampleAndChunkQue
 		// Set the min valid time for the ingested wal samples
 		// to be no lower than the maxt of the last block.
 		if err := head.Init(maxBlockTime); err != nil {
-			return nil, fmt.Errorf("read WAL: %w", err)
+			// Close the head so that its chunks_head files in db.sandboxDir are
+			// released; the wal and the wbl are skipped as below.
+			head.wal = nil
+			head.wbl = nil
+			return nil, errors.Join(fmt.Errorf("read WAL: %w", err), head.Close())
 		}
 		// Set the wal and the wbl to nil to disable related operations.
 		// This is mainly to avoid blocking when closing the head.
