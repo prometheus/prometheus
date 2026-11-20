@@ -105,6 +105,9 @@ type OpenMetricsParser struct {
 	// Start timestamp parsing state.
 	st        int64
 	stHashSet uint64
+	// mfHasNoST is true when a lookahead scan reached the end of the current
+	// metric family without finding any _created series.
+	mfHasNoST bool
 	// ignoreExemplar instructs the parser to not overwrite exemplars (to keep them while peeking ahead).
 	ignoreExemplar bool
 	// visitedMFName is the metric family name of the last visited metric when peeking ahead
@@ -293,6 +296,9 @@ func (p *OpenMetricsParser) StartTimestamp() int64 {
 		p.stHashSet = 0 // Use stHashSet as a single way of telling "empty cache"
 		return 0
 	}
+	if p.mfHasNoST {
+		return 0
+	}
 
 	var (
 		buf      []byte
@@ -307,7 +313,7 @@ func (p *OpenMetricsParser) StartTimestamp() int64 {
 
 	currHash := p.seriesHash(&buf, currName)
 	// Check cache, perhaps we fetched something already.
-	if currHash == p.stHashSet && p.st > 0 {
+	if p.stHashSet != 0 && currHash == p.stHashSet {
 		return p.st
 	}
 
@@ -338,11 +344,13 @@ func (p *OpenMetricsParser) StartTimestamp() int64 {
 			// This might result in partial scrape with wrong/missing ST, but only
 			// spec improvement would help.
 			// TODO: Make sure OM 1.1/2.0 pass ST via metadata or exemplar-like to avoid this.
+			p.mfHasNoST = true
 			p.resetSTParseValues()
 			return 0
 		}
 		if eType != EntrySeries {
 			// Assume we hit different family, no ST line found.
+			p.mfHasNoST = true
 			p.resetSTParseValues()
 			return 0
 		}
@@ -357,7 +365,7 @@ func (p *OpenMetricsParser) StartTimestamp() int64 {
 		peekedHash := p.seriesHash(&buf, peekedName[:len(peekedName)-8])
 		if peekedHash != currHash {
 			// Found ST line for a different series, for our series no ST.
-			p.resetSTParseValues()
+			p.setSTParseValues(0, currHash, currName, true)
 			return 0
 		}
 
@@ -464,6 +472,10 @@ func (p *OpenMetricsParser) Next() (Entry, error) {
 		case tEOF:
 			return EntryInvalid, errors.New("data does not end with # EOF")
 		case tHelp, tType, tUnit:
+			if !p.ignoreExemplar {
+				p.mfHasNoST = false
+				p.stHashSet = 0
+			}
 			switch t2 := p.nextToken(); t2 {
 			case tMName:
 				mStart := p.l.start
