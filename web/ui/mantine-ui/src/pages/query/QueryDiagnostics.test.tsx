@@ -166,6 +166,35 @@ describe("query diagnostics", () => {
     }
   });
 
+  it("starts a leaf query only once without aborting it on mount", async () => {
+    const signals: AbortSignal[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        (_url: string, { signal }: { signal: AbortSignal }) =>
+          new Promise<Response>(() => {
+            signals.push(signal);
+          }),
+      ),
+    );
+
+    render(
+      <TreeNode
+        node={{ type: nodeType.numberLiteral, val: "1" }}
+        selectedNode={null}
+        setSelectedNode={vi.fn()}
+        reverse={false}
+        childIdx={0}
+      />,
+      { wrapper },
+    );
+
+    await waitFor(() => expect(signals).toHaveLength(1));
+    await act(async () => {});
+    expect(signals).toHaveLength(1);
+    expect(signals[0].aborted).toBe(false);
+  });
+
   it("updates connector geometry and clears the opposite border when reversed", async () => {
     vi.stubGlobal(
       "fetch",

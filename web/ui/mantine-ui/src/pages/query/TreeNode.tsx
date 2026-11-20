@@ -2,6 +2,7 @@ import {
   FC,
   useCallback,
   useEffect,
+  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -30,7 +31,6 @@ import serializeNode from "../../promql/serialize";
 import { IconPointFilled } from "@tabler/icons-react";
 import classes from "./TreeNode.module.css";
 import clsx from "clsx";
-import { useId } from "@mantine/hooks";
 import { functionSignatures } from "../../promql/functionSignatures";
 
 const nodeIndent = 20;
