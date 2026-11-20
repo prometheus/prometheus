@@ -179,6 +179,12 @@ Examples:
     12h34m56s # Equivalent to 45296s and thus 45296.
     54s321ms # Equivalent to 54.321.
 
+Durations have millisecond resolution. When a float literal is used as a
+duration, any part below one millisecond is truncated towards zero. For example,
+`foo[1.0015]` selects the same range as `foo[1s1ms]`, and `foo offset -.0001`
+has no offset. A range or subquery step that is truncated to zero, such as
+`foo[.0001]`, is rejected like `foo[0s]`.
+
 ### Duration expressions
 
 Arithmetic expressions can be used wherever a time duration is expected, that is

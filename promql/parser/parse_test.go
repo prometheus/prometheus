@@ -2815,6 +2815,64 @@ var testExpr = []struct {
 		},
 	},
 	{
+		// The range is below the millisecond resolution of durations, so it is 0 like in foo[0s].
+		input: `foo[.0001]`,
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 4, End: 9},
+				Err:           errors.New("duration must be greater than 0"),
+				Query:         `foo[.0001]`,
+			},
+		},
+	},
+	{
+		input: `foo[5m:.0001]`,
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 7, End: 12},
+				Err:           errors.New("duration must be greater than 0"),
+				Query:         `foo[5m:.0001]`,
+			},
+		},
+	},
+	{
+		input: `foo[1.0015]`,
+		expected: &MatrixSelector{
+			VectorSelector: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+				},
+				PosRange: posrange.PositionRange{Start: 0, End: 3},
+			},
+			Range:  1001 * time.Millisecond,
+			EndPos: 11,
+		},
+	},
+	{
+		input: `foo offset 1.0015`,
+		expected: &VectorSelector{
+			Name:           "foo",
+			OriginalOffset: 1001 * time.Millisecond,
+			LabelMatchers: []*labels.Matcher{
+				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+			},
+			PosRange: posrange.PositionRange{Start: 0, End: 17},
+		},
+	},
+	{
+		input: `foo offset -.0001`,
+		expected: &VectorSelector{
+			Name: "foo",
+			LabelMatchers: []*labels.Matcher{
+				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+			},
+			PosRange: posrange.PositionRange{Start: 0, End: 17},
+		},
+	},
+	{
 		input: `some_metric[5m] OFFSET 1mm`,
 		fail:  true,
 		errors: ParseErrors{
