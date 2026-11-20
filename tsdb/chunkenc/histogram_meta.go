@@ -14,6 +14,7 @@
 package chunkenc
 
 import (
+	"errors"
 	"math"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -551,4 +552,19 @@ func adjustForInserts(spans []histogram.Span, inserts []Insert) (mergedSpans []h
 		consumeInsert()
 	}
 	return mergedSpans
+}
+
+// checkHistogramBucketCount checks that each bucket can occupy at least one bit
+// in the remaining chunk data before allocating bucket slices from span lengths.
+func checkHistogramBucketCount(b *bstreamReader, positiveSpans, negativeSpans []histogram.Span) error {
+	remaining := uint64(len(b.stream)-b.streamOffset)*8 + uint64(b.valid)
+	for _, spans := range [][]histogram.Span{positiveSpans, negativeSpans} {
+		for _, span := range spans {
+			if uint64(span.Length) > remaining {
+				return errors.New("histogram bucket count exceeds remaining chunk bits")
+			}
+			remaining -= uint64(span.Length)
+		}
+	}
+	return nil
 }
