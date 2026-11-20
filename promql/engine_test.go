@@ -30,6 +30,7 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	promtestutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 
@@ -6675,20 +6676,26 @@ load 1m
 `
 	// Secondary storage stands in for a remote-read endpoint behind the fanout,
 	// which is how cmd/prometheus wires local and remote storage.
-	primary := promqltest.LoadedStorage(t, fmt.Sprintf(load, "local_seconds"))
+	// The primary also holds a stored classic histogram, served without conversion.
+	primary := promqltest.LoadedStorage(t, fmt.Sprintf(load, "local_seconds")+`
+load 1m
+	classic_seconds_count 7
+`)
 	secondary := promqltest.LoadedStorage(t, fmt.Sprintf(load, "remote_seconds"))
 	fanout := storage.NewFanout(promslog.NewNopLogger(), primary, secondary)
 
 	for _, enabled := range []bool{false, true} {
 		t.Run(fmt.Sprintf("enabled=%v", enabled), func(t *testing.T) {
+			reg := prometheus.NewRegistry()
 			opts := promql.EngineOpts{
+				Reg:                             reg,
 				MaxSamples:                      1000,
 				Timeout:                         10 * time.Second,
 				EnableNativeHistogramsAsClassic: enabled,
 			}
 			ng := promqltest.NewTestEngineWithOpts(t, opts)
 
-			q, err := ng.NewInstantQuery(t.Context(), fanout, nil, `local_seconds_count or on(__name__) remote_seconds_count`, time.Unix(0, 0))
+			q, err := ng.NewInstantQuery(t.Context(), fanout, nil, `local_seconds_count or on(__name__) remote_seconds_count or on(__name__) classic_seconds_count`, time.Unix(0, 0))
 			require.NoError(t, err)
 			t.Cleanup(q.Close)
 			res := q.Exec(t.Context())
@@ -6700,13 +6707,24 @@ load 1m
 			for _, s := range vec {
 				got[s.Metric.Get(labels.MetricName)] = s.F
 			}
+			const metricName = "prometheus_engine_query_classic_histogram_series_total"
 			if !enabled {
-				require.Empty(t, got)
+				require.Equal(t, map[string]float64{"classic_seconds_count": 7}, got)
+				// The metric is only registered when the feature is enabled.
+				n, err := promtestutil.GatherAndCount(reg, metricName)
+				require.NoError(t, err)
+				require.Zero(t, n)
 				return
 			}
 			// Both local and remote-read NHCBs are converted, since the conversion
 			// wraps the engine's queryable rather than a single fanout leg.
-			require.Equal(t, map[string]float64{"local_seconds_count": 4, "remote_seconds_count": 4}, got)
+			require.Equal(t, map[string]float64{"local_seconds_count": 4, "remote_seconds_count": 4, "classic_seconds_count": 7}, got)
+			require.NoError(t, promtestutil.GatherAndCompare(reg, strings.NewReader(`
+# HELP prometheus_engine_query_classic_histogram_series_total The total number of classic histogram series returned by selectors, by where they come from (classic or nhcb).
+# TYPE prometheus_engine_query_classic_histogram_series_total counter
+prometheus_engine_query_classic_histogram_series_total{from="classic"} 1
+prometheus_engine_query_classic_histogram_series_total{from="nhcb"} 2
+`), metricName))
 
 			// Other consumers of the same storage (e.g. the remote read API) still
 			// see raw data only.

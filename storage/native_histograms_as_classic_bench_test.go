@@ -82,7 +82,7 @@ func benchmarkNativeHistogramsAsClassicSelect(b *testing.B, suffix string) {
 		classicSeries: []Series{},
 		nhcbSeries:    nhcbSeries,
 	}
-	q := NewNativeHistogramsAsClassicQuerier(mock)
+	q := NewNativeHistogramsAsClassicQuerier(mock, NewNativeHistogramsAsClassicMetrics(nil))
 	matcher := labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "bench_request_duration_seconds"+suffix)
 
 	b.ResetTimer()
