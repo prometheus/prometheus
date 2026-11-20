@@ -1266,6 +1266,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 		responseAsJSON        string
 		warningsCount         int
 		errType               errorType
+		errMessage            string
 		sorter                func(any)
 		metadata              []targetMetadata
 		zeroFunc              func(any)
@@ -1700,7 +1701,19 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 				"end":   []string{"2"},
 				"step":  []string{"0"},
 			},
-			errType: errorBadData,
+			errType:    errorBadData,
+			errMessage: `invalid parameter "step": zero or negative query resolution step widths are not accepted. Try a positive integer`,
+		},
+		{
+			endpoint: api.queryRange,
+			query: url.Values{
+				"query": []string{"time()"},
+				"start": []string{"1"},
+				"end":   []string{"2"},
+				"step":  []string{"-1"},
+			},
+			errType:    errorBadData,
+			errMessage: `invalid parameter "step": zero or negative query resolution step widths are not accepted. Try a positive integer`,
 		},
 		// Step below the millisecond resolution of Prometheus timestamps.
 		{
@@ -1711,7 +1724,29 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 				"end":   []string{"0.001"},
 				"step":  []string{"0.0005"},
 			},
-			errType: errorBadData,
+			errType:    errorBadData,
+			errMessage: `invalid parameter "step": query resolution step widths must be at least 1ms`,
+		},
+		// Exactly one millisecond is valid.
+		{
+			endpoint: api.queryRange,
+			query: url.Values{
+				"query": []string{"time()"},
+				"start": []string{"0"},
+				"end":   []string{"0.001"},
+				"step":  []string{"0.001"},
+			},
+			response: &QueryData{
+				ResultType: parser.ValueTypeMatrix,
+				Result: promql.Matrix{
+					promql.Series{
+						Floats: []promql.FPoint{
+							{F: 0, T: timestamp.FromTime(start)},
+							{F: 0.001, T: timestamp.FromTime(start.Add(time.Millisecond))},
+						},
+					},
+				},
+			},
 		},
 		// Start after end.
 		{
@@ -3978,6 +4013,9 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, testLabelAPI
 						res.finalizer()
 					}
 					assertAPIError(t, res.err, test.errType)
+					if test.errMessage != "" {
+						require.EqualError(t, res.err.err, test.errMessage)
+					}
 
 					if test.sorter != nil {
 						test.sorter(res.data)
@@ -5414,24 +5452,28 @@ func TestQueryRangeCostEndpointValidation(t *testing.T) {
 	api := newQueryCostTestAPI(t, true, false)
 
 	for _, tc := range []struct {
-		name    string
-		query   url.Values
-		errType errorType
+		name       string
+		query      url.Values
+		errType    errorType
+		errMessage string
 	}{
 		{
-			name:    "zero step",
-			query:   url.Values{"query": {"test_metric1"}, "start": {"0"}, "end": {"120"}, "step": {"0"}},
-			errType: errorBadData,
+			name:       "zero step",
+			query:      url.Values{"query": {"test_metric1"}, "start": {"0"}, "end": {"120"}, "step": {"0"}},
+			errType:    errorBadData,
+			errMessage: `invalid parameter "step": zero or negative query resolution step widths are not accepted. Try a positive integer`,
 		},
 		{
-			name:    "negative step",
-			query:   url.Values{"query": {"test_metric1"}, "start": {"0"}, "end": {"120"}, "step": {"-1"}},
-			errType: errorBadData,
+			name:       "negative step",
+			query:      url.Values{"query": {"test_metric1"}, "start": {"0"}, "end": {"120"}, "step": {"-1"}},
+			errType:    errorBadData,
+			errMessage: `invalid parameter "step": zero or negative query resolution step widths are not accepted. Try a positive integer`,
 		},
 		{
-			name:    "sub-millisecond step",
-			query:   url.Values{"query": {"test_metric1"}, "start": {"0"}, "end": {"0.001"}, "step": {"0.0005"}},
-			errType: errorBadData,
+			name:       "sub-millisecond step",
+			query:      url.Values{"query": {"test_metric1"}, "start": {"0"}, "end": {"0.001"}, "step": {"0.0005"}},
+			errType:    errorBadData,
+			errMessage: `invalid parameter "step": query resolution step widths must be at least 1ms`,
 		},
 		{
 			name:    "end before start",
@@ -5452,6 +5494,10 @@ func TestQueryRangeCostEndpointValidation(t *testing.T) {
 			name:  "valid range",
 			query: url.Values{"query": {"test_metric1"}, "start": {"0"}, "end": {"120"}, "step": {"60"}},
 		},
+		{
+			name:  "exactly one millisecond step",
+			query: url.Values{"query": {"test_metric1"}, "start": {"0"}, "end": {"0.001"}, "step": {"0.001"}},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			req, err := http.NewRequest(http.MethodGet, "http://example.com?"+tc.query.Encode(), http.NoBody)
@@ -5459,6 +5505,9 @@ func TestQueryRangeCostEndpointValidation(t *testing.T) {
 
 			res := api.queryRangeCost(req)
 			assertAPIError(t, res.err, tc.errType)
+			if tc.errMessage != "" {
+				require.EqualError(t, res.err.err, tc.errMessage)
+			}
 			if tc.errType == errorNone {
 				_, ok := res.data.(*QueryCostData)
 				require.True(t, ok, "expected *QueryCostData, got %T", res.data)
