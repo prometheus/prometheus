@@ -680,3 +680,57 @@ func TestRDSDiscoveryDescribesInstancesConcurrently(t *testing.T) {
 	defer mu.Unlock()
 	require.Equal(t, concurrency, maxInFlight, "DescribeDBInstances was not called concurrently")
 }
+
+func TestRDSRefreshSkipsClusterWithoutArn(t *testing.T) {
+	t.Parallel()
+
+	// DBClusterArn is optional in the DescribeDBClusters response. The
+	// explicit-cluster path stores whatever comes back keyed by the
+	// configured ARN, so refresh() must skip a cluster whose ARN is unset
+	// instead of dereferencing it.
+	const okClusterARN = "arn:aws:rds:us-east-1:123456789012:cluster:ok-cluster"
+	mockClient := &mockRDSClient{
+		clusters: map[string]types.DBCluster{
+			okClusterARN: {
+				DBClusterArn:        aws.String(okClusterARN),
+				DBClusterIdentifier: aws.String("ok-cluster"),
+			},
+			"arnless": {
+				DBClusterIdentifier: aws.String("arnless"),
+			},
+		},
+		instances: map[string][]types.DBInstance{
+			okClusterARN: {
+				{
+					DBInstanceArn:        aws.String("arn:aws:rds:us-east-1:123456789012:db:ok-instance"),
+					DBInstanceIdentifier: aws.String("ok-instance"),
+					DBClusterIdentifier:  aws.String("ok-cluster"),
+					Endpoint: &types.Endpoint{
+						Address: aws.String("ok.instance.aws.internal"),
+						Port:    aws.Int32(5432),
+					},
+				},
+			},
+		},
+	}
+
+	d := &RDSDiscovery{
+		rds:    mockClient,
+		logger: promslog.NewNopLogger(),
+		cfg: &RDSSDConfig{
+			Region:             "us-east-1",
+			Port:               5432,
+			RequestConcurrency: 10,
+			Clusters:           []string{"arnless", okClusterARN},
+		},
+	}
+
+	tgs, err := d.refresh(context.Background())
+	require.NoError(t, err)
+	require.Len(t, tgs, 1)
+
+	// The ARN-less cluster contributes no targets; the healthy one still does.
+	require.Len(t, tgs[0].Targets, 1)
+	addr := tgs[0].Targets[0][model.AddressLabel]
+	require.Equal(t, "ok.instance.aws.internal:5432", string(addr))
+}
