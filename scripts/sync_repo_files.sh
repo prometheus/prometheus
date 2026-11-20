@@ -150,11 +150,39 @@ post_pull_request() {
   local post_json
   post_json="$(printf '{"title":"%s","base":"%s","head":"%s:%s","body":"%s","maintainer_can_modify":true}' "${pr_title}" "${default_branch}" "${fork_owner}" "${branch}" "${pr_msg}\\n\\n${checkout_hint}")"
   echo "Posting PR to ${default_branch} on ${repo}"
-  curl --retry 5 --silent --fail --show-error \
+  local pr_json
+  pr_json="$(curl --retry 5 --silent --fail --show-error \
     -u "${git_user}:${!pr_token}" \
     "https://api.github.com/repos/${repo}/pulls" \
-    --data "${post_json}" |
-    jq -r '"PR URL " + .html_url'
+    --data "${post_json}")" || return 1
+  echo "PR URL $(jq -r '.html_url' <<<"${pr_json}")"
+  if [[ "$(jq -r '.maintainer_can_modify' <<<"${pr_json}")" != "true" ]]; then
+    echo_red "GitHub did not enable maintainer edits on the new PR."
+    enable_maintainer_edits "${repo}" "$(jq -r '.number' <<<"${pr_json}")" "${pr_token}"
+  fi
+  return 0
+}
+
+# enable_maintainer_edits asks GitHub to let maintainers of the target repo push
+# to the PR branch and reports whether the setting took effect. The fork and the
+# PR may be created with different tokens, in which case GitHub can ignore
+# maintainer_can_modify from the create call.
+enable_maintainer_edits() {
+  local repo="$1"
+  local pr_number="$2"
+  local pr_token="$3"
+  local can_modify
+  can_modify="$(curl --retry 5 --silent --fail --show-error \
+    -u "${git_user}:${!pr_token}" \
+    -X PATCH \
+    "https://api.github.com/repos/${repo}/pulls/${pr_number}" \
+    --data '{"maintainer_can_modify":true}' |
+    jq -r '.maintainer_can_modify')"
+  if [[ "${can_modify}" != "true" ]]; then
+    echo_red "${repo}: GitHub did not enable maintainer edits on PR #${pr_number}."
+    return 1
+  fi
+  echo_green "${repo}: enabled maintainer edits on PR #${pr_number}."
 }
 
 check_license() {
@@ -365,6 +393,9 @@ for org in ${orgs}; do
       if ! process_repo "${org}/${repo}" "${org_token_var}" "${forkRepo}"; then
         echo_red "Failed to process '${org}/${repo}'"
         exit 1
+      fi
+      if [[ "$(echo "${prData}" | jq -r '.[0].maintainer_can_modify')" != "true" ]]; then
+        enable_maintainer_edits "${org}/${repo}" "${prNumber}" "${org_token_var}"
       fi
       continue
     fi
