@@ -1145,13 +1145,19 @@ func checkMetricsExtended(r io.Reader) ([]metricStat, int, error) {
 		case dto.MetricType_COUNTER, dto.MetricType_GAUGE, dto.MetricType_UNTYPED:
 			cardinality = len(mf.Metric)
 		case dto.MetricType_HISTOGRAM:
-			// Histogram metrics includes sum, count, buckets.
-			buckets := len(mf.Metric[0].Histogram.Bucket)
-			cardinality = len(mf.Metric) * (2 + buckets)
+			// Histogram metrics include sum, count, and buckets for each metric.
+			for _, m := range mf.Metric {
+				if m.Histogram != nil {
+					cardinality += 2 + len(m.Histogram.Bucket)
+				}
+			}
 		case dto.MetricType_SUMMARY:
-			// Summary metrics includes sum, count, quantiles.
-			quantiles := len(mf.Metric[0].Summary.Quantile)
-			cardinality = len(mf.Metric) * (2 + quantiles)
+			// Summary metrics include sum, count, and quantiles for each metric.
+			for _, m := range mf.Metric {
+				if m.Summary != nil {
+					cardinality += 2 + len(m.Summary.Quantile)
+				}
+			}
 		default:
 			cardinality = len(mf.Metric)
 		}
@@ -1159,12 +1165,17 @@ func checkMetricsExtended(r io.Reader) ([]metricStat, int, error) {
 		total += cardinality
 	}
 
-	for i := range stats {
-		stats[i].percentage = float64(stats[i].cardinality) / float64(total)
+	if total > 0 {
+		for i := range stats {
+			stats[i].percentage = float64(stats[i].cardinality) / float64(total)
+		}
 	}
 
 	sort.SliceStable(stats, func(i, j int) bool {
-		return stats[i].cardinality > stats[j].cardinality
+		if stats[i].cardinality != stats[j].cardinality {
+			return stats[i].cardinality > stats[j].cardinality
+		}
+		return stats[i].name < stats[j].name
 	})
 
 	return stats, total, nil
