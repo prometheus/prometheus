@@ -25,6 +25,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cenkalti/backoff/v5"
 	"github.com/grafana/regexp"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
@@ -42,6 +43,7 @@ var (
 	DefaultSDConfig = SDConfig{
 		HTTPClientConfig: config.DefaultHTTPClientConfig,
 		RefreshInterval:  model.Duration(60 * time.Second),
+		MinBackoff:       0,
 	}
 	userAgent        = version.PrometheusUserAgent()
 	matchContentType = regexp.MustCompile(`^(?i:application\/json(;\s*charset=("utf-8"|utf-8))?)$`)
@@ -56,6 +58,8 @@ type SDConfig struct {
 	HTTPClientConfig config.HTTPClientConfig `yaml:",inline"`
 	RefreshInterval  model.Duration          `yaml:"refresh_interval,omitempty"`
 	URL              string                  `yaml:"url"`
+	// MinBackoff is the initial delay between retries. A zero value disables retries.
+	MinBackoff model.Duration `yaml:"min_backoff,omitempty"`
 }
 
 // NewDiscovererMetrics implements discovery.Config.
@@ -97,6 +101,12 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	if parsedURL.Host == "" {
 		return errors.New("host is missing in URL")
 	}
+	if c.MinBackoff < 0 {
+		return errors.New("min_backoff must not be negative")
+	}
+	if c.MinBackoff > c.RefreshInterval {
+		return errors.New("min_backoff must not be greater than refresh_interval")
+	}
 	return c.HTTPClientConfig.Validate()
 }
 
@@ -109,6 +119,7 @@ type Discovery struct {
 	url             string
 	client          *http.Client
 	refreshInterval time.Duration
+	minBackoff      time.Duration
 	tgLastLength    int
 	metrics         *httpMetrics
 }
@@ -134,6 +145,7 @@ func NewDiscovery(conf *SDConfig, opts discovery.DiscovererOptions) (*Discovery,
 		url:             conf.URL,
 		client:          client,
 		refreshInterval: time.Duration(conf.RefreshInterval), // Stored to be sent as headers.
+		minBackoff:      time.Duration(conf.MinBackoff),
 		metrics:         m,
 	}
 
@@ -151,6 +163,53 @@ func NewDiscovery(conf *SDConfig, opts discovery.DiscovererOptions) (*Discovery,
 }
 
 func (d *Discovery) Refresh(ctx context.Context) ([]*targetgroup.Group, error) {
+	tgs, err := d.refresh(ctx)
+	if err != nil {
+		d.metrics.failuresCount.Inc()
+	}
+	return tgs, err
+}
+
+func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
+	if d.minBackoff == 0 {
+		return d.doRefresh(ctx)
+	}
+
+	retryCtx, cancel := context.WithTimeout(ctx, d.refreshInterval)
+	defer cancel()
+
+	b := &backoff.ExponentialBackOff{
+		InitialInterval:     d.minBackoff,
+		RandomizationFactor: 0,
+		Multiplier:          2,
+		MaxInterval:         d.refreshInterval,
+	}
+	return backoff.Retry(retryCtx, func() ([]*targetgroup.Group, error) {
+		tgs, err := d.doRefresh(retryCtx)
+		if err == nil {
+			return tgs, nil
+		}
+		var retryableErr *retryableError
+		if !errors.As(err, &retryableErr) {
+			return nil, backoff.Permanent(err)
+		}
+		return nil, err
+	}, backoff.WithBackOff(b), backoff.WithMaxElapsedTime(d.refreshInterval))
+}
+
+type retryableError struct {
+	err error
+}
+
+func (e *retryableError) Error() string {
+	return e.err.Error()
+}
+
+func (e *retryableError) Unwrap() error {
+	return e.err
+}
+
+func (d *Discovery) doRefresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	req, err := http.NewRequest(http.MethodGet, d.url, http.NoBody)
 	if err != nil {
 		return nil, err
@@ -161,8 +220,10 @@ func (d *Discovery) Refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 
 	resp, err := d.client.Do(req.WithContext(ctx))
 	if err != nil {
-		d.metrics.failuresCount.Inc()
-		return nil, err
+		if ctx.Err() != nil {
+			return nil, context.Cause(ctx)
+		}
+		return nil, &retryableError{err: err}
 	}
 	defer func() {
 		io.Copy(io.Discard, resp.Body)
@@ -170,31 +231,30 @@ func (d *Discovery) Refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	}()
 
 	if resp.StatusCode != http.StatusOK {
-		d.metrics.failuresCount.Inc()
-		return nil, fmt.Errorf("server returned HTTP status %s", resp.Status)
+		err := fmt.Errorf("server returned HTTP status %s", resp.Status)
+		if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 && resp.StatusCode <= 599 {
+			return nil, &retryableError{err: err}
+		}
+		return nil, err
 	}
 
 	if !matchContentType.MatchString(strings.TrimSpace(resp.Header.Get("Content-Type"))) {
-		d.metrics.failuresCount.Inc()
 		return nil, fmt.Errorf("unsupported content type %q", resp.Header.Get("Content-Type"))
 	}
 
 	b, err := io.ReadAll(resp.Body)
 	if err != nil {
-		d.metrics.failuresCount.Inc()
-		return nil, err
+		return nil, &retryableError{err: err}
 	}
 
 	var targetGroups []*targetgroup.Group
 
 	if err := json.Unmarshal(b, &targetGroups); err != nil {
-		d.metrics.failuresCount.Inc()
 		return nil, err
 	}
 
 	for i, tg := range targetGroups {
 		if tg == nil {
-			d.metrics.failuresCount.Inc()
 			err = errors.New("nil target group item found")
 			return nil, err
 		}
