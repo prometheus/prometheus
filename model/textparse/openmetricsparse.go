@@ -298,12 +298,22 @@ func (p *OpenMetricsParser) StartTimestamp() int64 {
 		buf      []byte
 		currName []byte
 	)
+	// p.mfNameLen comes from the most recent # TYPE/HELP/UNIT metadata line, not from
+	// the current series line. A malformed exposition can declare a metric family name
+	// longer than the series line that follows it; p.mfNameLen then exceeds len(p.series)
+	// and the slice below panics (crashing the scrape goroutine, and the process). Such a
+	// series cannot belong to that family, so it has no shared start timestamp: guard the
+	// bounds and treat it as having none.
+	nameStart := p.offsets[0] - p.start
+	nameEnd := p.mfNameLen
 	if len(p.series) > 1 && p.series[0] == '{' && p.series[1] == '"' {
 		// special case for UTF-8 encoded metric family names.
-		currName = p.series[p.offsets[0]-p.start : p.mfNameLen+2]
-	} else {
-		currName = p.series[p.offsets[0]-p.start : p.mfNameLen]
+		nameEnd = p.mfNameLen + 2
 	}
+	if nameStart < 0 || nameEnd > len(p.series) || nameStart > nameEnd {
+		return 0
+	}
+	currName = p.series[nameStart:nameEnd]
 
 	currHash := p.seriesHash(&buf, currName)
 	// Check cache, perhaps we fetched something already.
