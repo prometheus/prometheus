@@ -176,7 +176,7 @@ func TestComputeExternalURL(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		_, err := computeExternalURL(test.input, "0.0.0.0:9090", "")
+		_, err := computeExternalURL(test.input, "0.0.0.0:9090", "", promslog.NewNopLogger())
 		if test.valid {
 			require.NoError(t, err)
 		} else {
@@ -210,6 +210,17 @@ tls_server_config:
 	require.NoError(t, os.WriteFile(nonEnablingTLSConfig, []byte(`
 tls_server_config:
   min_version: TLS12
+`), 0o644))
+
+	// Duplicate keys are rejected by both parsers, ours and the one exporter-toolkit
+	// uses, so the TLS state cannot be determined here. That must not fail startup:
+	// toolkit_web.Validate reports the definitive error later.
+	duplicateKeyConfig := filepath.Join(dir, "web-config-duplicate-key.yml")
+	require.NoError(t, os.WriteFile(duplicateKeyConfig, []byte(`
+http_server_config:
+  http2: true
+http_server_config:
+  http2: true
 `), 0o644))
 
 	tests := []struct {
@@ -247,11 +258,16 @@ tls_server_config:
 			webConfigFile:  filepath.Join(dir, "does-not-exist.yml"),
 			expectedScheme: "http",
 		},
+		{
+			name:           "web config file with duplicate keys",
+			webConfigFile:  duplicateKeyConfig,
+			expectedScheme: "http",
+		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			u, err := computeExternalURL("", "0.0.0.0:9090", test.webConfigFile)
+			u, err := computeExternalURL("", "0.0.0.0:9090", test.webConfigFile, promslog.NewNopLogger())
 			require.NoError(t, err)
 			require.Equal(t, test.expectedScheme, u.Scheme)
 		})
@@ -270,7 +286,7 @@ tls_server_config:
   key_file: server.key
 `), 0o644))
 
-	u, err := computeExternalURL("http://alertmanager.company.com", "0.0.0.0:9090", tlsConfig)
+	u, err := computeExternalURL("http://alertmanager.company.com", "0.0.0.0:9090", tlsConfig, promslog.NewNopLogger())
 	require.NoError(t, err)
 	require.Equal(t, "http", u.Scheme)
 }

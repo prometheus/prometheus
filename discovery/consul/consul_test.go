@@ -27,10 +27,10 @@ import (
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
-	"go.yaml.in/yaml/v2"
 
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"github.com/prometheus/prometheus/util/yamlutil"
 )
 
 func TestMain(m *testing.M) {
@@ -607,7 +607,7 @@ func TestUnmarshalConfig(t *testing.T) {
 	t.Parallel()
 	unmarshal := func(d []byte) func(any) error {
 		return func(o any) error {
-			return yaml.Unmarshal(d, o)
+			return yamlutil.UnmarshalStrict(d, o)
 		}
 	}
 

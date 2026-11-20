@@ -22,9 +22,9 @@ import (
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
-	"go.yaml.in/yaml/v2"
 
 	"github.com/prometheus/prometheus/discovery"
+	"github.com/prometheus/prometheus/util/yamlutil"
 )
 
 var (
@@ -52,7 +52,7 @@ service: %s
 
 func getMockConfFromString(confString string) (SDConfig, error) {
 	var conf SDConfig
-	err := yaml.UnmarshalStrict([]byte(confString), &conf)
+	err := yamlutil.UnmarshalStrict([]byte(confString), &conf)
 	return conf, err
 }
 

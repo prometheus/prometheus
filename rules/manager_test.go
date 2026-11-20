@@ -37,7 +37,6 @@ import (
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
-	"go.yaml.in/yaml/v2"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
@@ -59,6 +58,7 @@ import (
 	"github.com/prometheus/prometheus/util/stats"
 	"github.com/prometheus/prometheus/util/teststorage"
 	prom_testutil "github.com/prometheus/prometheus/util/testutil"
+	"github.com/prometheus/prometheus/util/yamlutil"
 )
 
 func TestMain(m *testing.M) {
@@ -1067,7 +1067,7 @@ func formatRules(r *rulefmt.RuleGroups) ruleGroupsTest {
 }
 
 func reloadAndValidate(rgs *rulefmt.RuleGroups, t *testing.T, tmpFile *os.File, ruleManager *Manager, ogs map[string]*Group) {
-	bs, err := yaml.Marshal(formatRules(rgs))
+	bs, err := yamlutil.Marshal(formatRules(rgs))
 	require.NoError(t, err)
 	tmpFile.Seek(0, 0)
 	_, err = tmpFile.Write(bs)
