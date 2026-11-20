@@ -77,21 +77,33 @@ func (t *SymbolsTable) Reset() {
 
 // desymbolizeLabels decodes label references, with given symbols to labels.
 // This function requires labelRefs to have an even number of elements (name-value pairs) and
-// all references must be valid indices within the symbols table. It will return an error if
-// these invariants are violated.
+// all references must be valid indices within the symbols table. It requires labels to be
+// sorted lexicographically by name and have no duplicate label names, per Remote Write 2.0 spec.
 func desymbolizeLabels(b *labels.ScratchBuilder, labelRefs []uint32, symbols []string) (labels.Labels, error) {
 	if len(labelRefs)%2 != 0 {
 		return labels.EmptyLabels(), fmt.Errorf("invalid labelRefs length %d", len(labelRefs))
 	}
 
 	b.Reset()
+	var prevName string
 	for i := 0; i < len(labelRefs); i += 2 {
 		nameRef, valueRef := labelRefs[i], labelRefs[i+1]
-		if int(nameRef) >= len(symbols) || int(valueRef) >= len(symbols) {
+		if uint64(nameRef) >= uint64(len(symbols)) || uint64(valueRef) >= uint64(len(symbols)) {
 			return labels.EmptyLabels(), fmt.Errorf("labelRefs %d (name) = %d (value) outside of symbols table (size %d)", nameRef, valueRef, len(symbols))
 		}
-		b.Add(symbols[nameRef], symbols[valueRef])
+		name := symbols[nameRef]
+		value := symbols[valueRef]
+
+		if i > 0 {
+			if name == prevName {
+				return labels.EmptyLabels(), fmt.Errorf("duplicate label with name: %s", name)
+			}
+			if name < prevName {
+				return labels.EmptyLabels(), fmt.Errorf("labels are not sorted lexicographically: %s is not after %s", name, prevName)
+			}
+		}
+		b.Add(name, value)
+		prevName = name
 	}
-	b.Sort()
 	return b.Labels(), nil
 }

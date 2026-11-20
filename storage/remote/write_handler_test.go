@@ -31,6 +31,7 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/google/go-cmp/cmp"
 	remoteapi "github.com/prometheus/client_golang/exp/api/remote"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 
@@ -350,51 +351,132 @@ func TestRemoteWriteHandlerHeadersHandling_V2Message(t *testing.T) {
 }
 
 func TestRemoteWriteHandler_V1Message(t *testing.T) {
-	payload, _, _, err := buildWriteRequest(nil, writeRequestFixture.Timeseries, nil, nil, nil, nil, "snappy")
-	require.NoError(t, err)
+	for _, tc := range []struct {
+		desc                    string
+		timeseries              []prompb.TimeSeries
+		commitErr               error
+		expectedCode            int
+		expectedUnsortedSamples float64
+		verify                  func(t *testing.T, appendable *mockAppendable)
+	}{
+		{
+			desc:                    "All timeseries accepted (sorted fixture)",
+			timeseries:              writeRequestFixture.Timeseries,
+			expectedCode:            http.StatusNoContent,
+			expectedUnsortedSamples: 0,
+			verify: func(t *testing.T, appendable *mockAppendable) {
+				b := labels.NewScratchBuilder(0)
+				i, j, k := 0, 0, 0
+				for _, ts := range writeRequestFixture.Timeseries {
+					lbls := ts.ToLabels(&b, nil)
+					for _, s := range ts.Samples {
+						requireEqual(t, mockSample{l: lbls, t: s.Timestamp, v: s.Value}, appendable.samples[i])
+						i++
+					}
+					for _, e := range ts.Exemplars {
+						exemplarLabels := e.ToExemplar(&b, nil).Labels
+						requireEqual(t, mockExemplar{lbls, exemplarLabels, e.Timestamp, e.Value}, appendable.exemplars[j])
+						j++
+					}
+					for _, hp := range ts.Histograms {
+						if hp.IsFloatHistogram() {
+							fh := hp.ToFloatHistogram()
+							requireEqual(t, mockHistogram{l: lbls, t: hp.Timestamp, fh: fh}, appendable.histograms[k])
+						} else {
+							h := hp.ToIntHistogram()
+							requireEqual(t, mockHistogram{l: lbls, t: hp.Timestamp, h: h}, appendable.histograms[k])
+						}
+						k++
+					}
+				}
+			},
+		},
+		{
+			desc: "Unsorted labels with samples and histograms; sorted on disk and counter incremented",
+			timeseries: []prompb.TimeSeries{
+				{
+					Labels: []prompb.Label{
+						{Name: "__name__", Value: "test_metric"},
+						{Name: "zone", Value: "us-east"},
+						{Name: "app", Value: "web"},
+					},
+					Samples: []prompb.Sample{
+						{Value: 42, Timestamp: 1000},
+					},
+					Histograms: []prompb.Histogram{
+						prompb.FromIntHistogram(1000, &testHistogram),
+					},
+				},
+			},
+			expectedCode:            http.StatusNoContent,
+			expectedUnsortedSamples: 2, // 1 sample + 1 histogram
+			verify: func(t *testing.T, appendable *mockAppendable) {
+				expectedLabels := labels.FromStrings("__name__", "test_metric", "app", "web", "zone", "us-east")
+				require.Len(t, appendable.samples, 1)
+				requireEqual(t, expectedLabels, appendable.samples[0].l)
+				require.Len(t, appendable.histograms, 1)
+				requireEqual(t, expectedLabels, appendable.histograms[0].l)
+			},
+		},
+		{
+			desc: "Unsorted labels with commit failure; counter must not increment",
+			timeseries: []prompb.TimeSeries{
+				{
+					Labels: []prompb.Label{
+						{Name: "__name__", Value: "test_metric"},
+						{Name: "zone", Value: "us-east"},
+						{Name: "app", Value: "web"},
+					},
+					Samples: []prompb.Sample{
+						{Value: 42, Timestamp: 1000},
+					},
+				},
+			},
+			commitErr:               errors.New("storage commit error"),
+			expectedCode:            http.StatusInternalServerError,
+			expectedUnsortedSamples: 0,
+		},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			payload, _, _, err := buildWriteRequest(nil, tc.timeseries, nil, nil, nil, nil, "snappy")
+			require.NoError(t, err)
 
-	req, err := http.NewRequest(http.MethodPost, "", bytes.NewReader(payload))
-	require.NoError(t, err)
+			req, err := http.NewRequest(http.MethodPost, "", bytes.NewReader(payload))
+			require.NoError(t, err)
 
-	// NOTE: Strictly speaking, even for 1.0 we require headers, but we never verified those
-	// in Prometheus, so keeping like this to not break existing 1.0 clients.
+			reg := prometheus.NewRegistry()
+			appendable := &mockAppendable{commitErr: tc.commitErr}
+			handler := NewWriteHandler(promslog.NewNopLogger(), reg, appendable, []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType}, false, false)
 
-	appendable := &mockAppendable{}
-	handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType}, false, false)
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, req)
 
-	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, req)
+			resp := recorder.Result()
+			require.Equal(t, tc.expectedCode, resp.StatusCode)
 
-	resp := recorder.Result()
-	require.Equal(t, http.StatusNoContent, resp.StatusCode)
+			require.Equal(t, tc.expectedUnsortedSamples, getCounterValue(t, reg, "prometheus_api_remote_write_unsorted_labels_samples_total"))
 
-	b := labels.NewScratchBuilder(0)
-	i := 0
-	j := 0
-	k := 0
-	for _, ts := range writeRequestFixture.Timeseries {
-		labels := ts.ToLabels(&b, nil)
-		for _, s := range ts.Samples {
-			requireEqual(t, mockSample{l: labels, t: s.Timestamp, v: s.Value}, appendable.samples[i])
-			i++
-		}
-		for _, e := range ts.Exemplars {
-			exemplarLabels := e.ToExemplar(&b, nil).Labels
-			requireEqual(t, mockExemplar{labels, exemplarLabels, e.Timestamp, e.Value}, appendable.exemplars[j])
-			j++
-		}
-		for _, hp := range ts.Histograms {
-			if hp.IsFloatHistogram() {
-				fh := hp.ToFloatHistogram()
-				requireEqual(t, mockHistogram{l: labels, t: hp.Timestamp, fh: fh}, appendable.histograms[k])
-			} else {
-				h := hp.ToIntHistogram()
-				requireEqual(t, mockHistogram{l: labels, t: hp.Timestamp, h: h}, appendable.histograms[k])
+			if tc.verify != nil {
+				tc.verify(t, appendable)
 			}
+		})
+	}
+}
 
-			k++
+func getCounterValue(t testing.TB, reg prometheus.Gatherer, name string) float64 {
+	t.Helper()
+	mfs, err := reg.Gather()
+	require.NoError(t, err)
+	for _, mf := range mfs {
+		if mf.GetName() == name {
+			var val float64
+			for _, m := range mf.GetMetric() {
+				val += m.GetCounter().GetValue()
+			}
+			return val
 		}
 	}
+	return 0
 }
 
 func expectHeaderValue(t testing.TB, expected int, got string) {
@@ -422,10 +504,11 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 		appendExemplarErr     error
 		updateMetadataErr     error
 
-		ingestSTZeroSample      bool
-		enableTypeAndUnitLabels bool
-		appendMetadata          bool
-		expectedLabels          labels.Labels // For verifying type/unit labels
+		ingestSTZeroSample           bool
+		enableTypeAndUnitLabels      bool
+		appendMetadata               bool
+		expectedLabels               labels.Labels // For verifying type/unit labels
+		expectedInvalidLabelsSamples float64
 	}{
 		{
 			desc:               "All timeseries accepted/ct_enabled",
@@ -439,14 +522,25 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 			expectedCode: http.StatusNoContent,
 		},
 		{
+			desc: "Valid series; sorted labels with decreasing symbol refs",
+			input: []writev2.TimeSeries{
+				// Symbols: 1: "__name__", 2: "test_metric1", 11: "f", 12: "g", 9: "foo", 10: "bar".
+				// String order: __name__ < f < foo. Symbol refs: 1, 11, 9 (decreasing from 11 to 9).
+				{LabelsRefs: []uint32{1, 2, 11, 12, 9, 10}, Samples: []writev2.Sample{{Value: 1, Timestamp: 1}}},
+			},
+			expectedCode:   http.StatusNoContent,
+			expectedLabels: labels.FromStrings("__name__", "test_metric1", "f", "g", "foo", "bar"),
+		},
+		{
 			desc: "Partial write; first series with invalid labels (no metric name)",
 			input: append(
 				// Series with test_metric1="test_metric1" labels.
 				[]writev2.TimeSeries{{LabelsRefs: []uint32{2, 2}, Samples: []writev2.Sample{{Value: 1, Timestamp: 1}}}},
 				writeV2RequestFixture.Timeseries...,
 			),
-			expectedCode:     http.StatusBadRequest,
-			expectedRespBody: "invalid metric name or labels, got {test_metric1=\"test_metric1\"}\n",
+			expectedCode:                 http.StatusBadRequest,
+			expectedRespBody:             "invalid metric name or labels, got {test_metric1=\"test_metric1\"}\n",
+			expectedInvalidLabelsSamples: 1,
 		},
 		{
 			desc: "Partial write; first series with invalid labels (empty metric name)",
@@ -455,8 +549,31 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 				[]writev2.TimeSeries{{LabelsRefs: []uint32{1, 0}, Samples: []writev2.Sample{{Value: 1, Timestamp: 1}}}},
 				writeV2RequestFixture.Timeseries...,
 			),
-			expectedCode:     http.StatusBadRequest,
-			expectedRespBody: "invalid metric name or labels, got {__name__=\"\"}\n",
+			expectedCode:                 http.StatusBadRequest,
+			expectedRespBody:             "invalid metric name or labels, got {__name__=\"\"}\n",
+			expectedInvalidLabelsSamples: 1,
+		},
+		{
+			desc: "Partial write; first series with unsorted labels",
+			input: append(
+				// Series with __name__="test_metric1", foo="bar", b="c" (unsorted: foo comes before b).
+				[]writev2.TimeSeries{{LabelsRefs: []uint32{1, 2, 9, 10, 3, 4}, Samples: []writev2.Sample{{Value: 1, Timestamp: 1}}}},
+				writeV2RequestFixture.Timeseries...,
+			),
+			expectedCode:                 http.StatusBadRequest,
+			expectedRespBody:             "parsing labels for series [1 2 9 10 3 4]: labels are not sorted lexicographically: b is not after foo\n",
+			expectedInvalidLabelsSamples: 1,
+		},
+		{
+			desc: "Partial write; first series with unsorted labels and ascending symbol refs",
+			input: append(
+				// Symbols: 1: "__name__", 9: "foo", 11: "f". Symbol refs 1 < 9 < 11 ascending, but strings unsorted (f is not after foo).
+				[]writev2.TimeSeries{{LabelsRefs: []uint32{1, 2, 9, 10, 11, 12}, Samples: []writev2.Sample{{Value: 1, Timestamp: 1}}}},
+				writeV2RequestFixture.Timeseries...,
+			),
+			expectedCode:                 http.StatusBadRequest,
+			expectedRespBody:             "parsing labels for series [1 2 9 10 11 12]: labels are not sorted lexicographically: f is not after foo\n",
+			expectedInvalidLabelsSamples: 1,
 		},
 		{
 			desc: "Partial write; first series with duplicate labels",
@@ -465,8 +582,30 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 				[]writev2.TimeSeries{{LabelsRefs: []uint32{1, 2, 2, 2, 2, 2}, Samples: []writev2.Sample{{Value: 1, Timestamp: 1}}}},
 				writeV2RequestFixture.Timeseries...,
 			),
-			expectedCode:     http.StatusBadRequest,
-			expectedRespBody: "invalid labels for series, labels {__name__=\"test_metric1\", test_metric1=\"test_metric1\", test_metric1=\"test_metric1\"}, duplicated label test_metric1\n",
+			expectedCode:                 http.StatusBadRequest,
+			expectedRespBody:             "parsing labels for series [1 2 2 2 2 2]: duplicate label with name: test_metric1\n",
+			expectedInvalidLabelsSamples: 1,
+		},
+		{
+			desc: "Partial write; first series with non-adjacent duplicate labels",
+			input: append(
+				// Series with __name__="test_metric1", b="c", __name__="test_metric1".
+				[]writev2.TimeSeries{{LabelsRefs: []uint32{1, 2, 3, 4, 1, 2}, Samples: []writev2.Sample{{Value: 1, Timestamp: 1}}}},
+				writeV2RequestFixture.Timeseries...,
+			),
+			expectedCode:                 http.StatusBadRequest,
+			expectedRespBody:             "parsing labels for series [1 2 3 4 1 2]: labels are not sorted lexicographically: __name__ is not after b\n",
+			expectedInvalidLabelsSamples: 1,
+		},
+		{
+			desc: "Partial write; first series with empty LabelsRefs",
+			input: append(
+				[]writev2.TimeSeries{{LabelsRefs: []uint32{}, Samples: []writev2.Sample{{Value: 1, Timestamp: 1}}}},
+				writeV2RequestFixture.Timeseries...,
+			),
+			expectedCode:                 http.StatusBadRequest,
+			expectedRespBody:             "invalid metric name or labels, got {}\n",
+			expectedInvalidLabelsSamples: 1,
 		},
 		{
 			desc: "Partial write; first series with odd number of label refs",
@@ -474,8 +613,9 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 				[]writev2.TimeSeries{{LabelsRefs: []uint32{1, 2, 3}, Samples: []writev2.Sample{{Value: 1, Timestamp: 1}}}},
 				writeV2RequestFixture.Timeseries...,
 			),
-			expectedCode:     http.StatusBadRequest,
-			expectedRespBody: "parsing labels for series [1 2 3]: invalid labelRefs length 3\n",
+			expectedCode:                 http.StatusBadRequest,
+			expectedRespBody:             "parsing labels for series [1 2 3]: invalid labelRefs length 3\n",
+			expectedInvalidLabelsSamples: 1,
 		},
 		{
 			desc: "Partial write; first series with out-of-bounds symbol references",
@@ -483,8 +623,19 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 				[]writev2.TimeSeries{{LabelsRefs: []uint32{1, 999}, Samples: []writev2.Sample{{Value: 1, Timestamp: 1}}}},
 				writeV2RequestFixture.Timeseries...,
 			),
-			expectedCode:     http.StatusBadRequest,
-			expectedRespBody: "parsing labels for series [1 999]: labelRefs 1 (name) = 999 (value) outside of symbols table (size 18)\n",
+			expectedCode:                 http.StatusBadRequest,
+			expectedRespBody:             "parsing labels for series [1 999]: labelRefs 1 (name) = 999 (value) outside of symbols table (size 18)\n",
+			expectedInvalidLabelsSamples: 1,
+		},
+		{
+			desc: "Partial write; first series with 32-bit overflow symbol ref",
+			input: append(
+				[]writev2.TimeSeries{{LabelsRefs: []uint32{1, 2, 0x80000001, 2}, Samples: []writev2.Sample{{Value: 1, Timestamp: 1}}}},
+				writeV2RequestFixture.Timeseries...,
+			),
+			expectedCode:                 http.StatusBadRequest,
+			expectedRespBody:             "parsing labels for series [1 2 2147483649 2]: labelRefs 2147483649 (name) = 2 (value) outside of symbols table (size 18)\n",
+			expectedInvalidLabelsSamples: 1,
 		},
 		{
 			desc: "Partial write; first series with out-of-bounds metadata unit ref",
@@ -835,7 +986,8 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 				appendExemplarErr:     tc.appendExemplarErr,
 				updateMetadataErr:     tc.updateMetadataErr,
 			}
-			handler := NewWriteHandler(promslog.NewNopLogger(), nil, appendable, []remoteapi.WriteMessageType{remoteapi.WriteV2MessageType}, tc.enableTypeAndUnitLabels, tc.appendMetadata)
+			reg := prometheus.NewRegistry()
+			handler := NewWriteHandler(promslog.NewNopLogger(), reg, appendable, []remoteapi.WriteMessageType{remoteapi.WriteV2MessageType}, tc.enableTypeAndUnitLabels, tc.appendMetadata)
 
 			recorder := httptest.NewRecorder()
 			handler.ServeHTTP(recorder, req)
@@ -845,6 +997,8 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 			respBody, err := io.ReadAll(resp.Body)
 			require.NoError(t, err)
 			require.Equal(t, tc.expectedRespBody, string(respBody))
+
+			require.Equal(t, tc.expectedInvalidLabelsSamples, getCounterValue(t, reg, "prometheus_api_remote_write_invalid_labels_samples_total"))
 
 			if tc.expectedCode == http.StatusInternalServerError {
 				// We don't expect writes for partial writes with retry-able code.
