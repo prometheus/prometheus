@@ -285,16 +285,17 @@ func TestReadClient(t *testing.T) {
 				require.True(t, ok)
 
 				cw := NewChunkedWriter(w, flusher)
-				l := []prompb.Label{
-					{Name: "foo", Value: "bar"},
-				}
 
+				// Like the read handler does for a series that exceeds the
+				// maximum frame size, split the first series over two frames.
 				chunks := buildTestChunks(t)
-				for i, c := range chunks {
-					cSeries := prompb.ChunkedSeries{Labels: l, Chunks: []prompb.Chunk{c}}
+				for _, cSeries := range []prompb.ChunkedSeries{
+					{Labels: []prompb.Label{{Name: "foo", Value: "bar"}}, Chunks: chunks[:1]},
+					{Labels: []prompb.Label{{Name: "foo", Value: "bar"}}, Chunks: chunks[1:2]},
+					{Labels: []prompb.Label{{Name: "foo", Value: "baz"}}, Chunks: chunks[2:]},
+				} {
 					readResp := prompb.ChunkedReadResponse{
 						ChunkedSeries: []*prompb.ChunkedSeries{&cSeries},
-						QueryIndex:    int64(i),
 					}
 
 					b, err := proto.Marshal(&readResp)
@@ -306,15 +307,12 @@ func TestReadClient(t *testing.T) {
 			}),
 			expectedLabels: []map[string]string{
 				{"foo": "bar"},
-				{"foo": "bar"},
-				{"foo": "bar"},
+				{"foo": "baz"},
 			},
 			// This is the output of buildTestChunks minus the samples outside the query range.
 			expectedSamples: [][]model.SamplePair{
 				{
 					{Timestamp: model.Time(4000), Value: model.SampleValue(4)},
-				},
-				{
 					{Timestamp: model.Time(5000), Value: model.SampleValue(1)},
 					{Timestamp: model.Time(6000), Value: model.SampleValue(2)},
 					{Timestamp: model.Time(7000), Value: model.SampleValue(3)},
@@ -423,6 +421,7 @@ func TestReadClient(t *testing.T) {
 			}
 
 			require.NoError(t, ss.Err())
+			require.Len(t, test.expectedLabels, i)
 		})
 	}
 }

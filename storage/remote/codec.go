@@ -638,8 +638,18 @@ type chunkedSeriesSet struct {
 	current   storage.Series
 	err       error
 	exhausted bool
+
+	// next is the frame read after the current series, which starts the
+	// next series.
+	next *prompb.ChunkedReadResponse
+	// streamErr is the error that ended the stream. Err returns it once Next
+	// has returned the series read before it.
+	streamErr error
 }
 
+// NewChunkedSeriesSet returns a storage.SeriesSet that reads series from a
+// stream of ChunkedReadResponse frames. A series that the server split over
+// consecutive frames of the same query is returned as a single series.
 func NewChunkedSeriesSet(chunkedReader *ChunkedReader, respBody io.ReadCloser, mint, maxt int64, cancel func(error)) storage.SeriesSet {
 	return &chunkedSeriesSet{
 		chunkedReader: chunkedReader,
@@ -650,13 +660,54 @@ func NewChunkedSeriesSet(chunkedReader *ChunkedReader, respBody io.ReadCloser, m
 	}
 }
 
-// Next return true if there is a next series and false otherwise. It will
-// block until the next series is available.
+// Next returns true if there is a next series and false otherwise. A series
+// can be split over consecutive frames, so Next blocks until it has read the
+// frame that starts the following series, or the end of the stream.
 func (s *chunkedSeriesSet) Next() bool {
+	res := s.next
+	s.next = nil
+	if res == nil {
+		if res = s.readFrame(); res == nil {
+			s.err = s.streamErr
+			return false
+		}
+	}
+	series := res.ChunkedSeries[0]
+
+	// If the stream fails before the series is complete, return the part that
+	// was read, and report the error once Next returns false.
+	for {
+		next := s.readFrame()
+		if next == nil {
+			break
+		}
+		if next.QueryIndex != res.QueryIndex || !labelProtosEqual(next.ChunkedSeries[0].Labels, series.Labels) {
+			s.next = next
+			break
+		}
+		series.Chunks = append(series.Chunks, next.ChunkedSeries[0].Chunks...)
+	}
+
+	s.current = &chunkedSeries{
+		ChunkedSeries: prompb.ChunkedSeries{
+			Labels: series.Labels,
+			Chunks: series.Chunks,
+		},
+		mint: s.mint,
+		maxt: s.maxt,
+	}
+
+	return true
+}
+
+// readFrame returns the next frame of the stream, or nil once the stream has
+// ended. It sets s.streamErr if the stream ended with an error other than
+// io.EOF.
+func (s *chunkedSeriesSet) readFrame() *prompb.ChunkedReadResponse {
 	if s.exhausted {
-		// Don't try to read the next series again.
-		// This prevents errors like "http: read on closed response body" if Next() is called after it has already returned false.
-		return false
+		// Don't read from the stream again once it has ended.
+		// This prevents errors like "http: read on closed response body".
+		return nil
 	}
 
 	res := &prompb.ChunkedReadResponse{}
@@ -664,7 +715,7 @@ func (s *chunkedSeriesSet) Next() bool {
 	err := s.chunkedReader.NextProto(res)
 	if err != nil {
 		if !errors.Is(err, io.EOF) {
-			s.err = err
+			s.streamErr = err
 			_, _ = io.Copy(io.Discard, s.respBody)
 		}
 
@@ -672,19 +723,18 @@ func (s *chunkedSeriesSet) Next() bool {
 		s.cancel(err)
 		s.exhausted = true
 
-		return false
+		return nil
 	}
 
-	s.current = &chunkedSeries{
-		ChunkedSeries: prompb.ChunkedSeries{
-			Labels: res.ChunkedSeries[0].Labels,
-			Chunks: res.ChunkedSeries[0].Chunks,
-		},
-		mint: s.mint,
-		maxt: s.maxt,
-	}
+	return res
+}
 
-	return true
+// labelProtosEqual reports whether a and b hold the same labels in the same
+// order.
+func labelProtosEqual(a, b []prompb.Label) bool {
+	return slices.EqualFunc(a, b, func(x, y prompb.Label) bool {
+		return x.Name == y.Name && x.Value == y.Value
+	})
 }
 
 func (s *chunkedSeriesSet) At() storage.Series {
