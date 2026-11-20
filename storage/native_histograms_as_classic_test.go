@@ -308,6 +308,31 @@ func TestNativeHistogramsAsClassicQuerier_Select(t *testing.T) {
 					expectedSuffix: "_bucket",
 				},
 				{
+					name: "le matching follows labels across layout and series changes",
+					queryMatchers: []*labels.Matcher{
+						labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_bucket"),
+						labels.MustNewMatcher(labels.MatchRegexp, labels.BucketLabel, "1\\.0|2\\.0|3\\.0"),
+						labels.MustNewMatcher(labels.MatchNotEqual, labels.BucketLabel, "2.0"),
+					},
+					nhcbSeries: []Series{
+						NewListSeries(labels.FromStrings("__name__", "http_requests", "job", "a"), []chunks.Sample{
+							hSample{st: 10, t: 20, h: makeNHCB([]float64{1, 2}, []int64{2, 3, 4})},
+							fhSample{st: 10, t: 30, fh: makeNHCB([]float64{2, 3, 4}, []int64{4, 5, 6, 7}).ToFloat(nil)},
+							hSample{st: 25, t: 40, h: makeNHCB([]float64{1, 3}, []int64{1, 2, 3})},
+						}),
+						NewListSeries(labels.FromStrings("__name__", "http_requests", "job", "b"), []chunks.Sample{
+							hSample{st: 10, t: 20, h: makeNHCB([]float64{2, 3}, []int64{8, 9, 10})},
+							fhSample{st: 10, t: 30, fh: makeNHCB([]float64{2, 3}, []int64{9, 10, 11}).ToFloat(nil)},
+						}),
+					},
+					expectedCount: 3,
+					expectedSamples: []seriesSamples{
+						{labels: `{__name__="http_requests_bucket", job="a", le="1.0"}`, samples: []fSample{{st: 10, t: 20, f: 2}, {st: 25, t: 40, f: 1}}},
+						{labels: `{__name__="http_requests_bucket", job="a", le="3.0"}`, samples: []fSample{{st: 10, t: 30, f: 9}, {st: 25, t: 40, f: 3}}},
+						{labels: `{__name__="http_requests_bucket", job="b", le="3.0"}`, samples: []fSample{{st: 10, t: 20, f: 17}, {st: 10, t: 30, f: 19}}},
+					},
+				},
+				{
 					name: "le matcher on count query excludes series without le label",
 					queryMatchers: []*labels.Matcher{
 						labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "http_requests_count"),
