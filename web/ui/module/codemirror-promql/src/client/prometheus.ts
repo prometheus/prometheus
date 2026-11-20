@@ -79,6 +79,26 @@ const badRequest = 400;
 const unprocessableEntity = 422;
 const serviceUnavailable = 503;
 
+// escapeLabelName encodes a label name for use in the path of /api/v1/label/<label_name>/values. Names outside the
+// legacy charset (and names that would be mistaken for an already escaped one) use the "U__" values escaping, which the
+// API requires for names containing "/". See https://prometheus.io/docs/prometheus/latest/querying/api/#querying-label-values
+function escapeLabelName(name: string): string {
+  if (/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name) && !name.startsWith('U__')) {
+    return name;
+  }
+  const escaped = Array.from(name).map((ch, i) => {
+    if (ch === '_') {
+      return '__';
+    }
+    // Letters and colons are kept, digits only after the first character.
+    if (/[a-zA-Z:]/.test(ch) || (i > 0 && /[0-9]/.test(ch))) {
+      return ch;
+    }
+    return `_${ch.codePointAt(0)!.toString(16)}_`;
+  });
+  return 'U__' + escaped.join('');
+}
+
 // HTTPPrometheusClient is the HTTP client that should be used to get some information from the different endpoint provided by prometheus.
 export class HTTPPrometheusClient implements PrometheusClient {
   private readonly lookbackInterval: undefined | number; //12 hours
@@ -151,7 +171,7 @@ export class HTTPPrometheusClient implements PrometheusClient {
     }
 
     // See https://prometheus.io/docs/prometheus/latest/querying/api/#querying-label-values
-    return this.fetchAPI<string[]>(`${this.labelValuesEndpoint().replace(/:name/gi, labelName)}?${params}`).catch((error) => {
+    return this.fetchAPI<string[]>(`${this.labelValuesEndpoint().replace(/:name/gi, () => escapeLabelName(labelName))}?${params}`).catch((error) => {
       if (this.errorHandler) {
         this.errorHandler(error);
       }

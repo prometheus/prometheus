@@ -1,0 +1,3 @@
+tracing:
+  sampling_fraction: 50
+  endpoint: "localhost:4317"

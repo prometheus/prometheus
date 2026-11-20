@@ -94,6 +94,8 @@ export function buildLabelMatchers(labelMatchers: SyntaxNode[], state: EditorSta
   return matchers;
 }
 
+const legacyLabelNameRe = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
+
 export function labelMatchersToString(metricName: string, matchers?: Matcher[], labelName?: string): string {
   if (!matchers || matchers.length === 0) {
     return metricName;
@@ -121,7 +123,10 @@ export function labelMatchersToString(metricName: string, matchers?: Matcher[], 
       default:
         type = '=';
     }
-    const m = `${matcher.name}${type}"${matcher.value}"`;
+    // Label names outside the legacy charset (e.g. "app.kubernetes.io/name") must be quoted to be valid in a selector.
+    // The name comes from the editor text without its quotes and is still escaped, so it is not escaped again.
+    const name = legacyLabelNameRe.test(matcher.name) ? matcher.name : `"${matcher.name}"`;
+    const m = `${name}${type}"${matcher.value}"`;
     if (matchersAsString === '') {
       matchersAsString = m;
     } else {
