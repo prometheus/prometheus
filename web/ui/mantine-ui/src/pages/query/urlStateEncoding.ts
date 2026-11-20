@@ -9,8 +9,9 @@ import {
   parsePrometheusDuration,
 } from "../../lib/formatTime";
 
-export function parseTime(timeText: string): number {
-  return dayjs.utc(timeText).valueOf();
+export function parseTime(timeText: string): number | null {
+  const parsedTime = dayjs.utc(timeText);
+  return parsedTime.isValid() ? parsedTime.valueOf() : null;
 }
 
 export const decodePanelOptionsFromURLParams = (query: string): Panel[] => {
@@ -74,7 +75,10 @@ export const decodePanelOptionsFromURLParams = (query: string): Panel[] => {
         parsePrometheusDuration(value) || panel.visualizer.range;
     });
     decodeSetting("end_input", (value) => {
-      panel.visualizer.endTime = parseTime(value);
+      const endTime = parseTime(value);
+      if (endTime !== null) {
+        panel.visualizer.endTime = endTime;
+      }
     });
     // Legacy "step_input" parameter, overridden below by
     // "res_type" / "res_density" / "res_step" if present.
@@ -119,7 +123,10 @@ export const decodePanelOptionsFromURLParams = (query: string): Panel[] => {
       }
     });
     decodeSetting("moment_input", (value) => {
-      panel.visualizer.endTime = parseTime(value);
+      const endTime = parseTime(value);
+      if (endTime !== null) {
+        panel.visualizer.endTime = endTime;
+      }
     });
 
     panels.push(panel);
