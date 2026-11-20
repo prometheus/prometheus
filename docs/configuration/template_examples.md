@@ -57,7 +57,7 @@ formatting of results, and linking to the [expression browser](https://prometheu
 ## Using console URL parameters
 
 ```
-{{ with printf "node_memory_MemTotal{job='node',instance='%s'}" .Params.instance | query }}
+{{ with printf "node_memory_MemTotal_bytes{job='node',instance='%s'}" .Params.instance | query }}
   {{ . | first | value | humanize1024 }}B
 {{ end }}
 ```
@@ -68,15 +68,15 @@ If accessed as `console.html?instance=hostname`, `.Params.instance` will evaluat
 
 ```html
 <table>
-{{ range printf "node_network_receive_bytes{job='node',instance='%s',device!='lo'}" .Params.instance | query | sortByLabel "device"}}
+{{ range printf "node_network_receive_bytes_total{job='node',instance='%s',device!='lo'}" .Params.instance | query | sortByLabel "device"}}
   <tr><th colspan=2>{{ .Labels.device }}</th></tr>
   <tr>
     <td>Received</td>
-    <td>{{ with printf "rate(node_network_receive_bytes{job='node',instance='%s',device='%s'}[5m])" .Labels.instance .Labels.device | query }}{{ . | first | value | humanize }}B/s{{end}}</td>
+    <td>{{ with printf "rate(node_network_receive_bytes_total{job='node',instance='%s',device='%s'}[5m])" .Labels.instance .Labels.device | query }}{{ . | first | value | humanize }}B/s{{end}}</td>
   </tr>
   <tr>
     <td>Transmitted</td>
-    <td>{{ with printf "rate(node_network_transmit_bytes{job='node',instance='%s',device='%s'}[5m])" .Labels.instance .Labels.device | query }}{{ . | first | value | humanize }}B/s{{end}}</td>
+    <td>{{ with printf "rate(node_network_transmit_bytes_total{job='node',instance='%s',device='%s'}[5m])" .Labels.instance .Labels.device | query }}{{ . | first | value | humanize }}B/s{{end}}</td>
   </tr>{{ end }}
 </table>
 ```
