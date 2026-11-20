@@ -122,3 +122,19 @@ func TestVmsToLabelSets(t *testing.T) {
 		require.False(t, hasEmptyVal)
 	})
 }
+
+func TestBuildFiltersVm(t *testing.T) {
+	t.Parallel()
+
+	t.Run("no_tags_means_no_filters", func(t *testing.T) {
+		require.Nil(t, buildFiltersVM(nil))
+		require.Nil(t, buildFiltersVM([]string{}))
+	})
+
+	t.Run("tags_are_passed_through", func(t *testing.T) {
+		filters := buildFiltersVM([]string{"env=prod", "team=sre"})
+		require.NotNil(t, filters)
+		require.NotNil(t, filters.Tags)
+		require.Equal(t, []string{"env=prod", "team=sre"}, *filters.Tags)
+	})
+}
