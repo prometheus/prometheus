@@ -77,6 +77,7 @@ scrape_configs:
 		"--storage.tsdb.path=" + filepath.Join(tempDir, "data"),
 		fmt.Sprintf("--web.listen-address=127.0.0.1:%d", port),
 		"--web.enable-lifecycle",
+		"--scrape.discovery-reload-interval=100ms",
 	}
 	prometheusProcess := exec.Command(promPath, params...)
 	prometheusProcess.Stdout = os.Stdout
