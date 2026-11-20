@@ -554,3 +554,41 @@ func TestHistogramSTChunk_CounterResetHeader(t *testing.T) {
 func TestHistogramSTChunkOverFlowPanics(t *testing.T) {
 	testChunkOverFlowPanics(t, EncHistogramST, ValHistogram)
 }
+
+// TestHistogramSTRecodeIteratorError verifies that recodeST propagates iterator
+// errors and still returns the appender.
+func TestHistogramSTRecodeIteratorError(t *testing.T) {
+	chk := NewHistogramSTChunk()
+	app, err := chk.Appender()
+	require.NoError(t, err)
+
+	h1 := &histogram.Histogram{
+		Count: 27, ZeroCount: 2, Sum: 18.4, ZeroThreshold: 1e-125, Schema: 1,
+		PositiveSpans: []histogram.Span{
+			{Offset: 0, Length: 2}, {Offset: 2, Length: 1}, {Offset: 3, Length: 2}, {Offset: 3, Length: 1}, {Offset: 1, Length: 1},
+		},
+		PositiveBuckets: []int64{6, -3, 0, -1, 2, 1, -4},
+		NegativeSpans:   []histogram.Span{{Offset: 1, Length: 1}},
+		NegativeBuckets: []int64{1},
+	}
+	_, _, app, err = app.AppendHistogram(nil, 100, 1000, h1, false)
+	require.NoError(t, err)
+
+	h2 := h1.Copy()
+	h2.PositiveSpans = []histogram.Span{
+		{Offset: 0, Length: 3}, {Offset: 1, Length: 1}, {Offset: 1, Length: 4}, {Offset: 3, Length: 3},
+	}
+	h2.NegativeSpans = []histogram.Span{{Offset: 0, Length: 2}}
+	h2.Count, h2.ZeroCount, h2.Sum = 35, 3, 30
+	h2.PositiveBuckets = []int64{7, -2, -4, 2, -2, -1, 2, 3, 0, -5, 1}
+	h2.NegativeBuckets = []int64{2, -1}
+
+	// Test AppendHistogram path: corrupt BEFORE calling with new layout.
+	hApp := app.(*HistogramSTAppender)
+	hApp.b.stream = hApp.b.stream[:len(hApp.b.stream)/2]
+	newChk, recoded, newApp, appErr := hApp.AppendHistogram(nil, 200, 2000, h2, false)
+	require.Error(t, appErr)
+	require.False(t, recoded)
+	require.Nil(t, newChk)
+	require.NotNil(t, newApp, "AppendHistogram must still return the appender on recodeST error")
+}
