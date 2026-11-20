@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"slices"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
@@ -112,10 +113,9 @@ outerLoop:
 			break outerLoop
 		}
 	}
-	results := []sdCheckResult{}
-	for _, tgs := range sdCheckResults {
-		results = append(results, getSDCheckResult(tgs, scrapeConfig)...)
-	}
+	// Go randomises map iteration order. Sort the sources so the JSON output is
+	// stable across runs, which lets callers diff it reliably.
+	results := sdCheckResultsInSourceOrder(sdCheckResults, scrapeConfig)
 
 	res, err := json.MarshalIndent(results, "", "  ")
 	if err != nil {
@@ -125,6 +125,22 @@ outerLoop:
 
 	fmt.Printf("%s", res)
 	return successExitCode
+}
+
+// sdCheckResultsInSourceOrder builds the check results in a deterministic
+// order by sorting the discovery sources before aggregating their groups.
+func sdCheckResultsInSourceOrder(groups map[string][]*targetgroup.Group, scrapeConfig *config.ScrapeConfig) []sdCheckResult {
+	sources := make([]string, 0, len(groups))
+	for source := range groups {
+		sources = append(sources, source)
+	}
+	slices.Sort(sources)
+
+	results := []sdCheckResult{}
+	for _, source := range sources {
+		results = append(results, getSDCheckResult(groups[source], scrapeConfig)...)
+	}
+	return results
 }
 
 func getSDCheckResult(targetGroups []*targetgroup.Group, scrapeConfig *config.ScrapeConfig) []sdCheckResult {
