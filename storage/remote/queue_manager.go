@@ -2156,6 +2156,12 @@ func (s *shards) sendV2Samples(ctx context.Context, samples []writev2.TimeSeries
 }
 
 func (s *shards) updateMetrics(_ context.Context, err error, sampleCount, exemplarCount, histogramCount int, rs WriteResponseStats, duration time.Duration) {
+	// If the context was cancelled then we've never completed our send
+	// and we need to retry. Exit without updating anything.
+	if errors.Is(err, context.Canceled) {
+		return
+	}
+
 	// Partial errors may happen -- account for that.
 	sampleDiff := sampleCount - rs.Samples
 	if sampleDiff > 0 {

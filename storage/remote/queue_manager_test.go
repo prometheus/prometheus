@@ -911,6 +911,41 @@ func TestDisableReshardOnRetry(t *testing.T) {
 	}, time.Minute, retryAfter, "shouldReshard should have been re-enabled")
 }
 
+// TestLastSendTimestampNotUpdatedOnContextCancellation verifies that cancelled
+// sends do not count as successful send activity.
+func TestLastSendTimestampNotUpdatedOnContextCancellation(t *testing.T) {
+	t.Parallel()
+
+	var storeCalled atomic.Bool
+	client := &MockWriteClient{
+		StoreFunc: func(ctx context.Context, _ []byte, _ int) (WriteResponseStats, error) {
+			storeCalled.Store(true)
+			// Block until shards.stop() cancels the context after flushDeadline.
+			<-ctx.Done()
+			return WriteResponseStats{}, ctx.Err()
+		},
+		NameFunc:     func() string { return "mock" },
+		EndpointFunc: func() string { return "http://fake:9090/api/v1/write" },
+	}
+
+	cfg := testDefaultQueueConfig()
+	cfg.MaxShards = 1
+
+	// flushDeadline long enough for the shard to dequeue and call Store,
+	// short enough to not slow CI.
+	m := newTestQueueManager(t, cfg, config.DefaultMetadataConfig, 100*time.Millisecond, client, remoteapi.WriteV1MessageType)
+
+	recs := testwal.GenerateRecords(recCase{Series: 1, SamplesPerSeries: 1})
+	m.StoreSeries(recs.Series, 0)
+	m.numShards = 1
+	m.shards.start(1)
+	m.Append(recs.Samples)
+	m.shards.stop()
+
+	require.True(t, storeCalled.Load())
+	require.Equal(t, int64(0), m.lastSendTimestamp.Load())
+}
+
 func createProtoTimeseriesWithOld(numSamples, baseTs int64) []prompb.TimeSeries {
 	samples := make([]prompb.TimeSeries, numSamples)
 	// use a fixed rand source so tests are consistent
