@@ -16,6 +16,8 @@ package annotations
 import (
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"time"
 
 	"github.com/prometheus/common/model"
@@ -92,7 +94,10 @@ func (a Annotations) AsStrings(query string, maxWarnings, maxInfos int) (warning
 	infos = make([]string, 0, maxInfos+1)
 	warnSkipped := 0
 	infoSkipped := 0
-	for _, err := range a {
+	// Go randomises map iteration order. Sort the keys so that a limit drops a
+	// deterministic set of annotations instead of an arbitrary one.
+	for _, key := range slices.Sorted(maps.Keys(a)) {
+		err := a[key]
 		if anErr, ok := errors.AsType[annoError](err); ok {
 			anErr.SetQuery(query)
 		}
