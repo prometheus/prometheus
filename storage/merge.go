@@ -476,6 +476,59 @@ func ChainedSeriesMerge(series ...Series) Series {
 	}
 }
 
+// SampleTieBreaker decides which sample to keep when two iterators are at samples with the same timestamp.
+type SampleTieBreaker interface {
+	// Prefer returns true if the current sample of a must be kept instead of the current sample of b. It is called
+	// only when a and b are at samples with the same timestamp.
+	//
+	// It must be a strict weak ordering of the samples, otherwise the sample that is kept can depend on the order of
+	// the iterators. It must not move a or b. To get the type of the current sample, use Seek with the current
+	// timestamp, for example a.Seek(a.AtT()), which does not move the iterator.
+	Prefer(a, b chunkenc.Iterator) bool
+}
+
+// SampleTieBreakFunc is a SampleTieBreaker that has no state.
+type SampleTieBreakFunc func(a, b chunkenc.Iterator) bool
+
+// Prefer calls f(a, b).
+func (f SampleTieBreakFunc) Prefer(a, b chunkenc.Iterator) bool {
+	return f(a, b)
+}
+
+// ChainedSeriesMergeWithTieBreak returns a VerticalSeriesMergeFunc that is like ChainedSeriesMerge, but if two or
+// more series have a sample with the same timestamp, it keeps the sample that the tie-break prefers.
+//
+// newTieBreak is called once for each iterator of a merged series, and the iterator uses only the tie-break that it
+// returns. So the tie-break can keep state between calls, for example buffers to read histograms into, without
+// synchronization. If the tie-break has no state, newTieBreak can return the same tie-break each time.
+//
+// When Series.Iterator is given an iterator to reuse, prev is the tie-break of that iterator, so that newTieBreak can
+// return prev to reuse its state. Otherwise prev is nil. prev can come from a different newTieBreak, so check its type
+// before reusing it.
+//
+// Use it when overlapping series can have different samples at the same timestamp, and the result must not depend on
+// the order of the series, for example when the order depends on which of many sources responds first.
+func ChainedSeriesMergeWithTieBreak(newTieBreak func(prev SampleTieBreaker) SampleTieBreaker) VerticalSeriesMergeFunc {
+	return func(series ...Series) Series {
+		if len(series) == 0 {
+			return nil
+		}
+		return &SeriesEntry{
+			Lset: series[0].Labels(),
+			SampleIteratorFn: func(it chunkenc.Iterator) chunkenc.Iterator {
+				// Get the tie-break before ChainSampleIteratorFromSeries resets the iterator.
+				var prev SampleTieBreaker
+				if csi, ok := it.(*chainSampleIterator); ok {
+					prev = csi.h.tieBreak
+				}
+				csi := ChainSampleIteratorFromSeries(it, series).(*chainSampleIterator)
+				csi.h.tieBreak = newTieBreak(prev)
+				return csi
+			},
+		}
+	}
+}
+
 // chainSampleIterator is responsible to iterate over samples from different iterators of the same time series in timestamps
 // order. If one or more samples overlap, one sample from random overlapped ones is kept and all others with the same
 // timestamp are dropped. It's optimized for non-overlap cases as well.
@@ -502,7 +555,7 @@ func getChainSampleIterator(it chunkenc.Iterator, length int) *chainSampleIterat
 	} else {
 		csi.iterators = csi.iterators[:length]
 	}
-	csi.h = nil
+	csi.h = samplesIteratorHeap{}
 	csi.lastT = math.MinInt64
 	return csi
 }
@@ -537,7 +590,7 @@ func (c *chainSampleIterator) Seek(t int64) chunkenc.ValueType {
 	// Don't bother to find out if the next sample is consecutive. Callers
 	// of Seek usually aren't interested anyway.
 	c.consecutive = false
-	c.h = samplesIteratorHeap{}
+	c.h.its = []chunkenc.Iterator{}
 	for _, iter := range c.iterators {
 		if iter.Seek(t) == chunkenc.ValNone {
 			if iter.Err() != nil {
@@ -548,7 +601,7 @@ func (c *chainSampleIterator) Seek(t int64) chunkenc.ValueType {
 		}
 		heap.Push(&c.h, iter)
 	}
-	if len(c.h) > 0 {
+	if len(c.h.its) > 0 {
 		c.curr = heap.Pop(&c.h).(chunkenc.Iterator)
 		c.lastT = c.curr.AtT()
 		return c.curr.Seek(c.lastT)
@@ -618,9 +671,9 @@ func (c *chainSampleIterator) Next() chunkenc.ValueType {
 		currValueType   chunkenc.ValueType
 		iteratorChanged bool
 	)
-	if c.h == nil {
+	if c.h.its == nil {
 		iteratorChanged = true
-		c.h = samplesIteratorHeap{}
+		c.h.its = []chunkenc.Iterator{}
 		// We call c.curr.Next() as the first thing below.
 		// So, we don't call Next() on it here.
 		c.curr = c.iterators[0]
@@ -650,7 +703,7 @@ func (c *chainSampleIterator) Next() chunkenc.ValueType {
 				return chunkenc.ValNone
 			}
 
-			if len(c.h) == 0 {
+			if len(c.h.its) == 0 {
 				// No iterator left to iterate.
 				c.curr = nil
 				return chunkenc.ValNone
@@ -661,19 +714,20 @@ func (c *chainSampleIterator) Next() chunkenc.ValueType {
 				// Ignoring sample for the same timestamp.
 				continue
 			}
-			if len(c.h) == 0 {
+			if len(c.h.its) == 0 {
 				// curr is the only iterator remaining,
 				// no need to check with the heap.
 				break
 			}
 
 			// Check current iterator with the top of the heap.
-			nextT := c.h[0].AtT()
+			nextT := c.h.its[0].AtT()
 			if currT < nextT {
 				// Current iterator has smaller timestamp than the heap.
 				break
 			}
-			// Current iterator does not hold the smallest timestamp.
+			// Current iterator does not hold the smallest timestamp, or holds it together with other iterators.
+			// In both cases, the heap decides which sample comes next.
 			heap.Push(&c.h, c.curr)
 		}
 
@@ -699,24 +753,34 @@ func (c *chainSampleIterator) Err() error {
 	return errors.Join(errs...)
 }
 
-type samplesIteratorHeap []chunkenc.Iterator
+// samplesIteratorHeap orders iterators by the timestamp of their current sample. If tieBreak is set, it also orders
+// iterators whose current samples have the same timestamp.
+type samplesIteratorHeap struct {
+	// its is nil until the heap is initialized by chainSampleIterator.Next or chainSampleIterator.Seek.
+	its      []chunkenc.Iterator
+	tieBreak SampleTieBreaker
+}
 
-func (h samplesIteratorHeap) Len() int      { return len(h) }
-func (h samplesIteratorHeap) Swap(i, j int) { h[i], h[j] = h[j], h[i] }
+func (h *samplesIteratorHeap) Len() int      { return len(h.its) }
+func (h *samplesIteratorHeap) Swap(i, j int) { h.its[i], h.its[j] = h.its[j], h.its[i] }
 
-func (h samplesIteratorHeap) Less(i, j int) bool {
-	return h[i].AtT() < h[j].AtT()
+func (h *samplesIteratorHeap) Less(i, j int) bool {
+	ti, tj := h.its[i].AtT(), h.its[j].AtT()
+	if ti != tj || h.tieBreak == nil {
+		return ti < tj
+	}
+	return h.tieBreak.Prefer(h.its[i], h.its[j])
 }
 
 func (h *samplesIteratorHeap) Push(x any) {
-	*h = append(*h, x.(chunkenc.Iterator))
+	h.its = append(h.its, x.(chunkenc.Iterator))
 }
 
 func (h *samplesIteratorHeap) Pop() any {
-	old := *h
+	old := h.its
 	n := len(old)
 	x := old[n-1]
-	*h = old[0 : n-1]
+	h.its = old[0 : n-1]
 	return x
 }
 
