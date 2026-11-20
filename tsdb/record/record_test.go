@@ -1359,20 +1359,21 @@ func BenchmarkWAL_HistogramEncoding(b *testing.B) {
 			for _, labelCount := range []int{0, 10, 50} {
 				for _, histograms := range []int{10, 100, 1000} {
 					for _, buckets := range []int{0, 1, 10, 100} {
-						b.Run(fmt.Sprintf("type=%s/labels=%d/histograms=%d/buckets=%d", maker.name, labelCount, histograms, buckets), func(b *testing.B) {
+						b.Run(fmt.Sprintf("type=%s/labels=%d/histograms=%d/buckets=%d/stStorage=%t", maker.name, labelCount, histograms, buckets, enableSTStorage), func(b *testing.B) {
 							series, samples, nhcbs := maker.make(labelCount, histograms, buckets)
 							enc := Encoder{EnableSTStorage: enableSTStorage}
+							var recordBytes int
 							for b.Loop() {
-								var buf []byte
-								enc.Series(series, buf)
-								enc.Samples(samples, buf)
-								var leftOver []RefHistogramSample
-								_, leftOver = enc.HistogramSamples(nhcbs, buf)
+								recordBytes = len(enc.Series(series, nil))
+								recordBytes += len(enc.Samples(samples, nil))
+								buf, leftOver := enc.HistogramSamples(nhcbs, nil)
+								recordBytes += len(buf)
 								if len(leftOver) > 0 {
-									enc.CustomBucketsHistogramSamples(leftOver, buf)
+									recordBytes += len(enc.CustomBucketsHistogramSamples(leftOver, nil))
 								}
-								b.ReportMetric(float64(len(buf)), "recordBytes/ops")
 							}
+							require.Positive(b, recordBytes)
+							b.ReportMetric(float64(recordBytes), "recordBytes/ops")
 						})
 					}
 				}
