@@ -442,9 +442,12 @@ func cutSegmentFile(dirFile *os.File, magicNumber uint32, chunksFormat byte, all
 // cutSegmentFileWithSeq is like cutSegmentFile but uses the given sequence
 // instead of deriving it from the files currently on disk. It lets the head
 // chunk disk mapper keep numbering monotonic across truncation.
+// It fails if a file with that sequence already exists.
 func cutSegmentFileWithSeq(dirFile *os.File, magicNumber uint32, chunksFormat byte, allocSize int64, seq int) (headerSize int, newFile *os.File, seqOut int, returnErr error) {
 	p := segmentFile(dirFile.Name(), seq)
-	f, err := os.OpenFile(p, os.O_WRONLY|os.O_CREATE, 0o666)
+	// O_EXCL, because the caller picks the sequence: an existing file may hold
+	// live chunks, so it must be neither overwritten nor removed by the cleanup below.
+	f, err := os.OpenFile(p, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o666)
 	if err != nil {
 		return 0, nil, 0, fmt.Errorf("open segment file: %w", err)
 	}
