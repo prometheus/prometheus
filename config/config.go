@@ -279,7 +279,8 @@ var (
 
 	// DefaultOTLPConfig is the default OTLP configuration.
 	DefaultOTLPConfig = OTLPConfig{
-		TranslationStrategy: otlptranslator.UnderscoreEscapingWithSuffixes,
+		TranslationStrategy:               otlptranslator.UnderscoreEscapingWithSuffixes,
+		KeepIdentifyingResourceAttributes: true,
 		// For backwards compatibility.
 		LabelNameUnderscoreSanitization: true,
 		// For backwards compatibility.
