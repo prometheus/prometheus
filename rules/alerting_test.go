@@ -582,35 +582,74 @@ func BenchmarkAlertingRuleAtomicField(b *testing.B) {
 }
 
 func TestAlertingRuleDuplicate(t *testing.T) {
+	now := time.Now()
 	storage := teststorage.New(t)
-
-	opts := promql.EngineOpts{
-		Logger:     nil,
-		Reg:        nil,
+	engine := promqltest.NewTestEngineWithOpts(t, promql.EngineOpts{
 		MaxSamples: 10,
 		Timeout:    10 * time.Second,
+	})
+
+	for _, tc := range []struct {
+		name       string
+		ruleLabels labels.Labels
+		queryFunc  QueryFunc
+		expr       string
+	}{
+		{
+			name:       "rule_label_override",
+			ruleLabels: labels.FromStrings("test", "test"),
+			queryFunc:  EngineQueryFunc(engine, storage),
+			expr:       `vector(0) or label_replace(vector(0),"test","x","","")`,
+		},
+		{
+			name:       "schema_labels_stripped",
+			ruleLabels: labels.EmptyLabels(),
+			expr:       `metric > 0`,
+			queryFunc: func(context.Context, string, time.Time) (promql.Vector, error) {
+				return promql.Vector{
+					{
+						Metric: labels.FromStrings(
+							model.MetricNameLabel, "http_requests_total",
+							model.MetricTypeLabel, "counter",
+							model.MetricUnitLabel, "requests",
+							"job", "api",
+						),
+						T: timestamp.FromTime(now),
+						F: 10,
+					},
+					{
+						Metric: labels.FromStrings(
+							model.MetricNameLabel, "http_requests_total",
+							model.MetricTypeLabel, "gauge",
+							model.MetricUnitLabel, "bytes",
+							"job", "api",
+						),
+						T: timestamp.FromTime(now),
+						F: 20,
+					},
+				}, nil
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			expr, err := testParser.ParseExpr(tc.expr)
+			require.NoError(t, err)
+			rule := NewAlertingRule(
+				"foo",
+				expr,
+				time.Minute,
+				0,
+				tc.ruleLabels,
+				labels.EmptyLabels(),
+				labels.EmptyLabels(),
+				"",
+				true,
+				promslog.NewNopLogger(),
+			)
+			_, err = rule.Eval(t.Context(), 0, now, tc.queryFunc, nil, 0)
+			require.ErrorIs(t, err, ErrDuplicateAlertLabelSet)
+		})
 	}
-
-	engine := promqltest.NewTestEngineWithOpts(t, opts)
-	ctx := t.Context()
-
-	now := time.Now()
-
-	expr, _ := testParser.ParseExpr(`vector(0) or label_replace(vector(0),"test","x","","")`)
-	rule := NewAlertingRule(
-		"foo",
-		expr,
-		time.Minute,
-		0,
-		labels.FromStrings("test", "test"),
-		labels.EmptyLabels(),
-		labels.EmptyLabels(),
-		"",
-		true, promslog.NewNopLogger(),
-	)
-	_, err := rule.Eval(ctx, 0, now, EngineQueryFunc(engine, storage), nil, 0)
-	require.Error(t, err)
-	require.ErrorIs(t, err, ErrDuplicateAlertLabelSet)
 }
 
 func TestAlertingRuleLimit(t *testing.T) {
