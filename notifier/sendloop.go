@@ -24,6 +24,11 @@ import (
 	"sync"
 	"time"
 
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/prometheus/prometheus/config"
 )
 
@@ -207,6 +212,21 @@ func (s *sendLoop) loop() {
 }
 
 func (s *sendLoop) sendAll(alerts []*Alert) bool {
+	ctx, span := otel.Tracer("").Start(context.Background(), "Alert Send Batch", trace.WithSpanKind(trace.SpanKindClient))
+	span.SetAttributes(
+		attribute.String("alertmanager_url", s.alertmanagerURL),
+		attribute.Int("alert_count", len(alerts)),
+		attribute.String("api_version", string(s.cfg.APIVersion)),
+	)
+	var err error
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+		}
+		span.End()
+	}()
+
 	if len(alerts) == 0 {
 		return true
 	}
@@ -214,7 +234,6 @@ func (s *sendLoop) sendAll(alerts []*Alert) bool {
 	begin := time.Now()
 
 	var payload []byte
-	var err error
 	switch s.cfg.APIVersion {
 	case config.AlertmanagerAPIVersionV2:
 		openAPIAlerts := alertsToOpenAPIAlerts(alerts)
@@ -225,6 +244,7 @@ func (s *sendLoop) sendAll(alerts []*Alert) bool {
 		}
 
 	default:
+		err = fmt.Errorf("invalid Alertmanager API version %q, expected one of %v", s.cfg.APIVersion, config.SupportedAlertmanagerAPIVersions)
 		s.logger.Error(
 			fmt.Sprintf("Invalid Alertmanager API version '%v', expected one of '%v'", s.cfg.APIVersion, config.SupportedAlertmanagerAPIVersions),
 			"err", err,
@@ -232,14 +252,17 @@ func (s *sendLoop) sendAll(alerts []*Alert) bool {
 		return false
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(s.cfg.Timeout))
+	ctx, cancel := context.WithTimeout(ctx, time.Duration(s.cfg.Timeout))
 	defer cancel()
 
-	if err := s.sendOne(ctx, s.client, s.alertmanagerURL, payload); err != nil {
+	span.SetAttributes(attribute.Int("batch_size_bytes", len(payload)))
+
+	if err = s.sendOne(ctx, s.client, s.alertmanagerURL, payload); err != nil {
 		s.logger.Error("Error sending alerts", "count", len(alerts), "err", err)
 		s.metrics.errors.WithLabelValues(s.alertmanagerURL).Add(float64(len(alerts)))
 		return false
 	}
+
 	durationSeconds := time.Since(begin).Seconds()
 	s.metrics.latencySummary.WithLabelValues(s.alertmanagerURL).Observe(durationSeconds)
 	s.metrics.latencyHistogram.WithLabelValues(s.alertmanagerURL).Observe(durationSeconds)
