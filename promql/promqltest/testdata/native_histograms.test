@@ -66,6 +66,14 @@ eval instant at 1m histogram_quantiles(single_histogram, "q", 0.5)
 	expect no_info
 	{q="0.5"} 1.414213562373095
 
+# Consistency check: histogram_fraction with upper=histogram_quantile(0.5) must return 0.5.
+# 1 obs in bucket below 1 is fully counted; 2 obs in (1,2] use exponential interpolation:
+# log2(sqrt(2))=0.5, log2(1)=0, log2(2)=1, fraction=(0.5-0)/(1-0)=0.5, contributing 1 obs.
+# Total: (1+1)/4 = 0.5.
+eval instant at 1m histogram_fraction(0, 1.414213562373095, single_histogram)
+	expect no_info
+	{} 0.5
+
 clear
 
 # Repeat the same histogram 10 times.
@@ -237,6 +245,13 @@ eval instant at 1m histogram_fraction(-2, -1, negative_histogram)
 # Exponential interpolation works the same as for positive buckets, just mirrored.
 eval instant at 1m histogram_quantile(0.5, negative_histogram)
 	{} -1.414213562373095
+
+# Consistency check: histogram_fraction with upper=histogram_quantile(0.5) must return 0.5.
+# 1 obs in (-4,-2] is fully ≤ -sqrt(2); 2 obs in (-2,-1] use exponential interpolation:
+# log2(sqrt(2))=0.5, log2(2)=1, log2(1)=0, fraction=1-(0.5-0)/(1-0)=0.5, contributing 1 obs.
+# Total: (1+1)/4 = 0.5.
+eval instant at 1m histogram_fraction(-Inf, -1.414213562373095, negative_histogram)
+	{} 0.5
 
 clear
 
@@ -1080,11 +1095,41 @@ load 5m
 eval instant at 5m histogram_fraction(5, 10, custom_buckets_histogram)
     {} 0.5
 
+# The first bucket (-Inf, 5] has lower boundary -Inf. Since all custom values are
+# positive, the lower boundary is assumed to be 0 for interpolation. Linear
+# interpolation in (0, 5]: 1 obs, 2.5/5 * 1 = 0.5 obs below 2.5, fraction = 0.5/4.
+eval instant at 5m histogram_fraction(-Inf, 2.5, custom_buckets_histogram)
+    {} 0.125
+
+# Same result: lower=-1 is below the assumed lower bound of 0, so no observations
+# are assumed to be below -1 in the first bucket.
+eval instant at 5m histogram_fraction(-1, 2.5, custom_buckets_histogram)
+    {} 0.125
+
 eval instant at 5m histogram_quantile(0.5, custom_buckets_histogram)
     {} 7.5
 
 eval instant at 5m sum(custom_buckets_histogram)
     {} {{schema:-53 sum:5 count:4 custom_values:[5 10] buckets:[1 2 1]}}
+
+clear
+
+# Test histogram_fraction for NHCB with non-positive first bucket upper boundary.
+# Observations in the first bucket are assumed to be at its upper boundary.
+load 1m
+    nhcb_neg {{schema:-53 sum:-10 count:10 custom_values:[-1] buckets:[10 0]}}
+
+# All observations assumed at -1. upper=-1.5 < -1, so no observations are ≤ -1.5.
+eval instant at 1m histogram_fraction(-Inf, -1.5, nhcb_neg)
+    {} 0
+
+# All observations at -1, which equals the upper bound: fraction = 1.
+eval instant at 1m histogram_fraction(-Inf, -1, nhcb_neg)
+    {} 1
+
+# Observations at -1 fall within [-2, -0.5], so fraction = 1.
+eval instant at 1m histogram_fraction(-2, -0.5, nhcb_neg)
+    {} 1
 
 clear
 
