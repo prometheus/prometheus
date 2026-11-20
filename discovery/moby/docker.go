@@ -247,8 +247,15 @@ func (d *DockerDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, er
 		containerNetworkMode := container.NetworkMode(c.HostConfig.NetworkMode)
 		if len(networks) == 0 {
 			// Try to lookup shared networks
+			visitedContainers := map[string]struct{}{c.ID: {}}
 			for containerNetworkMode.IsContainer() {
-				tmpContainer, exists := allContainers[containerNetworkMode.ConnectedContainer()]
+				containerID := containerNetworkMode.ConnectedContainer()
+				if _, visited := visitedContainers[containerID]; visited {
+					break
+				}
+				visitedContainers[containerID] = struct{}{}
+
+				tmpContainer, exists := allContainers[containerID]
 				if !exists {
 					break
 				}
