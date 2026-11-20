@@ -1,0 +1,10 @@
+{
+  "Id": "dummy",
+  "Config": {
+    "Labels": {
+      "org.opencontainers.image.version": "v-from-image",
+      "org.opencontainers.image.created": "2026-01-01T00:00:00Z",
+      "com.docker.stack.namespace": "from-container-inspect"
+    }
+  }
+}

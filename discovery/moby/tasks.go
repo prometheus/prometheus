@@ -21,6 +21,7 @@ import (
 	"strconv"
 
 	mobynetwork "github.com/moby/moby/api/types/network"
+	mobyswarm "github.com/moby/moby/api/types/swarm"
 	"github.com/moby/moby/client"
 	"github.com/prometheus/common/model"
 
@@ -64,6 +65,8 @@ func (d *Discovery) refreshTasks(ctx context.Context) ([]*targetgroup.Group, err
 		return nil, fmt.Errorf("error while computing swarm network labels: %w", err)
 	}
 
+	containerLabels := d.getContainerLabels(ctx, tasks.Items)
+
 	for _, s := range tasks.Items {
 		commonLabels := map[string]string{
 			swarmLabelTaskID:           s.ID,
@@ -77,6 +80,10 @@ func (d *Discovery) refreshTasks(ctx context.Context) ([]*targetgroup.Group, err
 		}
 
 		if s.Spec.ContainerSpec != nil {
+			if s.Status.ContainerStatus != nil {
+				maps.Copy(commonLabels, containerLabels[s.Status.ContainerStatus.ContainerID])
+			}
+			// Then apply container spec labels (higher priority, may override image labels).
 			for k, v := range s.Spec.ContainerSpec.Labels {
 				ln := strutil.SanitizeLabelName(k)
 				commonLabels[swarmLabelContainerLabelPrefix+ln] = v
@@ -156,4 +163,39 @@ func (d *Discovery) refreshTasks(ctx context.Context) ([]*targetgroup.Group, err
 		}
 	}
 	return []*targetgroup.Group{tg}, nil
+}
+
+// getContainerLabels fetches labels by inspecting the task container IDs.
+// Errors fetching individual containers are skipped so transient state does not
+// abort the full discovery cycle.
+func (d *Discovery) getContainerLabels(ctx context.Context, tasks []mobyswarm.Task) map[string]map[string]string {
+	labelsByContainerID := make(map[string]map[string]string)
+
+	for _, t := range tasks {
+		if t.Status.ContainerStatus == nil {
+			continue
+		}
+
+		containerID := t.Status.ContainerStatus.ContainerID
+		if containerID == "" {
+			continue
+		}
+		if _, alreadyLoaded := labelsByContainerID[containerID]; alreadyLoaded {
+			continue
+		}
+
+		c, err := d.client.ContainerInspect(ctx, containerID, client.ContainerInspectOptions{})
+		if err != nil || c.Container.Config == nil {
+			continue
+		}
+
+		containerLabels := make(map[string]string, len(c.Container.Config.Labels))
+		for k, v := range c.Container.Config.Labels {
+			ln := strutil.SanitizeLabelName(k)
+			containerLabels[swarmLabelContainerLabelPrefix+ln] = v
+		}
+		labelsByContainerID[containerID] = containerLabels
+	}
+
+	return labelsByContainerID
 }
