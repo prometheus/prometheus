@@ -598,6 +598,9 @@ func (p *openMetrics2Parser) Next() (Entry, error) {
 		return p.parseSeriesEndOfLine(p.nextToken())
 
 	case tMName:
+		if p.l.i-p.start > labels.MaxLabelLength {
+			return EntryInvalid, fmt.Errorf("metric name exceeds limit of %d bytes", labels.MaxLabelLength)
+		}
 		p.offsets = append(p.offsets, p.start, p.l.i)
 		p.resetOnFamilyChange(p.l.b[p.start:p.l.i])
 		p.series = p.l.b[p.start:p.l.i]
@@ -858,6 +861,9 @@ func (p *openMetrics2Parser) parseLVals(offsets []int, isExemplar bool) ([]int, 
 				if offsets[0] == offsets[1] {
 					return nil, errors.New("metric name must not be empty")
 				}
+				if offsets[1]-offsets[0] > labels.MaxLabelLength {
+					return nil, fmt.Errorf("metric name exceeds limit of %d bytes", labels.MaxLabelLength)
+				}
 				if !utf8.Valid(p.l.b[offsets[0]:offsets[1]]) {
 					return nil, fmt.Errorf("invalid UTF-8 metric name: %q", p.l.b[offsets[0]:offsets[1]])
 				}
@@ -874,9 +880,14 @@ func (p *openMetrics2Parser) parseLVals(offsets []int, isExemplar bool) ([]int, 
 			if curTStart == curTI {
 				return nil, errors.New("label name must not be empty")
 			}
+			if curTI-curTStart > labels.MaxLabelLength {
+				return nil, fmt.Errorf("label name exceeds limit of %d bytes", labels.MaxLabelLength)
+			}
 			if !utf8.Valid(p.l.b[curTStart:curTI]) {
 				return nil, fmt.Errorf("invalid UTF-8 label name: %q", p.l.b[curTStart:curTI])
 			}
+		} else if curTI-curTStart > labels.MaxLabelLength {
+			return nil, fmt.Errorf("label name exceeds limit of %d bytes", labels.MaxLabelLength)
 		}
 		offsets = append(offsets, curTStart, curTI)
 
@@ -888,6 +899,9 @@ func (p *openMetrics2Parser) parseLVals(offsets []int, isExemplar bool) ([]int, 
 		}
 		if !utf8.Valid(p.l.buf()) {
 			return nil, fmt.Errorf("invalid UTF-8 label value: %q", p.l.buf())
+		}
+		if (p.l.i-1)-(p.l.start+1) > labels.MaxLabelLength {
+			return nil, fmt.Errorf("label value exceeds limit of %d bytes", labels.MaxLabelLength)
 		}
 		offsets = append(offsets, p.l.start+1, p.l.i-1)
 

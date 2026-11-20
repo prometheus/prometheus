@@ -391,6 +391,9 @@ func (p *ProtobufParser) Exemplar(ex *exemplar.Exemplar) bool {
 	for _, lp := range exProto.GetLabel() {
 		p.builder.Add(lp.GetName(), lp.GetValue())
 	}
+	if err := p.builder.ValidateLength(labels.MaxLabelLength); err != nil {
+		return false
+	}
 	p.builder.Sort()
 	ex.Labels = p.builder.Labels()
 	p.exemplarReturned = true
@@ -646,6 +649,10 @@ func (p *ProtobufParser) onSeriesOrHistogramUpdate() error {
 
 	if needed, name, value := p.getMagicLabel(); needed {
 		p.builder.Add(name, value)
+	}
+
+	if err := p.builder.ValidateLength(labels.MaxLabelLength); err != nil {
+		return err
 	}
 
 	// Sort labels to maintain the sorted labels invariant.

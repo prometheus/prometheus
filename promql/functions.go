@@ -2863,6 +2863,9 @@ func (ev *evaluator) evalLabelReplace(ctx context.Context, args parser.Expressio
 	if err != nil {
 		panic(fmt.Errorf("invalid regular expression in label_replace(): %s", regexStr))
 	}
+	if len(dst) > labels.MaxLabelLength {
+		panic(fmt.Errorf("destination label name in label_replace() exceeds limit of %d bytes: %s", labels.MaxLabelLength, dst))
+	}
 	if !model.UTF8Validation.IsValidLabelName(dst) {
 		panic(fmt.Errorf("invalid destination label name in label_replace(): %s", dst))
 	}
@@ -2876,6 +2879,9 @@ func (ev *evaluator) evalLabelReplace(ctx context.Context, args parser.Expressio
 		indexes := regex.FindStringSubmatchIndex(srcVal)
 		if indexes != nil { // Only replace when regexp matches.
 			res := regex.ExpandString([]byte{}, repl, srcVal, indexes)
+			if len(res) > labels.MaxLabelLength {
+				panic(fmt.Errorf("label value in label_replace() exceeds limit of %d bytes", labels.MaxLabelLength))
+			}
 			lb.Reset(el.Metric)
 			lb.Set(dst, string(res))
 			matrix[i].Metric = lb.Labels()
@@ -2913,6 +2919,9 @@ func (ev *evaluator) evalLabelJoin(ctx context.Context, args parser.Expressions)
 		}
 		srcLabels[i-3] = src
 	}
+	if len(dst) > labels.MaxLabelLength {
+		panic(fmt.Errorf("destination label name in label_join() exceeds limit of %d bytes: %s", labels.MaxLabelLength, dst))
+	}
 	if !model.UTF8Validation.IsValidLabelName(dst) {
 		panic(fmt.Errorf("invalid destination label name in label_join(): %s", dst))
 	}
@@ -2927,6 +2936,9 @@ func (ev *evaluator) evalLabelJoin(ctx context.Context, args parser.Expressions)
 			srcVals[i] = el.Metric.Get(src)
 		}
 		strval := strings.Join(srcVals, sep)
+		if len(strval) > labels.MaxLabelLength {
+			panic(fmt.Errorf("joined label value in label_join() exceeds limit of %d bytes", labels.MaxLabelLength))
+		}
 		lb.Reset(el.Metric)
 		lb.Set(dst, strval)
 		matrix[i].Metric = lb.Labels()
