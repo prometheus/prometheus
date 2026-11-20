@@ -396,17 +396,21 @@ func testOOOHeadChunkReader_LabelValues(t *testing.T, scenario sampleTypeScenari
 	app := head.AppenderV2(context.Background())
 
 	// Add in-order samples
-	_, _, err := scenario.appendFunc(app, labels.FromStrings("foo", "bar1"), 100, int64(1))
+	_, _, err := scenario.appendFunc(app, labels.FromStrings("foo", "bar1", "job", "other"), 100, int64(1))
 	require.NoError(t, err)
-	_, _, err = scenario.appendFunc(app, labels.FromStrings("foo", "bar2"), 100, int64(2))
+	_, _, err = scenario.appendFunc(app, labels.FromStrings("foo", "bar2", "job", "api"), 100, int64(2))
 	require.NoError(t, err)
 
 	// Add ooo samples for those series
-	_, _, err = scenario.appendFunc(app, labels.FromStrings("foo", "bar1"), 90, int64(1))
+	_, _, err = scenario.appendFunc(app, labels.FromStrings("foo", "bar1", "job", "other"), 90, int64(1))
 	require.NoError(t, err)
-	_, _, err = scenario.appendFunc(app, labels.FromStrings("foo", "bar2"), 90, int64(2))
+	_, _, err = scenario.appendFunc(app, labels.FromStrings("foo", "bar2", "job", "api"), 90, int64(2))
 	require.NoError(t, err)
 
+	_, _, err = scenario.appendFunc(app, labels.FromStrings("foo", "bar3", "job", "api"), 100, int64(3))
+	require.NoError(t, err)
+	_, _, err = scenario.appendFunc(app, labels.FromStrings("foo", "bar3", "job", "api"), 90, int64(3))
+	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
 	cases := []struct {
@@ -424,8 +428,8 @@ func testOOOHeadChunkReader_LabelValues(t *testing.T, scenario sampleTypeScenari
 			queryMaxT:  math.MaxInt64,
 			expValues1: []string{"bar1"},
 			expValues2: nil,
-			expValues3: []string{"bar1", "bar2"},
-			expValues4: []string{"bar1", "bar2"},
+			expValues3: []string{"bar1", "bar2", "bar3"},
+			expValues4: []string{"bar1", "bar2", "bar3"},
 		},
 		{
 			name:       "LabelValues calls with ooo head query range not overlapping in-order data",
@@ -433,8 +437,8 @@ func testOOOHeadChunkReader_LabelValues(t *testing.T, scenario sampleTypeScenari
 			queryMaxT:  90,
 			expValues1: []string{"bar1"},
 			expValues2: nil,
-			expValues3: []string{"bar1", "bar2"},
-			expValues4: []string{"bar1", "bar2"},
+			expValues3: []string{"bar1", "bar2", "bar3"},
+			expValues4: []string{"bar1", "bar2", "bar3"},
 		},
 		{
 			name:       "LabelValues calls with ooo head query range not overlapping out-of-order data",
@@ -442,8 +446,8 @@ func testOOOHeadChunkReader_LabelValues(t *testing.T, scenario sampleTypeScenari
 			queryMaxT:  100,
 			expValues1: []string{"bar1"},
 			expValues2: nil,
-			expValues3: []string{"bar1", "bar2"},
-			expValues4: []string{"bar1", "bar2"},
+			expValues3: []string{"bar1", "bar2", "bar3"},
+			expValues4: []string{"bar1", "bar2", "bar3"},
 		},
 	}
 
@@ -473,6 +477,12 @@ func testOOOHeadChunkReader_LabelValues(t *testing.T, scenario sampleTypeScenari
 			sort.Strings(values)
 			require.NoError(t, err)
 			require.Equal(t, tc.expValues4, values)
+
+			// The earlier bar1 candidate does not match the other-label selector.
+			values, err = oh.LabelValues(ctx, "foo", &storage.LabelHints{Limit: 1}, labels.MustNewMatcher(labels.MatchEqual, "job", "api"))
+			sort.Strings(values)
+			require.NoError(t, err)
+			require.Equal(t, []string{"bar2"}, values)
 		})
 	}
 }
