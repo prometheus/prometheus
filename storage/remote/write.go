@@ -15,6 +15,7 @@ package remote
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math"
@@ -86,6 +87,9 @@ type WriteStorage struct {
 // validateRemoteWriteFeatures validates that the required feature flags are enabled for all remote_write configurations.
 func validateRemoteWriteFeatures(rwConfs []*config.RemoteWriteConfig, enableTypeAndUnitLabels, enableMetadataWALRecords, enableSTStorage bool) error {
 	for _, rwConf := range rwConfs {
+		if rwConf.SendHelpInterval > 0 && !enableMetadataWALRecords {
+			return errors.New("remote_write send_help_interval requires --enable-feature=metadata-wal-records")
+		}
 		switch rwConf.Mode {
 		case remoteapi.WriteModeStateless, remoteapi.WriteModeStatelessST:
 			if !enableTypeAndUnitLabels && !enableMetadataWALRecords {
@@ -248,6 +252,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			rws.recordBuf,
 			rwConf.FailedRequestLogging,
 			rwConf.ConvertNHCBToClassic,
+			time.Duration(rwConf.SendHelpInterval),
 		)
 	}
 
