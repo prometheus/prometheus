@@ -1170,7 +1170,7 @@ func TestConvertExplicitHistogramBucketsToNHCBLayout(t *testing.T) {
 		},
 		{
 			name:    "trailing empty buckets",
-			buckets: []uint64{0, 0, 1, 1, 2, 3, 0, 0}, // TODO: add tests for 3 trailing buckets
+			buckets: []uint64{0, 0, 1, 1, 2, 3, 0, 0},
 			wantLayout: expectedBucketLayout{
 				wantSpans: []histogram.Span{
 					{
@@ -1179,6 +1179,19 @@ func TestConvertExplicitHistogramBucketsToNHCBLayout(t *testing.T) {
 					},
 				},
 				wantDeltas: []int64{1, 0, 1, 1, -3, 0},
+			},
+		},
+		{
+			name:    "3 trailing empty buckets",
+			buckets: []uint64{0, 0, 1, 1, 2, 3, 0, 0, 0},
+			wantLayout: expectedBucketLayout{
+				wantSpans: []histogram.Span{
+					{
+						Offset: 2,
+						Length: 7,
+					},
+				},
+				wantDeltas: []int64{1, 0, 1, 1, -3, 0, 0},
 			},
 		},
 		{
