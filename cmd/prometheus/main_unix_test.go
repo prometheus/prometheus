@@ -53,7 +53,10 @@ func TestStartupInterrupt(t *testing.T) {
 	url := "http://localhost" + port + "/graph"
 
 Loop:
-	for range 10 {
+	// 30 attempts at 500ms gives a 15s startup budget, which leaves enough
+	// headroom for -race builds on contended CI runners where GOMAXPROCS-based
+	// CPU quota detection fails and scheduling is delayed.
+	for range 30 {
 		// error=nil means prometheus has started, so we can send the interrupt
 		// signal and wait for the graceful shutdown.
 		if _, err := http.Get(url); err == nil {
