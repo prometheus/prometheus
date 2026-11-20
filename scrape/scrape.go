@@ -2146,9 +2146,11 @@ func (sl *scrapeLoop) run(errc chan<- error) {
 		}
 	}
 
+	// Take the alignment anchor before resetting the ticker, so that no tick
+	// can fire before its grid point and miss the timestamp alignment below.
+	alignedScrapeTime := time.Now().Round(0)
 	// Reset the ticker so target scrape times are aligned to the offset+intervals.
 	ticker.Reset(sl.interval)
-	alignedScrapeTime := time.Now().Round(0)
 
 	for {
 		select {
