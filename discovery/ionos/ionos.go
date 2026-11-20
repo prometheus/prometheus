@@ -75,6 +75,13 @@ var DefaultSDConfig = SDConfig{
 	Port:             80,
 }
 
+// Filter is a filter to apply to the server listing request, restricting the
+// discovered servers to those matching Name with one of Values.
+type Filter struct {
+	Name   string   `yaml:"name"`
+	Values []string `yaml:"values"`
+}
+
 // SDConfig configuration to use for IONOS Cloud Discovery.
 type SDConfig struct {
 	// DatacenterID: IONOS Cloud data center ID used to discover targets.
@@ -84,6 +91,7 @@ type SDConfig struct {
 
 	RefreshInterval model.Duration `yaml:"refresh_interval"`
 	Port            int            `yaml:"port"`
+	Filters         []*Filter      `yaml:"filters"`
 
 	ionosEndpoint string // For tests only.
 }
@@ -116,6 +124,12 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 
 	if c.DatacenterID == "" {
 		return errors.New("datacenter id can't be empty")
+	}
+
+	for _, f := range c.Filters {
+		if len(f.Values) == 0 {
+			return errors.New("ionos SD configuration filter values cannot be empty")
+		}
 	}
 
 	return c.HTTPClientConfig.Validate()

@@ -57,12 +57,14 @@ type serverDiscovery struct {
 	client       *ionoscloud.APIClient
 	port         int
 	datacenterID string
+	filters      []*Filter
 }
 
 func newServerDiscovery(conf *SDConfig, _ *slog.Logger) (*serverDiscovery, error) {
 	d := &serverDiscovery{
 		port:         conf.Port,
 		datacenterID: conf.DatacenterID,
+		filters:      conf.Filters,
 	}
 
 	rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "ionos_sd")
@@ -86,9 +88,14 @@ func newServerDiscovery(conf *SDConfig, _ *slog.Logger) (*serverDiscovery, error
 func (d *serverDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	api := d.client.ServersApi
 
-	servers, _, err := api.DatacentersServersGet(ctx, d.datacenterID).
-		Depth(3).
-		Execute()
+	req := api.DatacentersServersGet(ctx, d.datacenterID).Depth(3)
+	for _, f := range d.filters {
+		for _, v := range f.Values {
+			req = req.Filter(f.Name, v)
+		}
+	}
+
+	servers, _, err := req.Execute()
 	if err != nil {
 		return nil, err
 	}
