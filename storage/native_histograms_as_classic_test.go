@@ -970,6 +970,11 @@ func TestNativeHistogramsAsClassicQuerier_ErrorPropagation(t *testing.T) {
 		PositiveBuckets: []int64{1, 1},
 	}
 	testError := errors.New("storage error")
+	iteratorErrorSeries := NewListSeries(labels.FromStrings("__name__", "http_requests"), []chunks.Sample{hSample{t: 1, h: nhcb}})
+	it := iteratorErrorSeries.Iterator(nil)
+	iteratorErrorSeries.SampleIteratorFn = func(chunkenc.Iterator) chunkenc.Iterator {
+		return sampleErrorIterator{Iterator: it, err: testError}
+	}
 
 	tests := []struct {
 		name    string
@@ -989,6 +994,12 @@ func TestNativeHistogramsAsClassicQuerier_ErrorPropagation(t *testing.T) {
 			querier: &nhcbMockQuerier{
 				classicSeries: []Series{},
 				nhcbErr:       testError,
+			},
+		},
+		{
+			name: "sample iterator error after a valid histogram",
+			querier: &nhcbMockQuerier{
+				nhcbSeries: []Series{iteratorErrorSeries},
 			},
 		},
 		{
@@ -1013,6 +1024,93 @@ func TestNativeHistogramsAsClassicQuerier_ErrorPropagation(t *testing.T) {
 			require.ErrorIs(t, ss.Err(), testError)
 		})
 	}
+}
+
+type sampleErrorIterator struct {
+	chunkenc.Iterator
+	err error
+}
+
+func (it sampleErrorIterator) Err() error { return it.err }
+
+func TestNativeHistogramsAsClassicQuerier_Cancellation(t *testing.T) {
+	const numSamples = 64
+	h := makeNHCB([]float64{1, 2}, []int64{1, 2, 1})
+	tests := []struct {
+		name        string
+		suffix      string
+		le          string
+		cancelAfter int
+	}{
+		{name: "before iteration", suffix: "_count", cancelAfter: 0},
+		{name: "during conversion", suffix: "_bucket", cancelAfter: 3},
+		{name: "rejected buckets", suffix: "_bucket", le: "99", cancelAfter: 3},
+		{name: "before materialization", suffix: "_sum", cancelAfter: numSamples + 1},
+		{name: "between output series", suffix: "_bucket", cancelAfter: -1},
+	}
+	for _, histogramType := range []struct {
+		name  string
+		float bool
+	}{
+		{name: "NHCB"},
+		{name: "float-NHCB", float: true},
+	} {
+		t.Run(histogramType.name, func(t *testing.T) {
+			for _, tc := range tests {
+				t.Run(tc.name, func(t *testing.T) {
+					ctx, cancel := context.WithCancel(t.Context())
+					defer cancel()
+					samples := make([]chunks.Sample, numSamples)
+					for i := range samples {
+						if histogramType.float {
+							samples[i] = fhSample{st: 1, t: int64(i + 2), fh: h.ToFloat(nil)}
+						} else {
+							samples[i] = hSample{st: 1, t: int64(i + 2), h: h}
+						}
+					}
+					series := NewListSeries(labels.FromStrings("__name__", "latency"), samples)
+					it := &cancelingHistogramIterator{Iterator: series.Iterator(nil), cancel: cancel, cancelAfter: tc.cancelAfter}
+					series.SampleIteratorFn = func(chunkenc.Iterator) chunkenc.Iterator { return it }
+					q := NewNativeHistogramsAsClassicQuerier(&nhcbMockQuerier{nhcbSeries: []Series{series}})
+					matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "latency"+tc.suffix)}
+					if tc.le != "" {
+						matchers = append(matchers, labels.MustNewMatcher(labels.MatchEqual, labels.BucketLabel, tc.le))
+					}
+					ss := q.Select(ctx, false, nil, matchers...)
+					if tc.cancelAfter == 0 {
+						cancel()
+					}
+					if tc.cancelAfter == -1 {
+						require.True(t, ss.Next())
+						cancel()
+					}
+					require.False(t, ss.Next(), "cancelled conversion must not publish another series")
+					require.ErrorIs(t, ss.Err(), context.Canceled)
+					if tc.cancelAfter >= 0 {
+						require.Equal(t, tc.cancelAfter, it.calls, "cancelled conversion must stop advancing the history")
+					}
+					require.False(t, ss.Next())
+					require.ErrorIs(t, ss.Err(), context.Canceled)
+				})
+			}
+		})
+	}
+}
+
+type cancelingHistogramIterator struct {
+	chunkenc.Iterator
+	cancel      context.CancelFunc
+	cancelAfter int
+	calls       int
+}
+
+func (it *cancelingHistogramIterator) Next() chunkenc.ValueType {
+	v := it.Iterator.Next()
+	it.calls++
+	if it.calls == it.cancelAfter {
+		it.cancel()
+	}
+	return v
 }
 
 func TestNativeHistogramsAsClassicQuerier_WarningPropagation(t *testing.T) {
