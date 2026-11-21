@@ -68,7 +68,20 @@ func TestExposedPathTargets(t *testing.T) {
 	// changes cannot silently leave readers with a stale scrape configuration.
 	doc, err := os.ReadFile("../../docs/configuration/configuration.md")
 	require.NoError(t, err)
-	_, section, found := strings.Cut(string(doc), "### `<consul_sd_config>`")
+	document := strings.ReplaceAll(string(doc), "\r\n", "\n")
+	for _, tc := range []struct{ name, document string }{
+		{"LF", document},
+		{"CRLF", strings.ReplaceAll(document, "\n", "\r\n")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			testExposedPathTargets(t, tc.document)
+		})
+	}
+}
+
+func testExposedPathTargets(t *testing.T, document string) {
+	document = strings.ReplaceAll(document, "\r\n", "\n")
+	_, section, found := strings.Cut(document, "### `<consul_sd_config>`")
 	require.True(t, found)
 	section, _, found = strings.Cut(section, "### `<digitalocean_sd_config>`")
 	require.True(t, found)
