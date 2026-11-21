@@ -1,3 +1,5 @@
+# Prombench results have a measured same-version noise floor of a few
+# percent. See documentation/prombench.md before acting on a small delta.
 on:
   repository_dispatch:
     types: [prombench_start, prombench_restart, prombench_stop]

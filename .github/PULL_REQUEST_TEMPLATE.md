@@ -7,7 +7,7 @@
 
     - Where possible use only exported APIs for tests to simplify the review and make it as close as possible to an actual library usage.
 
-    - Performance improvements would need a benchmark test to prove it.
+    - Performance improvements would need a benchmark test to prove it. If you use prombench, note that a few percent of difference is within its measured noise; see documentation/prombench.md for the ignorable baseline.
 
     - All exposed objects should have a comment.
 
