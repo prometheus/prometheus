@@ -51,9 +51,9 @@ export default function TSDBStatusPage() {
     const formatted = formatTimestamp(unix, useLocalTime);
     if (formatted === "Invalid Date") {
       if (numSeries === 0) {
-        return "No datapoints yet";
+        return t("tsdb.noDatapoints");
       }
-      return `Error parsing time (${unix})`;
+      return t("tsdb.errorParsingTime", { time: unix });
     }
 
     return formatted;
@@ -61,11 +61,11 @@ export default function TSDBStatusPage() {
 
   const { chunkCount, numSeries, numLabelPairs, minTime, maxTime } = headStats;
   const stats = [
-    { name: "Number of Series", value: numSeries },
-    { name: "Number of Chunks", value: chunkCount },
-    { name: "Number of Label Pairs", value: numLabelPairs },
-    { name: "Current Min Time", value: `${unixToTime(minTime / 1000)}` },
-    { name: "Current Max Time", value: `${unixToTime(maxTime / 1000)}` },
+    { name: t("tsdb.numberSeries"), value: numSeries },
+    { name: t("tsdb.numberChunks"), value: chunkCount },
+    { name: t("tsdb.numberLabelPairs"), value: numLabelPairs },
+    { name: t("tsdb.currentMinTime"), value: `${unixToTime(minTime / 1000)}` },
+    { name: t("tsdb.currentMaxTime"), value: `${unixToTime(maxTime / 1000)}` },
   ];
 
   // Delete series state
@@ -91,7 +91,7 @@ export default function TSDBStatusPage() {
       .filter((m) => m !== "");
 
     if (matchList.length === 0) {
-      setDeleteError("Provide at least one match[] selector.");
+      setDeleteError(t("tsdb.provideSelector"));
       return;
     }
 
@@ -171,37 +171,37 @@ export default function TSDBStatusPage() {
     <InfoPageStack>
       {[
         {
-          title: "TSDB Head Status",
+          title: t("tsdb.statusHead"),
           stats,
           formatAsCode: false,
         },
         {
-          title: "Top 10 label names with value count",
+          title: t("tsdb.topLabelNamesByValues"),
           stats: labelValueCountByLabelName,
           formatAsCode: true,
         },
         {
-          title: "Top 10 series count by metric names",
+          title: t("tsdb.topMetricNames"),
           stats: seriesCountByMetricName,
           formatAsCode: true,
         },
         {
-          title: "Top 10 label names with high memory usage",
-          unit: "Bytes",
+          title: t("tsdb.topLabelNamesMemory"),
+          unit: t("tsdb.bytes"),
           stats: memoryInBytesByLabelName,
           formatAsCode: true,
         },
         {
-          title: "Top 10 series count by label value pairs",
+          title: t("tsdb.topLabelPairs"),
           stats: seriesCountByLabelValuePair,
           formatAsCode: true,
         },
-      ].map(({ title, unit = "Count", stats, formatAsCode }) => (
+      ].map(({ title, unit = t("tsdb.count"), stats, formatAsCode }) => (
         <InfoPageCard title={title}>
           <Table layout="fixed">
             <Table.Thead>
               <Table.Tr>
-                <Table.Th>Name</Table.Th>
+                <Table.Th>{t("tsdb.name")}</Table.Th>
                 <Table.Th>{unit}</Table.Th>
               </Table.Tr>
             </Table.Thead>

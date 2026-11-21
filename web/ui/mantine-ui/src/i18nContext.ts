@@ -1,6 +1,6 @@
 import { createContext, useContext } from "react";
 
-import type { Locale } from "./i18n";
+import { translate, type Locale } from "./i18n";
 
 export type I18n = {
   locale: Locale;
@@ -11,7 +11,7 @@ export type I18n = {
 const fallbackI18n: I18n = {
   locale: "en",
   setLocale: () => undefined,
-  t: (key) => key,
+  t: (key, values) => translate("en", key, values),
 };
 
 export const I18nContext = createContext<I18n>(fallbackI18n);

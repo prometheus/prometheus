@@ -31,10 +31,12 @@ import {
 import { StateMultiSelect } from "../../components/StateMultiSelect";
 import badgeClasses from "../../Badge.module.css";
 import { expandIconStyle, inputIconStyle } from "../../styles";
+import { useI18n } from "../../i18nContext";
 
 export const targetPoolDisplayLimit = 20;
 
 export default function ServiceDiscoveryPage() {
+  const { t } = useI18n();
   // Load the list of all available scrape pools.
   const {
     data: {
@@ -79,8 +81,8 @@ export default function ServiceDiscoveryPage() {
     <>
       <Group mb="md" mt="xs">
         <Select
-          placeholder="Select scrape pool"
-          data={[{ label: "All pools", value: "" }, ...scrapePools]}
+          placeholder={t("discovery.selectPool")}
+          data={[{ label: t("discovery.allPools"), value: "" }, ...scrapePools]}
           value={(limited && scrapePools[0]) || scrapePool || null}
           onChange={(value) => {
             setScrapePool(value);
@@ -95,14 +97,14 @@ export default function ServiceDiscoveryPage() {
           optionClass={(o) =>
             o === "active" ? badgeClasses.healthOk : badgeClasses.healthInfo
           }
-          placeholder="Filter by state"
+          placeholder={t("discovery.filterByState")}
           values={(stateFilter?.filter((v) => v !== null) as string[]) || []}
           onChange={(values) => setStateFilter(values)}
         />
         <TextInput
           flex={1}
           leftSection={<IconSearch style={inputIconStyle} />}
-          placeholder="Filter by labels"
+          placeholder={t("discovery.filterByLabels")}
           value={searchFilter || ""}
           onChange={(event) => setSearchFilter(event.currentTarget.value)}
         ></TextInput>
@@ -110,8 +112,8 @@ export default function ServiceDiscoveryPage() {
           size="input-sm"
           title={
             collapsedPools.length > 0
-              ? "Expand all pools"
-              : "Collapse all pools"
+              ? t("discovery.expandAll")
+              : t("discovery.collapseAll")
           }
           variant="light"
           onClick={() =>
@@ -128,7 +130,7 @@ export default function ServiceDiscoveryPage() {
         </ActionIcon>
       </Group>
 
-      <ErrorBoundary key={location.pathname} title="Error showing target pools">
+      <ErrorBoundary key={location.pathname} title={t("discovery.errorShowingPools")}>
         <Suspense
           fallback={
             <Box mt="lg">

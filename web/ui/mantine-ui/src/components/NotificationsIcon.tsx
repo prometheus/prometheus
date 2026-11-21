@@ -18,10 +18,12 @@ import { useNotifications } from "../state/useNotifications";
 import { actionIconStyle } from "../styles";
 import { useSettings } from "../state/settingsSlice";
 import { formatTimestamp } from "../lib/formatTime";
+import { useI18n } from "../i18nContext";
 
 const NotificationsIcon = () => {
   const { notifications, isConnectionError } = useNotifications();
   const { useLocalTime } = useSettings();
+  const { t } = useI18n();
 
   return notifications.length === 0 && !isConnectionError ? null : (
     <Indicator
@@ -33,8 +35,8 @@ const NotificationsIcon = () => {
         <Popover.Target>
           <ActionIcon
             color="gray"
-            title="Notifications"
-            aria-label="Notifications"
+            title={t("notifications.notifications")}
+            aria-label={t("notifications.notifications")}
             size={32}
           >
             <IconMessageExclamation style={actionIconStyle} />
@@ -44,7 +46,7 @@ const NotificationsIcon = () => {
         <Popover.Dropdown>
           <Stack gap="xs">
             <Text fw={700} size="xs" c="dimmed" ta="center">
-              Notifications
+              {t("notifications.notifications")}
             </Text>
             <ScrollArea.Autosize mah={200}>
               {isConnectionError ? (
@@ -56,17 +58,17 @@ const NotificationsIcon = () => {
                     />
                     <Stack gap="0">
                       <Text size="sm" fw={500}>
-                        Real-time notifications interrupted.
+                        {t("notifications.connectionInterrupted")}
                       </Text>
                       <Text size="xs" c="dimmed">
-                        Please refresh the page or check your connection.
+                        {t("notifications.refreshOrCheckConnection")}
                       </Text>
                     </Stack>
                   </Group>
                 </Card>
               ) : notifications.length === 0 ? (
                 <Text ta="center" c="dimmed">
-                  No notifications
+                  {t("notifications.noNotifications")}
                 </Text>
               ) : (
                 notifications.map((notification, index) => (

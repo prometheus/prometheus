@@ -4,6 +4,7 @@ import { Suspense } from "react";
 import { useSuspenseAPIQuery } from "../api/api";
 import ConfigResult from "../api/responseTypes/config";
 import ErrorBoundary from "./ErrorBoundary";
+import { useI18n } from "../i18nContext";
 
 const ScrapePoolConfigContent = ({ pool }: { pool: string }) => {
   const {
@@ -25,6 +26,7 @@ type ScrapePoolConfigProps = {
 };
 
 const ScrapePoolConfig = ({ pool, expanded, id }: ScrapePoolConfigProps) => {
+  const { t } = useI18n();
   const collapseId = id ?? `scrape-config-${pool}`;
 
   return (
@@ -33,7 +35,7 @@ const ScrapePoolConfig = ({ pool, expanded, id }: ScrapePoolConfigProps) => {
         <Box mb="md">
           <ErrorBoundary
             key={pool}
-            title="Error loading scrape configuration"
+            title={t("discovery.errorLoadingConfiguration")}
           >
             <Suspense
               fallback={

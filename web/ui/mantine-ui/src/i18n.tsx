@@ -117,6 +117,49 @@ const english: Messages = {
   "tsdb.startTime": "Start time",
   "tsdb.success": "Success",
   "tsdb.warning": "Warning",
+  "tsdb.bytes": "Bytes",
+  "tsdb.count": "Count",
+  "tsdb.currentMaxTime": "Current Max Time",
+  "tsdb.currentMinTime": "Current Min Time",
+  "tsdb.errorParsingTime": "Error parsing time ({{time}})",
+  "tsdb.noDatapoints": "No datapoints yet",
+  "tsdb.numberChunks": "Number of Chunks",
+  "tsdb.numberLabelPairs": "Number of Label Pairs",
+  "tsdb.numberSeries": "Number of Series",
+  "tsdb.provideSelector": "Provide at least one match[] selector.",
+  "tsdb.statusHead": "TSDB Head Status",
+  "tsdb.topLabelNamesByValues": "Top 10 label names with value count",
+  "tsdb.topLabelNamesMemory": "Top 10 label names with high memory usage",
+  "tsdb.topMetricNames": "Top 10 series count by metric names",
+  "tsdb.topLabelPairs": "Top 10 series count by label value pairs",
+  "error.pageData": "Error querying page data",
+  "error.prefix": "Error:",
+  "discovery.allPools": "All pools",
+  "discovery.collapseAll": "Collapse all pools",
+  "discovery.errorShowingPools": "Error showing target pools",
+  "discovery.expandAll": "Expand all pools",
+  "discovery.filterByLabels": "Filter by labels",
+  "discovery.filterByState": "Filter by state",
+  "discovery.selectPool": "Select scrape pool",
+  "notifications.connectionInterrupted": "Real-time notifications interrupted.",
+  "notifications.noNotifications": "No notifications",
+  "notifications.notifications": "Notifications",
+  "notifications.refreshOrCheckConnection": "Please refresh the page or check your connection.",
+  "discovery.errorLoadingConfiguration": "Error loading scrape configuration",
+  "query.add": "Add query",
+  "query.close": "Close",
+  "query.errorExplain": "Error showing explain view",
+  "query.errorMetrics": "Error fetching metrics list",
+  "query.errorServerTime": "Error fetching server time",
+  "query.errorTree": "Error showing tree view",
+  "query.explain": "Explain",
+  "query.graph": "Graph",
+  "query.graphSettings": "Graph settings",
+  "query.serverTimeOutOfSync": "Server time is out of sync",
+  "query.startYAxisAtZero": "Start Y axis at 0",
+  "query.stacked": "Stacked",
+  "query.table": "Table",
+  "query.unstacked": "Unstacked",
 };
 
 const swedish: Messages = {
@@ -230,9 +273,64 @@ const swedish: Messages = {
   "tsdb.startTime": "Starttid",
   "tsdb.success": "Lyckades",
   "tsdb.warning": "Varning",
+  "tsdb.bytes": "Byte",
+  "tsdb.count": "Antal",
+  "tsdb.currentMaxTime": "Aktuell högsta tid",
+  "tsdb.currentMinTime": "Aktuell lägsta tid",
+  "tsdb.errorParsingTime": "Fel vid tolkning av tid ({{time}})",
+  "tsdb.noDatapoints": "Inga datapunkter ännu",
+  "tsdb.numberChunks": "Antal segment",
+  "tsdb.numberLabelPairs": "Antal etikettpar",
+  "tsdb.numberSeries": "Antal serier",
+  "tsdb.provideSelector": "Ange minst en match[]-väljare.",
+  "tsdb.statusHead": "TSDB-huvudstatus",
+  "tsdb.topLabelNamesByValues": "De 10 främsta etikettnamnen efter antal värden",
+  "tsdb.topLabelNamesMemory": "De 10 främsta etikettnamnen med hög minnesanvändning",
+  "tsdb.topMetricNames": "De 10 främsta metriknamnen efter antal serier",
+  "tsdb.topLabelPairs": "De 10 främsta etikettparen efter antal serier",
+  "error.pageData": "Fel vid hämtning av siddata",
+  "error.prefix": "Fel:",
+  "discovery.allPools": "Alla pooler",
+  "discovery.collapseAll": "Fäll ihop alla pooler",
+  "discovery.errorShowingPools": "Fel vid visning av målpooler",
+  "discovery.expandAll": "Fäll ut alla pooler",
+  "discovery.filterByLabels": "Filtrera efter etiketter",
+  "discovery.filterByState": "Filtrera efter status",
+  "discovery.selectPool": "Välj insamlingspool",
+  "notifications.connectionInterrupted": "Realtidsaviseringar avbröts.",
+  "notifications.noNotifications": "Inga aviseringar",
+  "notifications.notifications": "Aviseringar",
+  "notifications.refreshOrCheckConnection": "Uppdatera sidan eller kontrollera anslutningen.",
+  "discovery.errorLoadingConfiguration": "Fel vid inläsning av insamlingskonfiguration",
+  "query.add": "Lägg till fråga",
+  "query.close": "Stäng",
+  "query.errorExplain": "Fel vid visning av förklaring",
+  "query.errorMetrics": "Fel vid hämtning av metriklista",
+  "query.errorServerTime": "Fel vid hämtning av servertid",
+  "query.errorTree": "Fel vid visning av frågeträd",
+  "query.explain": "Förklara",
+  "query.graph": "Graf",
+  "query.graphSettings": "Grafinställningar",
+  "query.serverTimeOutOfSync": "Servertiden är inte synkroniserad",
+  "query.startYAxisAtZero": "Starta Y-axeln vid 0",
+  "query.stacked": "Staplad",
+  "query.table": "Tabell",
+  "query.unstacked": "Ostaplad",
 };
 
 const messages: Record<Locale, Messages> = { en: english, sv: swedish };
+
+// eslint-disable-next-line react-refresh/only-export-components
+export function translate(
+  locale: Locale,
+  key: string,
+  values?: Record<string, string | number>
+): string {
+  return (messages[locale][key] ?? english[key] ?? key).replace(
+    /{{(\w+)}}/g,
+    (match, name: string) => String(values?.[name] ?? match)
+  );
+}
 
 function detectLocale(): Locale {
   return navigator.language.toLowerCase().startsWith("sv") ? "sv" : "en";
@@ -244,10 +342,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     locale,
     setLocale,
     t: (key: string, values?: Record<string, string | number>) =>
-      (messages[locale][key] ?? english[key] ?? key).replace(
-        /{{(\w+)}}/g,
-        (match, name: string) => String(values?.[name] ?? match)
-      ),
+      translate(locale, key, values),
   }), [locale]);
 
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
