@@ -4315,6 +4315,137 @@ func TestHead_WALReplayStaleMarkerTypeConsistency(t *testing.T) {
 	}
 }
 
+// A float staleness marker that is the first sample of a native histogram series
+// in an append must be committed before a later sample of the same series in
+// that append, not after it, where it would be rejected as out of order.
+func TestHead_StaleMarkerBeforeLaterSampleInSameCommit(t *testing.T) {
+	for _, floatHistogram := range []bool{false, true} {
+		for _, appenderV2 := range []bool{false, true} {
+			for _, thenFloat := range []bool{false, true} {
+				name := fmt.Sprintf("floatHistogram=%t/appenderV2=%t/thenFloat=%t", floatHistogram, appenderV2, thenFloat)
+				t.Run(name, func(t *testing.T) {
+					head, _ := newTestHead(t, 1000, compression.None, false)
+					t.Cleanup(func() {
+						// Captures head by reference, so it closes the reopened head.
+						_ = head.Close()
+					})
+					require.NoError(t, head.Init(0))
+
+					lbls := labels.FromStrings("foo", "bar")
+					var (
+						h  *histogram.Histogram
+						fh *histogram.FloatHistogram
+					)
+					if floatHistogram {
+						fh = tsdbutil.GenerateTestFloatHistogram(1)
+					} else {
+						h = tsdbutil.GenerateTestHistogram(1)
+					}
+					stale := math.Float64frombits(value.StaleNaN)
+
+					// appendSamples appends the samples in one append and commits it.
+					appendSamples := func(samples ...func(storage.Appender, storage.AppenderV2) error) {
+						if appenderV2 {
+							app := head.AppenderV2(context.Background())
+							for _, s := range samples {
+								require.NoError(t, s(nil, app))
+							}
+							require.NoError(t, app.Commit())
+							return
+						}
+						app := head.Appender(context.Background())
+						for _, s := range samples {
+							require.NoError(t, s(app, nil))
+						}
+						require.NoError(t, app.Commit())
+					}
+					histogramAt := func(ts int64) func(storage.Appender, storage.AppenderV2) error {
+						return func(app storage.Appender, appV2 storage.AppenderV2) error {
+							var err error
+							if appV2 != nil {
+								_, err = appV2.Append(0, lbls, 0, ts, 0, h, fh, storage.AOptions{})
+							} else {
+								_, err = app.AppendHistogram(0, lbls, ts, h, fh)
+							}
+							return err
+						}
+					}
+					floatAt := func(ts int64, v float64) func(storage.Appender, storage.AppenderV2) error {
+						return func(app storage.Appender, appV2 storage.AppenderV2) error {
+							var err error
+							if appV2 != nil {
+								_, err = appV2.Append(0, lbls, 0, ts, v, nil, nil, storage.AOptions{})
+							} else {
+								_, err = app.Append(0, lbls, ts, v)
+							}
+							return err
+						}
+					}
+
+					// Establish the series as a native histogram, then append a
+					// staleness marker followed by a newer sample in one append, as a
+					// remote-write request can carry them.
+					appendSamples(histogramAt(100))
+					next := histogramAt(300)
+					if thenFloat {
+						next = floatAt(300, 1)
+					}
+					appendSamples(floatAt(200, stale), next)
+
+					readSamples := func() (timestamps, staleAt []int64) {
+						q, err := NewBlockQuerier(head, math.MinInt64, math.MaxInt64)
+						require.NoError(t, err)
+						defer func() { require.NoError(t, q.Close()) }()
+						ss := q.Select(context.Background(), false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+						require.True(t, ss.Next())
+						it := ss.At().Iterator(nil)
+						for vt := it.Next(); vt != chunkenc.ValNone; vt = it.Next() {
+							var isStale bool
+							switch vt {
+							case chunkenc.ValFloat:
+								_, v := it.At()
+								isStale = value.IsStaleNaN(v)
+							case chunkenc.ValHistogram:
+								_, sh := it.AtHistogram(nil)
+								isStale = value.IsStaleNaN(sh.Sum)
+							case chunkenc.ValFloatHistogram:
+								_, sfh := it.AtFloatHistogram(nil)
+								isStale = value.IsStaleNaN(sfh.Sum)
+							}
+							timestamps = append(timestamps, it.AtT())
+							if isStale {
+								staleAt = append(staleAt, it.AtT())
+							}
+						}
+						require.NoError(t, it.Err())
+						require.False(t, ss.Next())
+						require.NoError(t, ss.Err())
+						return timestamps, staleAt
+					}
+
+					timestamps, staleAt := readSamples()
+					require.Equal(t, []int64{100, 200, 300}, timestamps)
+					require.Equal(t, []int64{200}, staleAt)
+					require.Zero(t, prom_testutil.ToFloat64(head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeHistogram)))
+					require.Zero(t, prom_testutil.ToFloat64(head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeFloat)))
+
+					// The WAL replay must give the same samples.
+					require.NoError(t, head.Close())
+					wal, err := wlog.NewSize(nil, nil, filepath.Join(head.opts.ChunkDirRoot, "wal"), 32768, compression.None)
+					require.NoError(t, err)
+					head, err = NewHead(nil, nil, wal, nil, head.opts, nil)
+					require.NoError(t, err)
+					require.NoError(t, head.Init(0))
+
+					timestamps, staleAt = readSamples()
+					require.Equal(t, []int64{100, 200, 300}, timestamps)
+					require.Equal(t, []int64{200}, staleAt)
+				})
+			}
+		}
+	}
+}
+
 func TestHead_NumNativeHistogramSeriesAndBuckets(t *testing.T) {
 	t.Parallel()
 	head, _ := newTestHead(t, 1000, compression.None, false)
