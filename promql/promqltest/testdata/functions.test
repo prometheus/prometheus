@@ -789,6 +789,12 @@ load 5m
 	node_uname_info{job="node_exporter", instance="4m600", release="1.2.3"} 0+10x10
 	node_uname_info{job="node_exporter", instance="4m5", release="1.11.3"} 0+10x10
 	node_uname_info{job="node_exporter", instance="4m1000", release="1.111.3"} 0+10x10
+	leading_zero_test{instance="01"} 0+10x10
+	leading_zero_test{instance="1"} 0+10x10
+	leading_zero_test{instance="00"} 0+10x10
+	leading_zero_test{instance="0"} 0+10x10
+	leading_zero_test{instance="a01"} 0+10x10
+	leading_zero_test{instance="a1"} 0+10x10
 
 eval instant at 50m sort_by_label(http_requests, "instance")
 	expect ordered
@@ -918,6 +924,24 @@ eval instant at 50m sort_by_label(node_uname_info, "release")
 	node_uname_info{job="node_exporter", instance="4m600", release="1.2.3"} 100
 	node_uname_info{job="node_exporter", instance="4m5", release="1.11.3"} 100
 	node_uname_info{job="node_exporter", instance="4m1000", release="1.111.3"} 100
+
+eval instant at 50m sort_by_label(leading_zero_test, "instance")
+	expect ordered
+	leading_zero_test{instance="0"} 100
+	leading_zero_test{instance="00"} 100
+	leading_zero_test{instance="01"} 100
+	leading_zero_test{instance="1"} 100
+	leading_zero_test{instance="a01"} 100
+	leading_zero_test{instance="a1"} 100
+
+eval instant at 50m sort_by_label_desc(leading_zero_test, "instance")
+	expect ordered
+	leading_zero_test{instance="a1"} 100
+	leading_zero_test{instance="a01"} 100
+	leading_zero_test{instance="1"} 100
+	leading_zero_test{instance="01"} 100
+	leading_zero_test{instance="00"} 100
+	leading_zero_test{instance="0"} 100
 
 # Tests for double_exponential_smoothing
 clear

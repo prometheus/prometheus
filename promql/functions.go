@@ -1268,6 +1268,23 @@ func funcSortDesc(vectorVals []Vector, _ Matrix, _ parser.Expressions, _ *EvalNo
 	return Vector(byValueSorter), nil
 }
 
+// compareNatural compares two strings using natural sort ordering, falling back
+// to lexicographical comparison when natural comparison is ambiguous (e.g. "01" and "1").
+func compareNatural(a, b string) int {
+	if a == b {
+		return 0
+	}
+	less1 := natsort.Compare(a, b)
+	less2 := natsort.Compare(b, a)
+	if less1 && !less2 {
+		return -1
+	}
+	if less2 && !less1 {
+		return +1
+	}
+	return strings.Compare(a, b)
+}
+
 // === sort_by_label(vector parser.ValueTypeVector, label parser.ValueTypeString...) (Vector, Annotations) ===
 func funcSortByLabel(vectorVals []Vector, _ Matrix, args parser.Expressions, _ *EvalNodeHelper) (Vector, annotations.Annotations) {
 	lbls := stringSliceFromArgs(args[1:])
@@ -1276,15 +1293,9 @@ func funcSortByLabel(vectorVals []Vector, _ Matrix, args parser.Expressions, _ *
 			lv1 := a.Metric.Get(label)
 			lv2 := b.Metric.Get(label)
 
-			if lv1 == lv2 {
-				continue
+			if cmp := compareNatural(lv1, lv2); cmp != 0 {
+				return cmp
 			}
-
-			if natsort.Compare(lv1, lv2) {
-				return -1
-			}
-
-			return +1
 		}
 
 		// If all labels provided as arguments were equal, sort by the full label set. This ensures a consistent ordering.
@@ -1302,15 +1313,9 @@ func funcSortByLabelDesc(vectorVals []Vector, _ Matrix, args parser.Expressions,
 			lv1 := a.Metric.Get(label)
 			lv2 := b.Metric.Get(label)
 
-			if lv1 == lv2 {
-				continue
+			if cmp := compareNatural(lv1, lv2); cmp != 0 {
+				return -cmp
 			}
-
-			if natsort.Compare(lv1, lv2) {
-				return +1
-			}
-
-			return -1
 		}
 
 		// If all labels provided as arguments were equal, sort by the full label set. This ensures a consistent ordering.

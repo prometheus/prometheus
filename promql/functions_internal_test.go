@@ -23,6 +23,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/kahansum"
@@ -174,5 +175,170 @@ func TestInterpolateHistograms(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, tc.wantCount, result.Count)
 		})
+	}
+}
+
+func TestCompareNatural(t *testing.T) {
+	tests := []struct {
+		a    string
+		b    string
+		want int
+	}{
+		{a: "", b: "", want: 0},
+		{a: "a", b: "a", want: 0},
+		{a: "1", b: "1", want: 0},
+		{a: "a1", b: "a2", want: -1},
+		{a: "a2", b: "a1", want: 1},
+		{a: "2", b: "10", want: -1},
+		{a: "10", b: "2", want: 1},
+		{a: "4m5", b: "4m600", want: -1},
+		{a: "4m600", b: "4m1000", want: -1},
+		{a: "1.2.3", b: "1.11.3", want: -1},
+		// Equal numeric chunk values with different representations (e.g. leading zeros).
+		{a: "01", b: "1", want: -1},
+		{a: "1", b: "01", want: 1},
+		{a: "00", b: "0", want: 1},
+		{a: "0", b: "00", want: -1},
+		{a: "a01", b: "a1", want: -1},
+		{a: "a1", b: "a01", want: 1},
+		{a: "001", b: "01", want: -1},
+		{a: "01", b: "001", want: 1},
+	}
+	for _, tc := range tests {
+		t.Run(fmt.Sprintf("%q_vs_%q", tc.a, tc.b), func(t *testing.T) {
+			got := compareNatural(tc.a, tc.b)
+			require.Equal(t, tc.want, got)
+
+			// Strict weak ordering / antisymmetry: compareNatural(a, b) == -compareNatural(b, a).
+			gotRev := compareNatural(tc.b, tc.a)
+			require.Equal(t, -got, gotRev)
+		})
+	}
+}
+
+func TestCompareNaturalStrictWeakOrderingProperties(t *testing.T) {
+	vocabulary := []string{
+		"", "a", "b", "z",
+		"0", "00", "000", "1", "01", "001", "2", "02", "10", "010", "11", "99", "099", "100", "1000",
+		"a0", "a00", "a01", "a1", "a001", "a2", "a10", "a010", "a20", "b1", "b01", "aa1",
+		"node-0", "node-00", "node-1", "node-01", "node-2", "node-10", "node-10-beta", "node-10-alpha",
+		"1.0.0", "1.0.1", "1.00.1", "1.0.01", "1.1.0", "1.2.3", "1.11.3", "1.111.3", "2.0.0",
+		"_", "__name__", "host:80", "host:080", "host:8080",
+	}
+
+	// 1. Irreflexivity and Antisymmetry on all pairs.
+	for _, a := range vocabulary {
+		require.Equal(t, 0, compareNatural(a, a), "irreflexivity failed for %q", a)
+
+		for _, b := range vocabulary {
+			ab := compareNatural(a, b)
+			ba := compareNatural(b, a)
+			require.Equal(t, -ab, ba, "antisymmetry failed for (%q, %q)", a, b)
+			if a == b {
+				require.Equal(t, 0, ab)
+			} else {
+				require.NotEqual(t, 0, ab, "trichotomy failed for distinct strings (%q, %q)", a, b)
+			}
+		}
+	}
+
+	// 2. Transitivity on all triples.
+	for _, a := range vocabulary {
+		for _, b := range vocabulary {
+			ab := compareNatural(a, b)
+			for _, c := range vocabulary {
+				bc := compareNatural(b, c)
+				ac := compareNatural(a, c)
+
+				if ab < 0 && bc < 0 {
+					require.Negative(t, ac, "transitivity failed: %q < %q and %q < %q, but %q not < %q (got %d)", a, b, b, c, a, c, ac)
+				}
+				if ab > 0 && bc > 0 {
+					require.Positive(t, ac, "transitivity failed: %q > %q and %q > %q, but %q not > %q (got %d)", a, b, b, c, a, c, ac)
+				}
+				if ab == 0 && bc == 0 {
+					require.Equal(t, 0, ac, "transitivity of equivalence failed for (%q, %q, %q)", a, b, c)
+				}
+			}
+		}
+	}
+}
+
+func TestSortByLabelStrictWeakOrdering(t *testing.T) {
+	// Tests that sort_by_label produces deterministic order regardless of input permutation,
+	// especially for equal-chunk label values like "01" and "1", or "0" and "00".
+	exprs := parser.Expressions{
+		&parser.VectorSelector{Name: "dummy"},
+		&parser.StringLiteral{Val: "instance"},
+	}
+
+	samples1 := Vector{
+		Sample{Metric: labels.FromStrings("__name__", "m", "instance", "01"), F: 1},
+		Sample{Metric: labels.FromStrings("__name__", "m", "instance", "1"), F: 2},
+	}
+	samples2 := Vector{
+		Sample{Metric: labels.FromStrings("__name__", "m", "instance", "1"), F: 2},
+		Sample{Metric: labels.FromStrings("__name__", "m", "instance", "01"), F: 1},
+	}
+
+	res1, _ := funcSortByLabel([]Vector{samples1}, nil, exprs, nil)
+	res2, _ := funcSortByLabel([]Vector{samples2}, nil, exprs, nil)
+
+	require.Equal(t, "01", res1[0].Metric.Get("instance"))
+	require.Equal(t, "1", res1[1].Metric.Get("instance"))
+	require.Equal(t, "01", res2[0].Metric.Get("instance"))
+	require.Equal(t, "1", res2[1].Metric.Get("instance"))
+
+	// Descending sort.
+	samplesDesc1 := Vector{
+		Sample{Metric: labels.FromStrings("__name__", "m", "instance", "01"), F: 1},
+		Sample{Metric: labels.FromStrings("__name__", "m", "instance", "1"), F: 2},
+	}
+	samplesDesc2 := Vector{
+		Sample{Metric: labels.FromStrings("__name__", "m", "instance", "1"), F: 2},
+		Sample{Metric: labels.FromStrings("__name__", "m", "instance", "01"), F: 1},
+	}
+
+	resDesc1, _ := funcSortByLabelDesc([]Vector{samplesDesc1}, nil, exprs, nil)
+	resDesc2, _ := funcSortByLabelDesc([]Vector{samplesDesc2}, nil, exprs, nil)
+
+	require.Equal(t, "1", resDesc1[0].Metric.Get("instance"))
+	require.Equal(t, "01", resDesc1[1].Metric.Get("instance"))
+	require.Equal(t, "1", resDesc2[0].Metric.Get("instance"))
+	require.Equal(t, "01", resDesc2[1].Metric.Get("instance"))
+}
+
+func BenchmarkCompareNatural(b *testing.B) {
+	b.ReportAllocs()
+	for b.Loop() {
+		_ = compareNatural("01", "1")
+		_ = compareNatural("4m5", "4m600")
+		_ = compareNatural("node_exporter", "node_exporter")
+	}
+}
+
+func BenchmarkSortByLabel(b *testing.B) {
+	exprs := parser.Expressions{
+		&parser.VectorSelector{Name: "dummy"},
+		&parser.StringLiteral{Val: "instance"},
+	}
+
+	makeSamples := func() Vector {
+		instances := []string{"0", "00", "01", "1", "02", "2", "10", "11", "20", "100", "4m5", "4m600", "4m1000", "a01", "a1"}
+		vec := make(Vector, len(instances))
+		for i, inst := range instances {
+			vec[i] = Sample{
+				Metric: labels.FromStrings("__name__", "m", "instance", inst),
+				F:      float64(i),
+			}
+		}
+		return vec
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		samples := makeSamples()
+		_, _ = funcSortByLabel([]Vector{samples}, nil, exprs, nil)
 	}
 }
