@@ -31,6 +31,7 @@ import { useSuspenseAPIQuery } from "../../api/api";
 import { ScrapePoolsResult } from "../../api/responseTypes/scrapePools";
 import { expandIconStyle, inputIconStyle } from "../../styles";
 import { useDebouncedValue } from "@mantine/hooks";
+import { useI18n } from "../../i18nContext";
 
 export const targetPoolDisplayLimit = 20;
 
@@ -41,6 +42,7 @@ export const targetPoolDisplayLimit = 20;
 const emptyHealthFilter: string[] = [];
 
 export default function TargetsPage() {
+  const { t } = useI18n();
   // Load the list of all available scrape pools.
   const {
     data: {
@@ -52,10 +54,7 @@ export default function TargetsPage() {
 
   const dispatch = useAppDispatch();
 
-  const poolDefaultPlaceholder = "Select scrape pool";
-
   const [scrapePool, setScrapePool] = useQueryParam("pool", StringParam);
-  const [poolPlaceholder, setPoolPlaceholder] = useState<string>(poolDefaultPlaceholder);
   const [poolSelecting, setPoolSelecting] = useState<boolean>(false);
   const [healthFilter, setHealthFilter] = useQueryParam(
     "health",
@@ -70,6 +69,10 @@ export default function TargetsPage() {
   const { collapsedPools, showLimitAlert } = useAppSelector(
     (state) => state.targetsPage
   );
+
+  const poolPlaceholder = poolSelecting
+    ? scrapePool || t("targets.selectPool")
+    : t("targets.selectPool");
 
   // When we have more than X targets, we want to limit the display by selecting the first
   // scrape pool and reflecting that in the URL as well. We also want to show an alert
@@ -91,7 +94,7 @@ export default function TargetsPage() {
       <Group mb="md" mt="xs">
         <Select
           placeholder={poolPlaceholder}
-          data={[{ label: "All pools", value: "" }, ...scrapePools]}
+          data={[{ label: t("discovery.allPools"), value: "" }, ...scrapePools]}
           value={poolSelecting ? null : (limited && scrapePools[0]) || scrapePool || null}
           onChange={(value) => {
             setScrapePool(value);
@@ -100,11 +103,9 @@ export default function TargetsPage() {
             }
           }}
           onDropdownOpen={() => {
-            setPoolPlaceholder(scrapePool || poolDefaultPlaceholder)
             setPoolSelecting(true)
           }}
           onDropdownClose={() => {
-            setPoolPlaceholder(poolDefaultPlaceholder)
             setPoolSelecting(false)
           }}
           searchable
@@ -118,14 +119,14 @@ export default function TargetsPage() {
                 ? badgeClasses.healthOk
                 : badgeClasses.healthErr
           }
-          placeholder="Filter by target health"
+          placeholder={t("targets.filterByHealth")}
           values={(healthFilter?.filter((v) => v !== null) as string[]) || []}
           onChange={(values) => setHealthFilter(values)}
         />
         <TextInput
           flex={1}
           leftSection={<IconSearch style={inputIconStyle} />}
-          placeholder="Filter by endpoint or labels"
+          placeholder={t("targets.filterByEndpoint")}
           value={searchFilter || ""}
           onChange={(event) =>
             setSearchFilter(event.currentTarget.value || null)
@@ -135,8 +136,8 @@ export default function TargetsPage() {
           size="input-sm"
           title={
             collapsedPools.length > 0
-              ? "Expand all pools"
-              : "Collapse all pools"
+              ? t("discovery.expandAll")
+              : t("discovery.collapseAll")
           }
           variant="light"
           onClick={() =>
@@ -153,7 +154,7 @@ export default function TargetsPage() {
         </ActionIcon>
       </Group>
 
-      <ErrorBoundary key={location.pathname} title="Error showing target pools">
+      <ErrorBoundary key={location.pathname} title={t("discovery.errorShowingPools")}>
         <Suspense
           fallback={
             <Box mt="lg">

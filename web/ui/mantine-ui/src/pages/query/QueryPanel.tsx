@@ -43,6 +43,7 @@ import ASTNode from "../../promql/ast";
 import serializeNode from "../../promql/serialize";
 import ExplainView from "./ExplainViews/ExplainView";
 import { actionIconStyle } from "../../styles";
+import { useI18n } from "../../i18nContext";
 
 export interface PanelProps {
   idx: number;
@@ -53,6 +54,7 @@ export interface PanelProps {
 const iconStyle = { width: "0.9rem", height: "0.9rem" };
 
 const QueryPanel: FC<PanelProps> = ({ idx, metricNames }) => {
+  const { t } = useI18n();
   // Used to indicate to the selected display component that it should retrigger
   // the query, even if the expression has not changed (e.g. when the user presses
   // the "Execute" button or hits <Enter> again).
@@ -120,7 +122,7 @@ const QueryPanel: FC<PanelProps> = ({ idx, metricNames }) => {
         }}
       />
       {panel.expr.trim() !== "" && panel.showTree && (
-        <ErrorBoundary key={retriggerIdx} title="Error showing tree view">
+        <ErrorBoundary key={retriggerIdx} title={t("query.errorTree")}>
           <Suspense
             fallback={
               <Box mt="lg">
@@ -159,16 +161,16 @@ const QueryPanel: FC<PanelProps> = ({ idx, metricNames }) => {
       >
         <Tabs.List>
           <Tabs.Tab value="table" leftSection={<IconTable style={iconStyle} />}>
-            Table
+            {t("query.table")}
           </Tabs.Tab>
           <Tabs.Tab value="graph" leftSection={<IconGraph style={iconStyle} />}>
-            Graph
+            {t("query.graph")}
           </Tabs.Tab>
           <Tabs.Tab
             value="explain"
             leftSection={<IconInfoCircle style={iconStyle} />}
           >
-            Explain
+            {t("query.explain")}
           </Tabs.Tab>
         </Tabs.List>
         <Tabs.Panel pt="sm" value="table">
@@ -275,7 +277,7 @@ const QueryPanel: FC<PanelProps> = ({ idx, metricNames }) => {
                     label: (
                       <Center fw={500}>
                         <IconChartLine style={iconStyle} />
-                        <Box ml={10}>Unstacked</Box>
+                        <Box ml={10}>{t("query.unstacked")}</Box>
                       </Center>
                     ),
                   },
@@ -284,7 +286,7 @@ const QueryPanel: FC<PanelProps> = ({ idx, metricNames }) => {
                     label: (
                       <Center fw={500}>
                         <IconChartAreaFilled style={iconStyle} />
-                        <Box ml={10}>Stacked</Box>
+                        <Box ml={10}>{t("query.stacked")}</Box>
                       </Center>
                     ),
                   },
@@ -305,7 +307,7 @@ const QueryPanel: FC<PanelProps> = ({ idx, metricNames }) => {
                     variant="light"
                     color="gray"
                     size={32}
-                    title="Graph settings"
+                    title={t("query.graphSettings")}
                   >
                     <IconAdjustmentsHorizontal
                       style={actionIconStyle}
@@ -317,7 +319,7 @@ const QueryPanel: FC<PanelProps> = ({ idx, metricNames }) => {
                   <Checkbox
                     size="xs"
                     checked={panel.visualizer.yAxisMin !== null}
-                    label="Start Y axis at 0"
+                    label={t("query.startYAxisAtZero")}
                     onChange={(event) =>
                       dispatch(
                         setVisualizer({
@@ -351,7 +353,7 @@ const QueryPanel: FC<PanelProps> = ({ idx, metricNames }) => {
         <Tabs.Panel pt="sm" value="explain">
           <ErrorBoundary
             key={selectedNode?.id}
-            title="Error showing explain view"
+            title={t("query.errorExplain")}
           >
             <Suspense
               fallback={

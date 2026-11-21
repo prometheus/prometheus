@@ -5,6 +5,7 @@ import { formatTimestamp } from "../lib/formatTime";
 import { useSettings } from "../state/settingsSlice";
 import InfoPageCard from "../components/InfoPageCard";
 import InfoPageStack from "../components/InfoPageStack";
+import { useI18n } from "../i18nContext";
 
 export default function StatusPage() {
   const { data: buildinfo } = useSuspenseAPIQuery<Record<string, string>>({
@@ -15,6 +16,7 @@ export default function StatusPage() {
   });
 
   const { useLocalTime } = useSettings();
+  const { t } = useI18n();
 
   const statusConfig: Record<
     string,
@@ -24,34 +26,35 @@ export default function StatusPage() {
     }
   > = {
     startTime: {
-      title: "Start time",
+      title: t("status.startTime"),
       formatValue: (v: string | boolean) =>
         formatTimestamp(new Date(v as string).valueOf() / 1000, useLocalTime),
     },
-    CWD: { title: "Working directory" },
-    hostname: { title: "Hostname" },
+    CWD: { title: t("status.workingDirectory") },
+    hostname: { title: t("status.hostname") },
     serverTime: {
-      title: "Server Time",
+      title: t("status.serverTime"),
       formatValue: (v: string | boolean) =>
         formatTimestamp(new Date(v as string).valueOf() / 1000, useLocalTime),
     },
     reloadConfigSuccess: {
-      title: "Configuration reload",
-      formatValue: (v: string | boolean) => (v ? "Successful" : "Unsuccessful"),
+      title: t("status.configurationReload"),
+      formatValue: (v: string | boolean) =>
+        v ? t("status.successful") : t("status.unsuccessful"),
     },
     lastConfigTime: {
-      title: "Last successful configuration reload",
+      title: t("status.lastConfigurationReload"),
       formatValue: (v: string | boolean) =>
         formatTimestamp(new Date(v as string).valueOf() / 1000, useLocalTime),
     },
-    corruptionCount: { title: "WAL corruptions" },
-    goroutineCount: { title: "Goroutines" },
-    storageRetention: { title: "Storage retention" },
+    corruptionCount: { title: t("status.walCorruptions") },
+    goroutineCount: { title: t("status.goroutines") },
+    storageRetention: { title: t("status.storageRetention") },
   };
 
   return (
     <InfoPageStack>
-      <InfoPageCard title="Build information" icon={IconWall}>
+      <InfoPageCard title={t("status.buildInformation")} icon={IconWall}>
         <Table layout="fixed">
           <Table.Tbody>
             {Object.entries(buildinfo.data).map(([k, v]) => (
@@ -63,7 +66,7 @@ export default function StatusPage() {
           </Table.Tbody>
         </Table>
       </InfoPageCard>
-      <InfoPageCard title="Runtime information" icon={IconRun}>
+      <InfoPageCard title={t("status.runtimeInformation")} icon={IconRun}>
         <Table layout="fixed">
           <Table.Tbody>
             {Object.entries(runtimeinfo.data).map(([k, v]) => {

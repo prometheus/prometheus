@@ -2,10 +2,12 @@ import { Alert } from "@mantine/core";
 import { IconAlertTriangle } from "@tabler/icons-react";
 import { Component, ErrorInfo, ReactNode } from "react";
 import { useLocation } from "react-router-dom";
+import { useI18n } from "../i18nContext";
 
 interface Props {
   children?: ReactNode;
   title?: string;
+  errorPrefix?: string;
 }
 
 interface State {
@@ -37,7 +39,8 @@ class ErrorBoundary extends Component<Props, State> {
           mx="auto"
           mt="lg"
         >
-          <strong>Error:</strong> {this.state.error.message}
+          <strong>{this.props.errorPrefix || "Error:"}</strong>{" "}
+          {this.state.error.message}
         </Alert>
       );
     }
@@ -48,8 +51,13 @@ class ErrorBoundary extends Component<Props, State> {
 
 const ResettingErrorBoundary = (props: Props) => {
   const location = useLocation();
+  const { t } = useI18n();
   return (
-    <ErrorBoundary key={location.pathname} title={props.title}>
+    <ErrorBoundary
+      key={location.pathname}
+      title={props.title || t("error.pageData")}
+      errorPrefix={t("error.prefix")}
+    >
       {props.children}
     </ErrorBoundary>
   );

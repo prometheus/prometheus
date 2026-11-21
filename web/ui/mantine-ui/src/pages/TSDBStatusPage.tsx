@@ -19,10 +19,12 @@ import { formatTimestamp } from "../lib/formatTime";
 import { useSettings } from "../state/settingsSlice";
 import InfoPageStack from "../components/InfoPageStack";
 import InfoPageCard from "../components/InfoPageCard";
+import { useI18n } from "../i18nContext";
 
 dayjs.extend(utc);
 
 export default function TSDBStatusPage() {
+  const { t } = useI18n();
   const {
     data: {
       data: {
@@ -49,9 +51,9 @@ export default function TSDBStatusPage() {
     const formatted = formatTimestamp(unix, useLocalTime);
     if (formatted === "Invalid Date") {
       if (numSeries === 0) {
-        return "No datapoints yet";
+        return t("tsdb.noDatapoints");
       }
-      return `Error parsing time (${unix})`;
+      return t("tsdb.errorParsingTime", { time: unix });
     }
 
     return formatted;
@@ -59,11 +61,11 @@ export default function TSDBStatusPage() {
 
   const { chunkCount, numSeries, numLabelPairs, minTime, maxTime } = headStats;
   const stats = [
-    { name: "Number of Series", value: numSeries },
-    { name: "Number of Chunks", value: chunkCount },
-    { name: "Number of Label Pairs", value: numLabelPairs },
-    { name: "Current Min Time", value: `${unixToTime(minTime / 1000)}` },
-    { name: "Current Max Time", value: `${unixToTime(maxTime / 1000)}` },
+    { name: t("tsdb.numberSeries"), value: numSeries },
+    { name: t("tsdb.numberChunks"), value: chunkCount },
+    { name: t("tsdb.numberLabelPairs"), value: numLabelPairs },
+    { name: t("tsdb.currentMinTime"), value: `${unixToTime(minTime / 1000)}` },
+    { name: t("tsdb.currentMaxTime"), value: `${unixToTime(maxTime / 1000)}` },
   ];
 
   // Delete series state
@@ -89,7 +91,7 @@ export default function TSDBStatusPage() {
       .filter((m) => m !== "");
 
     if (matchList.length === 0) {
-      setDeleteError("Provide at least one match[] selector.");
+      setDeleteError(t("tsdb.provideSelector"));
       return;
     }
 
@@ -123,7 +125,7 @@ export default function TSDBStatusPage() {
       }
 
       setDeleteSuccess(
-        `Successfully deleted series matching: ${matchList.join(", ")}`
+        t("tsdb.deleteSuccess", { series: matchList.join(", ") })
       );
       setMatchers("");
       setStartTime(null);
@@ -157,7 +159,7 @@ export default function TSDBStatusPage() {
         throw new Error(res.statusText);
       }
 
-      setCleanSuccess("Tombstones cleaned successfully.");
+      setCleanSuccess(t("tsdb.cleanSuccess"));
     } catch (err) {
       setCleanError(err instanceof Error ? err.message : "Unknown error");
     } finally {
@@ -169,37 +171,37 @@ export default function TSDBStatusPage() {
     <InfoPageStack>
       {[
         {
-          title: "TSDB Head Status",
+          title: t("tsdb.statusHead"),
           stats,
           formatAsCode: false,
         },
         {
-          title: "Top 10 label names with value count",
+          title: t("tsdb.topLabelNamesByValues"),
           stats: labelValueCountByLabelName,
           formatAsCode: true,
         },
         {
-          title: "Top 10 series count by metric names",
+          title: t("tsdb.topMetricNames"),
           stats: seriesCountByMetricName,
           formatAsCode: true,
         },
         {
-          title: "Top 10 label names with high memory usage",
-          unit: "Bytes",
+          title: t("tsdb.topLabelNamesMemory"),
+          unit: t("tsdb.bytes"),
           stats: memoryInBytesByLabelName,
           formatAsCode: true,
         },
         {
-          title: "Top 10 series count by label value pairs",
+          title: t("tsdb.topLabelPairs"),
           stats: seriesCountByLabelValuePair,
           formatAsCode: true,
         },
-      ].map(({ title, unit = "Count", stats, formatAsCode }) => (
+      ].map(({ title, unit = t("tsdb.count"), stats, formatAsCode }) => (
         <InfoPageCard title={title}>
           <Table layout="fixed">
             <Table.Thead>
               <Table.Tr>
-                <Table.Th>Name</Table.Th>
+                <Table.Th>{t("tsdb.name")}</Table.Th>
                 <Table.Th>{unit}</Table.Th>
               </Table.Tr>
             </Table.Thead>
@@ -221,22 +223,20 @@ export default function TSDBStatusPage() {
         </InfoPageCard>
       ))}
 
-      <InfoPageCard title="Delete Series" icon={IconTrash}>
+      <InfoPageCard title={t("tsdb.delete")} icon={IconTrash}>
         <Stack gap="md">
           <Alert
             icon={<IconAlertTriangle size={16} />}
             color="yellow"
-            title="Warning"
+            title={t("tsdb.warning")}
           >
-            This operation marks matching series for deletion. Deleted data
-            cannot be recovered. Use "Clean Tombstones" afterwards to reclaim
-            disk space.
+            {t("tsdb.deleteWarning")}
           </Alert>
 
           {deleteError && (
             <Alert
               color="red"
-              title="Error"
+              title={t("tsdb.error")}
               withCloseButton
               onClose={() => setDeleteError(null)}
             >
@@ -248,7 +248,7 @@ export default function TSDBStatusPage() {
             <Alert
               icon={<IconCheck size={16} />}
               color="green"
-              title="Success"
+              title={t("tsdb.success")}
               withCloseButton
               onClose={() => setDeleteSuccess(null)}
             >
@@ -257,11 +257,11 @@ export default function TSDBStatusPage() {
           )}
 
           <Textarea
-            label="Series selector(s)"
+            label={t("tsdb.seriesSelectors")}
             description='PromQL series selectors, one per line. Example: up{job="prometheus"}'
             placeholder={'up{job="prometheus"}'}
             disabled={!adminApiEnabled}
-            title={!adminApiEnabled ? "Requires --web.enable-admin-api flag" : ""}
+            title={!adminApiEnabled ? t("tsdb.requiresAdminApi") : ""}
             value={matchers}
             onChange={(e) => setMatchers(e.currentTarget.value)}
             autosize
@@ -271,12 +271,12 @@ export default function TSDBStatusPage() {
 
           <Group grow>
             <DateTimePicker
-              label="Start time"
-              description="Optional"
-              placeholder="Select start time"
+              label={t("tsdb.startTime")}
+              description={t("tsdb.optional")}
+              placeholder={t("tsdb.selectStartTime")}
               valueFormat="YYYY-MM-DD HH:mm:ss"
               disabled={!adminApiEnabled}
-              title={!adminApiEnabled ? "Requires --web.enable-admin-api flag" : ""}
+              title={!adminApiEnabled ? t("tsdb.requiresAdminApi") : ""}
               withSeconds
               value={
                 startTime !== null
@@ -299,12 +299,12 @@ export default function TSDBStatusPage() {
               clearable
             />
             <DateTimePicker
-              label="End time"
-              description="Optional"
-              placeholder="Select end time"
+              label={t("tsdb.endTime")}
+              description={t("tsdb.optional")}
+              placeholder={t("tsdb.selectEndTime")}
               valueFormat="YYYY-MM-DD HH:mm:ss"
               disabled={!adminApiEnabled}
-              title={!adminApiEnabled ? "Requires --web.enable-admin-api flag" : ""}
+              title={!adminApiEnabled ? t("tsdb.requiresAdminApi") : ""}
               withSeconds
               value={
                 endTime !== null
@@ -335,20 +335,20 @@ export default function TSDBStatusPage() {
               onClick={handleDelete}
               loading={deleting}
               disabled={!matchers.trim() || !adminApiEnabled}
-              title={!adminApiEnabled ? "Requires --web.enable-admin-api flag" : ""}
+              title={!adminApiEnabled ? t("tsdb.requiresAdminApi") : ""}
             >
-              Delete series
+              {t("tsdb.delete")}
             </Button>
           </Group>
         </Stack>
       </InfoPageCard>
 
-      <InfoPageCard title="Clean Tombstones">
+      <InfoPageCard title={t("tsdb.clean")}>
         <Stack gap="md">
           {cleanError && (
             <Alert
               color="red"
-              title="Error"
+              title={t("tsdb.error")}
               withCloseButton
               onClose={() => setCleanError(null)}
             >
@@ -360,7 +360,7 @@ export default function TSDBStatusPage() {
             <Alert
               icon={<IconCheck size={16} />}
               color="green"
-              title="Success"
+              title={t("tsdb.success")}
               withCloseButton
               onClose={() => setCleanSuccess(null)}
             >
@@ -369,9 +369,7 @@ export default function TSDBStatusPage() {
           )}
 
           <Text size="sm" c="dimmed">
-            After deleting series, tombstones mark the data for deletion but do
-            not free disk space immediately. Use this to remove tombstones and
-            reclaim storage.
+            {t("tsdb.cleanDescription")}
           </Text>
           <Group>
             <Button
@@ -379,9 +377,9 @@ export default function TSDBStatusPage() {
               onClick={handleCleanTombstones}
               loading={cleaning}
               disabled={!adminApiEnabled}
-              title={!adminApiEnabled ? "Requires --web.enable-admin-api flag" : ""}
+              title={!adminApiEnabled ? t("tsdb.requiresAdminApi") : ""}
             >
-              Clean tombstones
+              {t("tsdb.clean")}
             </Button>
           </Group>
         </Stack>

@@ -10,10 +10,15 @@ import {
   IconReplace,
   IconTags,
 } from "@tabler/icons-react";
+import { useI18n } from "../../i18nContext";
 
 const iconStyle = { width: em(18), height: em(18), verticalAlign: "middle" };
 
-const ruleTable = (rule: { [key: string]: unknown }, idx: number) => {
+const ruleTable = (
+  rule: { [key: string]: unknown },
+  idx: number,
+  t: (key: string, values?: Record<string, string | number>) => string
+) => {
   return (
     <Table
       w="60%"
@@ -29,7 +34,7 @@ const ruleTable = (rule: { [key: string]: unknown }, idx: number) => {
         >
           <Table.Th colSpan={2}>
             <Group gap="xs">
-              <IconReplace style={iconStyle} /> Rule {idx + 1}
+              <IconReplace style={iconStyle} /> {t("discovery.rule", { number: idx + 1 })}
             </Group>
           </Table.Th>
         </Table.Tr>
@@ -76,9 +81,13 @@ const ruleTable = (rule: { [key: string]: unknown }, idx: number) => {
   );
 };
 
-const labelsTable = (labels: Labels, prevLabels: Labels | null) => {
+const labelsTable = (
+  labels: Labels,
+  prevLabels: Labels | null,
+  t: (key: string) => string
+) => {
   if (labels === null) {
-    return <Text c="dimmed">dropped</Text>;
+    return <Text c="dimmed">{t("discovery.dropped")}</Text>;
   }
 
   return (
@@ -91,7 +100,7 @@ const labelsTable = (labels: Labels, prevLabels: Labels | null) => {
         >
           <Table.Th colSpan={3}>
             <Group gap="xs">
-              <IconTags style={iconStyle} /> Labels
+              <IconTags style={iconStyle} /> {t("discovery.labels")}
             </Group>
           </Table.Th>
         </Table.Tr>
@@ -155,6 +164,7 @@ const RelabelSteps: React.FC<{
   labels: Labels;
   pool: string;
 }> = ({ labels, pool }) => {
+  const { t } = useI18n();
   const { data } = useSuspenseAPIQuery<RelabelStepsResult>({
     path: `/targets/relabel_steps`,
     params: {
@@ -165,19 +175,20 @@ const RelabelSteps: React.FC<{
 
   return (
     <Stack align="center">
-      {labelsTable(labels, null)}
+      {labelsTable(labels, null, t)}
       {data.data.steps.map((step, idx) => (
         <React.Fragment key={idx}>
           <IconArrowDown style={iconStyle} />
-          {ruleTable(step.rule, idx)}
+          {ruleTable(step.rule, idx, t)}
           <IconArrowDown style={iconStyle} />
           {step.keep ? (
             labelsTable(
               step.output,
-              idx === 0 ? labels : data.data.steps[idx - 1].output
+              idx === 0 ? labels : data.data.steps[idx - 1].output,
+              t
             )
           ) : (
-            <Text c="dimmed">dropped</Text>
+            <Text c="dimmed">{t("discovery.dropped")}</Text>
           )}
         </React.Fragment>
       ))}
