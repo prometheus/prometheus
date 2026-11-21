@@ -1596,6 +1596,15 @@ options for each: `filter` applies to the Catalog API and `health_filter` applie
 For example, tags are exposed as `ServiceTags` in the Catalog API but as `Service.Tags` in the
 Health API.
 
+The `role` parameter selects the targets to discover:
+
+* `service` (the default) discovers one target per service instance.
+* `service_exposed_paths` discovers one target per entry in `Proxy.Expose.Paths` for
+  Connect proxies. Services without explicit exposed paths, including proxies that
+  only expose checks, produce no targets in this role.
+
+An omitted or empty `role` uses `service`.
+
 The following meta labels are available on targets during [relabeling](#relabel_config):
 
 * `__meta_consul_address`: the address of the target
@@ -1607,13 +1616,31 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_consul_node`: the node name defined for the target
 * `__meta_consul_service_address`: the service address of the target
 * `__meta_consul_service_id`: the service ID of the target
+* `__meta_consul_service_kind`: the service kind, when nonempty
 * `__meta_consul_service_metadata_<key>`: each service metadata key value of the target
 * `__meta_consul_service_port`: the service port of the target
 * `__meta_consul_service`: the name of the service the target belongs to
 * `__meta_consul_tagged_address_<key>`: each node tagged address key value of the target
 * `__meta_consul_tags`: the list of tags of the target joined by the tag separator
 
+For Connect proxies with proxy configuration, the following additional labels are available in both roles:
+
+* `__meta_consul_proxy_service`: the destination service name
+* `__meta_consul_proxy_service_id`: the destination service ID
+* `__meta_consul_proxy_service_address`: the local service address configured on the proxy
+* `__meta_consul_proxy_service_port`: the local service port configured on the proxy
+
+The `service_exposed_paths` role also provides these labels for each exposed path:
+
+* `__meta_consul_proxy_exposed_path`: the HTTP path
+* `__meta_consul_proxy_exposed_path_port`: the proxy listener port
+* `__meta_consul_proxy_exposed_path_local_port`: the local path port
+* `__meta_consul_proxy_exposed_path_protocol`: the Consul path protocol, defaulting to `http` when empty
+
 ```yaml
+# The type of targets to discover.
+[ role: <string> | default = "service" ]
+
 # The information to access the Consul API. It is to be defined
 # as the Consul documentation requires.
 [ server: <host> | default = "localhost:8500" ]
@@ -1665,11 +1692,36 @@ tags:
 [ <http_config> ]
 ```
 
-Note that the IP number and port used to scrape the targets is assembled as
-`<__meta_consul_address>:<__meta_consul_service_port>`. However, in some
-Consul setups, the relevant address is in `__meta_consul_service_address`.
-In those cases, you can use the [relabel](#relabel_config)
-feature to replace the special `__address__` label.
+The target address uses the registered service address when present, otherwise the
+node address. The `service` role uses the registered service port. The
+`service_exposed_paths` role uses each path's listener port and preserves the
+registered service port in `__meta_consul_service_port`.
+
+Exposed paths have separate targets even when they share a listener port. Use
+[relabeling](#relabel_config) to select the paths to scrape and set `__metrics_path__`.
+For example, this job scrapes `/metrics` paths whose Consul protocol is `http`:
+
+```yaml
+scrape_configs:
+  - job_name: consul-exposed-metrics
+    consul_sd_configs:
+      - server: localhost:8500
+        role: service_exposed_paths
+        services: [app-sidecar-proxy]
+    relabel_configs:
+      - source_labels: [__meta_consul_proxy_exposed_path_protocol]
+        regex: http
+        action: keep
+      - source_labels: [__meta_consul_proxy_exposed_path]
+        regex: /metrics
+        action: keep
+      - source_labels: [__meta_consul_proxy_exposed_path]
+        target_label: __metrics_path__
+```
+
+The Consul path protocol is metadata, not a URL scheme: `http2` must not be copied
+into `__scheme__`. Configure the scrape job's HTTP and TLS settings for the proxy
+listener you intend to scrape.
 
 The [relabeling phase](#relabel_config) is the preferred and more powerful
 way to filter services or nodes for a service based on arbitrary labels. For
