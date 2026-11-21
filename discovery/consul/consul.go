@@ -72,8 +72,14 @@ const (
 	namespace = "prometheus"
 )
 
+const (
+	roleService             = "service"
+	roleServiceExposedPaths = "service_exposed_paths"
+)
+
 // DefaultSDConfig is the default Consul SD configuration.
 var DefaultSDConfig = SDConfig{
+	Role:             roleService,
 	TagSeparator:     ",",
 	Scheme:           "http",
 	Server:           "localhost:8500",
@@ -88,6 +94,7 @@ func init() {
 
 // SDConfig is the configuration for Consul service discovery.
 type SDConfig struct {
+	Role         string        `yaml:"role,omitempty"`
 	Server       string        `yaml:"server,omitempty"`
 	PathPrefix   string        `yaml:"path_prefix,omitempty"`
 	Token        config.Secret `yaml:"token,omitempty"`
@@ -152,6 +159,12 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	if err != nil {
 		return err
 	}
+	if c.Role == "" {
+		c.Role = roleService
+	}
+	if err := validateRole(c.Role); err != nil {
+		return err
+	}
 	if strings.TrimSpace(c.Server) == "" {
 		return errors.New("consul SD configuration requires a server address")
 	}
@@ -170,9 +183,19 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	return c.HTTPClientConfig.Validate()
 }
 
+func validateRole(role string) error {
+	switch role {
+	case "", roleService, roleServiceExposedPaths:
+		return nil
+	default:
+		return fmt.Errorf("unknown consul SD role %q", role)
+	}
+}
+
 // Discovery retrieves target information from a Consul server
 // and updates them via watches.
 type Discovery struct {
+	role                string
 	client              *consul.Client
 	clientDatacenter    string
 	clientNamespace     string
@@ -192,6 +215,9 @@ type Discovery struct {
 
 // NewDiscovery returns a new Discovery for the given config.
 func NewDiscovery(conf *SDConfig, logger *slog.Logger, metrics discovery.DiscovererMetrics) (*Discovery, error) {
+	if err := validateRole(conf.Role); err != nil {
+		return nil, err
+	}
 	m, ok := metrics.(*consulMetrics)
 	if !ok {
 		return nil, errors.New("invalid discovery metrics type")
@@ -222,6 +248,7 @@ func NewDiscovery(conf *SDConfig, logger *slog.Logger, metrics discovery.Discove
 		return nil, err
 	}
 	cd := &Discovery{
+		role:                conf.Role,
 		client:              client,
 		tagSeparator:        conf.TagSeparator,
 		watchedServices:     conf.Services,
@@ -545,12 +572,11 @@ func (srv *consulService) watch(ctx context.Context, ch chan<- []*targetgroup.Gr
 
 		// If the service address is not empty it should be used instead of the node address
 		// since the service may be registered remotely through a different node.
-		var addr string
-		if serviceNode.Service.Address != "" {
-			addr = net.JoinHostPort(serviceNode.Service.Address, strconv.Itoa(serviceNode.Service.Port))
-		} else {
-			addr = net.JoinHostPort(serviceNode.Node.Address, strconv.Itoa(serviceNode.Service.Port))
+		host := serviceNode.Service.Address
+		if host == "" {
+			host = serviceNode.Node.Address
 		}
+		addr := net.JoinHostPort(host, strconv.Itoa(serviceNode.Service.Port))
 
 		labels := model.LabelSet{
 			model.AddressLabel:  model.LabelValue(addr),
@@ -583,7 +609,37 @@ func (srv *consulService) watch(ctx context.Context, ch chan<- []*targetgroup.Gr
 			labels[taggedAddressesLabel+model.LabelName(name)] = model.LabelValue(v)
 		}
 
-		tgroup.Targets = append(tgroup.Targets, labels)
+		service := serviceNode.Service
+		if service.Kind != "" {
+			labels[model.MetaLabelPrefix+"consul_service_kind"] = model.LabelValue(service.Kind)
+		}
+		proxy := service.Proxy
+		if service.Kind == consul.ServiceKindConnectProxy && proxy != nil {
+			labels[model.MetaLabelPrefix+"consul_proxy_service"] = model.LabelValue(proxy.DestinationServiceName)
+			labels[model.MetaLabelPrefix+"consul_proxy_service_id"] = model.LabelValue(proxy.DestinationServiceID)
+			labels[model.MetaLabelPrefix+"consul_proxy_service_address"] = model.LabelValue(proxy.LocalServiceAddress)
+			labels[model.MetaLabelPrefix+"consul_proxy_service_port"] = model.LabelValue(strconv.Itoa(proxy.LocalServicePort))
+		}
+		if srv.discovery.role == roleServiceExposedPaths {
+			if service.Kind != consul.ServiceKindConnectProxy || proxy == nil {
+				continue
+			}
+			for _, path := range proxy.Expose.Paths {
+				pathLabels := labels.Clone()
+				pathLabels[model.AddressLabel] = model.LabelValue(net.JoinHostPort(host, strconv.Itoa(path.ListenerPort)))
+				pathLabels[model.MetaLabelPrefix+"consul_proxy_exposed_path"] = model.LabelValue(path.Path)
+				pathLabels[model.MetaLabelPrefix+"consul_proxy_exposed_path_port"] = model.LabelValue(strconv.Itoa(path.ListenerPort))
+				pathLabels[model.MetaLabelPrefix+"consul_proxy_exposed_path_local_port"] = model.LabelValue(strconv.Itoa(path.LocalPathPort))
+				protocol := path.Protocol
+				if protocol == "" {
+					protocol = "http"
+				}
+				pathLabels[model.MetaLabelPrefix+"consul_proxy_exposed_path_protocol"] = model.LabelValue(protocol)
+				tgroup.Targets = append(tgroup.Targets, pathLabels)
+			}
+		} else {
+			tgroup.Targets = append(tgroup.Targets, labels)
+		}
 	}
 
 	select {
