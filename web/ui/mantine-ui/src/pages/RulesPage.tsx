@@ -50,6 +50,7 @@ import classes from "./RulesPage.module.css";
 import { useDebouncedValue, useLocalStorage } from "@mantine/hooks";
 import { KVSearch } from "@nexucis/kvsearch";
 import { StateMultiSelect } from "../components/StateMultiSelect";
+import { useI18n } from "../i18nContext";
 
 const kvSearch = new KVSearch<Rule>({
   shouldSort: true,
@@ -99,6 +100,7 @@ const healthBadgeClass = (state: string) => {
 const emptyHealthFilter: string[] = [];
 
 export default function RulesPage() {
+  const { t } = useI18n();
   const { data } = useSuspenseAPIQuery<RulesResult>({ path: `/rules` });
 
   // Define URL query params.
@@ -176,59 +178,58 @@ export default function RulesPage() {
               </Text>
             </Group>
             <Group>
-              <Tooltip label="Last group evaluation" withArrow>
+              <Tooltip label={t("rules.lastGroupEvaluation")} withArrow>
                 <Badge
                   variant="light"
                   className={badgeClasses.statsBadge}
                   styles={{ label: { textTransform: "none" } }}
                   leftSection={<IconRefresh style={badgeIconStyle} />}
                 >
-                  last run {humanizeDurationRelative(g.lastEvaluation, now())}
+                  {t("rules.lastRun", { duration: humanizeDurationRelative(g.lastEvaluation, now()) })}
                 </Badge>
               </Tooltip>
-              <Tooltip label="Duration of last group evaluation" withArrow>
+              <Tooltip label={t("rules.durationLastGroupEvaluation")} withArrow>
                 <Badge
                   variant="light"
                   className={badgeClasses.statsBadge}
                   styles={{ label: { textTransform: "none" } }}
                   leftSection={<IconHourglass style={badgeIconStyle} />}
                 >
-                  took {humanizeDuration(parseFloat(g.evaluationTime) * 1000)}
+                  {t("rules.took", { duration: humanizeDuration(parseFloat(g.evaluationTime) * 1000) })}
                 </Badge>
               </Tooltip>
-              <Tooltip label="Group evaluation interval" withArrow>
+              <Tooltip label={t("rules.groupInterval")} withArrow>
                 <Badge
                   variant="transparent"
                   className={badgeClasses.statsBadge}
                   styles={{ label: { textTransform: "none" } }}
                   leftSection={<IconRepeat style={badgeIconStyle} />}
                 >
-                  every {humanizeDuration(parseFloat(g.interval) * 1000)}{" "}
+                  {t("rules.every", { duration: humanizeDuration(parseFloat(g.interval) * 1000) })}
                 </Badge>
               </Tooltip>
             </Group>
           </Group>
           {g.prefilterRulesCount === 0 ? (
-            <Alert title="No rules" icon={<IconInfoCircle />}>
-              No rules in this group.
+            <Alert title={t("alerts.noRules")} icon={<IconInfoCircle />}>
+              {t("alerts.noRulesInGroup")}
               <Anchor
                 ml="md"
                 fz="1em"
                 onClick={() => setShowEmptyGroups(false)}
               >
-                Hide empty groups
+                {t("alerts.hideEmptyGroups")}
               </Anchor>
             </Alert>
           ) : g.rules.length === 0 ? (
-            <Alert title="No matching rules" icon={<IconInfoCircle />}>
-              No rules in this group match your filter criteria (omitted{" "}
-              {g.prefilterRulesCount} filtered rules).
+            <Alert title={t("alerts.noMatchingRules")} icon={<IconInfoCircle />}>
+              {t("alerts.omittedRules", { count: g.prefilterRulesCount })}
               <Anchor
                 ml="md"
                 fz="1em"
                 onClick={() => setShowEmptyGroups(false)}
               >
-                Hide empty groups
+                {t("alerts.hideEmptyGroups")}
               </Anchor>
             </Alert>
           ) : (
@@ -257,13 +258,13 @@ export default function RulesPage() {
                         <Group justify="space-between" mr="lg">
                           <Group gap="xs" wrap="nowrap">
                             {r.type === "alerting" ? (
-                              <Tooltip label="Alerting rule" withArrow>
+                              <Tooltip label={t("rules.alertingRule")} withArrow>
                                 <IconBell
                                   style={{ width: rem(15), height: rem(15) }}
                                 />
                               </Tooltip>
                             ) : (
-                              <Tooltip label="Recording rule" withArrow>
+                              <Tooltip label={t("rules.recordingRule")} withArrow>
                                 <IconTimeline
                                   style={{ width: rem(15), height: rem(15) }}
                                 />
@@ -288,7 +289,7 @@ export default function RulesPage() {
                           </Group>
                           <Group gap="xs">
                             <Group gap="xs" wrap="wrap">
-                              <Tooltip label="Last rule evaluation" withArrow>
+                              <Tooltip label={t("rules.lastRuleEvaluation")} withArrow>
                                 <Badge
                                   variant="light"
                                   className={badgeClasses.statsBadge}
@@ -305,7 +306,7 @@ export default function RulesPage() {
                               </Tooltip>
 
                               <Tooltip
-                                label="Duration of last rule evaluation"
+                                label={t("rules.durationLastRuleEvaluation")}
                                 withArrow
                               >
                                 <Badge
@@ -334,7 +335,7 @@ export default function RulesPage() {
                           <Alert
                             color="red"
                             mt="sm"
-                            title="Rule failed to evaluate"
+                            title={t("rules.ruleFailed")}
                             icon={<IconAlertTriangle />}
                           >
                             <strong>Error:</strong> {r.lastError}
@@ -349,7 +350,7 @@ export default function RulesPage() {
           )}
         </Card>
       )),
-    [currentPageGroups, setShowEmptyGroups]
+    [currentPageGroups, setShowEmptyGroups, t]
   );
 
   return (
@@ -364,14 +365,14 @@ export default function RulesPage() {
                 ? badgeClasses.healthWarn
                 : badgeClasses.healthErr
           }
-          placeholder="Filter by rule health"
+          placeholder={t("rules.filterByHealth")}
           values={(healthFilter?.filter((v) => v !== null) as string[]) || []}
           onChange={(values) => setHealthFilter(values)}
         />
         <TextInput
           flex={1}
           leftSection={<IconSearch style={inputIconStyle} />}
-          placeholder="Filter by rule name or labels"
+          placeholder={t("alerts.filterByRuleName")}
           value={searchFilter || ""}
           onChange={(event) =>
             setSearchFilter(event.currentTarget.value || null)
@@ -379,20 +380,21 @@ export default function RulesPage() {
         ></TextInput>
       </Group>
       {rulesPageData.groups.length === 0 ? (
-        <Alert title="No rules found" icon={<IconInfoCircle />}>
-          No rules found.
+        <Alert title={t("alerts.noRulesFound")} icon={<IconInfoCircle />}>
+          {t("alerts.noRulesFound")}.
         </Alert>
       ) : (
         !showEmptyGroups &&
         rulesPageData.groups.length !== shownGroups.length && (
           <Alert
-            title="Hiding groups with no matching rules"
+            title={t("alerts.hidingEmptyGroups")}
             icon={<IconInfoCircle />}
           >
-            Hiding {rulesPageData.groups.length - shownGroups.length} empty
-            groups due to filters or no rules.
+            {t("alerts.emptyGroupsSummary", {
+              count: rulesPageData.groups.length - shownGroups.length,
+            })}
             <Anchor ml="md" fz="1em" onClick={() => setShowEmptyGroups(true)}>
-              Show empty groups
+              {t("alerts.showEmptyGroups")}
             </Anchor>
           </Alert>
         )

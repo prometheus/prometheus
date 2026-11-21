@@ -41,6 +41,7 @@ import { KVSearch } from "@nexucis/kvsearch";
 import { inputIconStyle } from "../styles";
 import CustomInfiniteScroll from "../components/CustomInfiniteScroll";
 import classes from "./AlertsPage.module.css";
+import { useI18n } from "../i18nContext";
 
 type AlertsPageData = {
   // How many rules are in each state across all groups.
@@ -155,6 +156,7 @@ const buildAlertsPageData = (
 const emptyStateFilter: string[] = [];
 
 export default function AlertsPage() {
+  const { t } = useI18n();
   // Fetch the alerting rules data.
   const { data } = useSuspenseAPIQuery<AlertingRulesResult>({
     path: `/rules`,
@@ -263,26 +265,25 @@ export default function AlertsPage() {
             </Group>
           </Group>
           {g.counts.total === 0 ? (
-            <Alert title="No rules" icon={<IconInfoCircle />}>
-              No rules in this group.
+            <Alert title={t("alerts.noRules")} icon={<IconInfoCircle />}>
+              {t("alerts.noRulesInGroup")}
               <Anchor
                 ml="md"
                 fz="1em"
                 onClick={() => setShowEmptyGroups(false)}
               >
-                Hide empty groups
+                {t("alerts.hideEmptyGroups")}
               </Anchor>
             </Alert>
           ) : g.rules.length === 0 ? (
-            <Alert title="No matching rules" icon={<IconInfoCircle />}>
-              No rules in this group match your filter criteria (omitted{" "}
-              {g.counts.total} filtered rules).
+            <Alert title={t("alerts.noMatchingRules")} icon={<IconInfoCircle />}>
+              {t("alerts.omittedRules", { count: g.counts.total })}
               <Anchor
                 ml="md"
                 fz="1em"
                 onClick={() => setShowEmptyGroups(false)}
               >
-                Hide empty groups
+                {t("alerts.hideEmptyGroups")}
               </Anchor>
             </Alert>
           ) : (
@@ -356,10 +357,10 @@ export default function AlertsPage() {
                                       <Table.Tr
                                         style={{ whiteSpace: "nowrap" }}
                                       >
-                                        <Table.Th>Alert labels</Table.Th>
-                                        <Table.Th>State</Table.Th>
-                                        <Table.Th>Active Since</Table.Th>
-                                        <Table.Th>Value</Table.Th>
+                                        <Table.Th>{t("alerts.alertLabels")}</Table.Th>
+                                        <Table.Th>{t("alerts.state")}</Table.Th>
+                                        <Table.Th>{t("alerts.activeSince")}</Table.Th>
+                                        <Table.Th>{t("alerts.value")}</Table.Th>
                                       </Table.Tr>
                                     </Table.Thead>
                                     <Table.Tbody>
@@ -439,7 +440,7 @@ export default function AlertsPage() {
           )}
         </Card>
       )),
-    [currentPageGroups, showAnnotations, setShowEmptyGroups]
+    [currentPageGroups, showAnnotations, setShowEmptyGroups, t]
   );
 
   return (
@@ -461,14 +462,14 @@ export default function AlertsPage() {
             o as keyof typeof alertsPageData.globalCounts
             ]
           }
-          placeholder="Filter by rule group state"
+          placeholder={t("alerts.filterByRuleState")}
           values={(stateFilter?.filter((v) => v !== null) as string[]) || []}
           onChange={(values) => setStateFilter(values)}
         />
         <TextInput
           flex={1}
           leftSection={<IconSearch style={inputIconStyle} />}
-          placeholder="Filter by rule name or labels"
+          placeholder={t("alerts.filterByRuleName")}
           value={searchFilter || ""}
           onChange={(event) =>
             setSearchFilter(event.currentTarget.value || null)
@@ -476,20 +477,21 @@ export default function AlertsPage() {
         ></TextInput>
       </Group>
       {alertsPageData.groups.length === 0 ? (
-        <Alert title="No rules found" icon={<IconInfoCircle />}>
-          No rules found.
+        <Alert title={t("alerts.noRulesFound")} icon={<IconInfoCircle />}>
+          {t("alerts.noRulesFound")}.
         </Alert>
       ) : (
         !showEmptyGroups &&
         alertsPageData.groups.length !== shownGroups.length && (
           <Alert
-            title="Hiding groups with no matching rules"
+            title={t("alerts.hidingEmptyGroups")}
             icon={<IconInfoCircle />}
           >
-            Hiding {alertsPageData.groups.length - shownGroups.length} empty
-            groups due to filters or no rules.
+            {t("alerts.emptyGroupsSummary", {
+              count: alertsPageData.groups.length - shownGroups.length,
+            })}
             <Anchor ml="md" fz="1em" onClick={() => setShowEmptyGroups(true)}>
-              Show empty groups
+              {t("alerts.showEmptyGroups")}
             </Anchor>
           </Alert>
         )

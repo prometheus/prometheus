@@ -70,6 +70,7 @@ import { ReactRouter6Adapter } from "use-query-params/adapters/react-router-6";
 import ServiceDiscoveryPage from "./pages/service-discovery/ServiceDiscoveryPage";
 import AlertmanagerDiscoveryPage from "./pages/AlertmanagerDiscoveryPage";
 import { actionIconStyle, navIconStyle } from "./styles";
+import { useI18n } from "./i18nContext";
 
 import {
   CodeHighlightAdapterProvider,
@@ -87,14 +88,14 @@ const queryClient = new QueryClient();
 
 const mainNavPages = [
   {
-    title: "Query",
+    titleKey: "nav.query",
     path: "/query",
     icon: <IconSearch style={navIconStyle} />,
     element: <QueryPage />,
     inAgentMode: false,
   },
   {
-    title: "Alerts",
+    titleKey: "nav.alerts",
     path: "/alerts",
     icon: <IconBellFilled style={navIconStyle} />,
     element: <AlertsPage />,
@@ -104,21 +105,21 @@ const mainNavPages = [
 
 const monitoringStatusPages = [
   {
-    title: "Target health",
+    titleKey: "nav.targetHealth",
     path: "/targets",
     icon: <IconHeartRateMonitor style={navIconStyle} />,
     element: <TargetsPage />,
     inAgentMode: true,
   },
   {
-    title: "Rule health",
+    titleKey: "nav.ruleHealth",
     path: "/rules",
     icon: <IconTable style={navIconStyle} />,
     element: <RulesPage />,
     inAgentMode: false,
   },
   {
-    title: "Service discovery",
+    titleKey: "nav.serviceDiscovery",
     path: "/service-discovery",
     icon: <IconCloudDataConnection style={navIconStyle} />,
     element: <ServiceDiscoveryPage />,
@@ -128,35 +129,35 @@ const monitoringStatusPages = [
 
 const serverStatusPages = [
   {
-    title: "Runtime & build information",
+    titleKey: "nav.runtimeBuildInformation",
     path: "/status",
     icon: <IconInfoCircle style={navIconStyle} />,
     element: <StatusPage />,
     inAgentMode: true,
   },
   {
-    title: "TSDB status",
+    titleKey: "nav.tsdbStatus",
     path: "/tsdb-status",
     icon: <IconDatabase style={navIconStyle} />,
     element: <TSDBStatusPage />,
     inAgentMode: false,
   },
   {
-    title: "Command-line flags",
+    titleKey: "nav.commandLineFlags",
     path: "/flags",
     icon: <IconFlag style={navIconStyle} />,
     element: <FlagsPage />,
     inAgentMode: true,
   },
   {
-    title: "Configuration",
+    titleKey: "nav.configuration",
     path: "/config",
     icon: <IconServerCog style={navIconStyle} />,
     element: <ConfigPage />,
     inAgentMode: true,
   },
   {
-    title: "Alertmanager discovery",
+    titleKey: "nav.alertmanagerDiscovery",
     path: "/alertmanager-discovery",
     icon: <IconBell style={navIconStyle} />,
     element: <AlertmanagerDiscoveryPage />,
@@ -189,6 +190,7 @@ const navLinkXPadding = "md";
 
 function App() {
   const [opened, { toggle }] = useDisclosure();
+  const { t } = useI18n();
 
   const { agentMode, consolesLink, pathPrefix } = useSettings();
 
@@ -202,7 +204,7 @@ function App() {
           leftSection={<IconDeviceDesktopAnalytics style={navIconStyle} />}
           px={navLinkXPadding}
         >
-          Consoles
+          {t("nav.consoles")}
         </Button>
       )}
 
@@ -217,7 +219,7 @@ function App() {
             leftSection={p.icon}
             px={navLinkXPadding}
           >
-            {p.title}
+            {t(p.titleKey)}
           </Button>
         ))}
 
@@ -240,7 +242,7 @@ function App() {
                       px={navLinkXPadding}
                       onClick={(e) => e.preventDefault()}
                     >
-                      Status <IconChevronRight style={navIconStyle} /> {p.title}
+                      {t("nav.status")} <IconChevronRight style={navIconStyle} /> {t(p.titleKey)}
                     </Button>
                   </Menu.Target>
                 }
@@ -256,7 +258,7 @@ function App() {
                   rightSection={<IconChevronDown style={navIconStyle} />}
                   px={navLinkXPadding}
                 >
-                  Status
+                  {t("nav.status")}
                 </Button>
               </Menu.Target>
             }
@@ -264,7 +266,7 @@ function App() {
         </Routes>
 
         <Menu.Dropdown>
-          <Menu.Label>Monitoring status</Menu.Label>
+          <Menu.Label>{t("nav.monitoringStatus")}</Menu.Label>
           {monitoringStatusPages
             .filter((p) => !agentMode || p.inAgentMode)
             .map((p) => (
@@ -274,12 +276,12 @@ function App() {
                 to={p.path}
                 leftSection={p.icon}
               >
-                {p.title}
+                {t(p.titleKey)}
               </Menu.Item>
             ))}
 
           <Menu.Divider />
-          <Menu.Label>Server status</Menu.Label>
+          <Menu.Label>{t("nav.serverStatus")}</Menu.Label>
           {serverStatusPages
             .filter((p) => !agentMode || p.inAgentMode)
             .map((p) => (
@@ -289,7 +291,7 @@ function App() {
                 to={p.path}
                 leftSection={p.icon}
               >
-                {p.title}
+                {t(p.titleKey)}
               </Menu.Item>
             ))}
         </Menu.Dropdown>
@@ -307,8 +309,8 @@ function App() {
         href="https://prometheus.io/docs/prometheus/latest/getting_started/"
         target="_blank"
         color="gray"
-        title="Documentation"
-        aria-label="Documentation"
+        title={t("nav.documentation")}
+        aria-label={t("nav.documentation")}
         size={rem(32)}
       >
         <IconBook style={actionIconStyle} />
