@@ -967,3 +967,107 @@ PromQL(VectorSelector(Identifier))
 
 ==>
 PromQL(BinaryExpr(BinaryExpr(NumberDurationLiteral,Mul,NumberDurationLiteral),BitXor,NumberDurationLiteral))
+
+# Function histogram_quantiles
+
+histogram_quantiles(foo, "q", 0.5, 0.9)
+
+==>
+
+PromQL(FunctionCall(FunctionIdentifier(HistogramQuantiles),FunctionCallBody(VectorSelector(Identifier),StringLiteral,NumberDurationLiteral,NumberDurationLiteral)))
+
+# Function histogram_stddev
+
+histogram_stddev(foo)
+
+==>
+
+PromQL(FunctionCall(FunctionIdentifier(HistogramStdDev),FunctionCallBody(VectorSelector(Identifier))))
+
+# Function histogram_stdvar
+
+histogram_stdvar(foo)
+
+==>
+
+PromQL(FunctionCall(FunctionIdentifier(HistogramStdVar),FunctionCallBody(VectorSelector(Identifier))))
+
+# Function info
+
+info(foo)
+
+==>
+
+PromQL(FunctionCall(FunctionIdentifier(Info),FunctionCallBody(VectorSelector(Identifier))))
+
+# Function mad_over_time
+
+mad_over_time(foo[5m])
+
+==>
+
+PromQL(FunctionCall(FunctionIdentifier(MadOverTime),FunctionCallBody(MatrixSelector(VectorSelector(Identifier),DurationExpr(NumberDurationLiteralInDurationContext)))))
+
+# Function start_timestamp
+
+start_timestamp(foo)
+
+==>
+
+PromQL(FunctionCall(FunctionIdentifier(StartTimestamp),FunctionCallBody(VectorSelector(Identifier))))
+
+# Function ts_of_first_over_time
+
+ts_of_first_over_time(foo[5m])
+
+==>
+
+PromQL(FunctionCall(FunctionIdentifier(TsOfFirstOverTime),FunctionCallBody(MatrixSelector(VectorSelector(Identifier),DurationExpr(NumberDurationLiteralInDurationContext)))))
+
+# Function ts_of_last_over_time
+
+ts_of_last_over_time(foo[5m])
+
+==>
+
+PromQL(FunctionCall(FunctionIdentifier(TsOfLastOverTime),FunctionCallBody(MatrixSelector(VectorSelector(Identifier),DurationExpr(NumberDurationLiteralInDurationContext)))))
+
+# Function ts_of_max_over_time
+
+ts_of_max_over_time(foo[5m])
+
+==>
+
+PromQL(FunctionCall(FunctionIdentifier(TsOfMaxOverTime),FunctionCallBody(MatrixSelector(VectorSelector(Identifier),DurationExpr(NumberDurationLiteralInDurationContext)))))
+
+# Function ts_of_min_over_time
+
+ts_of_min_over_time(foo[5m])
+
+==>
+
+PromQL(FunctionCall(FunctionIdentifier(TsOfMinOverTime),FunctionCallBody(MatrixSelector(VectorSelector(Identifier),DurationExpr(NumberDurationLiteralInDurationContext)))))
+
+# Aggregation count_values
+
+count_values("value", foo)
+
+==>
+
+PromQL(AggregateExpr(AggregateOp(CountValues),FunctionCallBody(StringLiteral,VectorSelector(Identifier))))
+
+# Fill modifier
+
+foo + fill(0) bar
+
+==>
+
+PromQL(BinaryExpr(VectorSelector(Identifier),Add,FillModifier(FillClause(Fill,NumberDurationLiteral)),VectorSelector(Identifier)))
+
+# Fill left and fill right modifiers
+
+foo + fill_left(0) fill_right(1) bar
+
+==>
+
+PromQL(BinaryExpr(VectorSelector(Identifier),Add,FillModifier(FillLeftClause(FillLeft,NumberDurationLiteral),FillRightClause(FillRight,NumberDurationLiteral)),VectorSelector(Identifier)))

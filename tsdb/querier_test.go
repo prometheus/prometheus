@@ -4541,3 +4541,166 @@ func TestSearchLabelValuesLimitAcrossMergedQueriers(t *testing.T) {
 	})
 	requireSearchValues(t, rs, []string{"a_metric", "m_metric"})
 }
+
+// countingPostingsIndexReader counts Postings lookups per label name.
+type countingPostingsIndexReader struct {
+	IndexReader
+	calls map[string]int
+}
+
+func (r *countingPostingsIndexReader) Postings(ctx context.Context, name string, values ...string) (index.Postings, error) {
+	r.calls[name]++
+	return r.IndexReader.Postings(ctx, name, values...)
+}
+
+type countingFilter struct {
+	inner storage.Filter
+	calls int
+}
+
+func (f *countingFilter) Accept(v string) (bool, float64) {
+	f.calls++
+	return f.inner.Accept(v)
+}
+
+func TestLabelValuesWithMatchersValueFilter(t *testing.T) {
+	var (
+		labelSets []labels.Labels
+		allPods   []string
+		evenPods  []string
+	)
+	for i := range 2 * checkContextEveryNIterations {
+		pod := fmt.Sprintf("pod%03d", i)
+		labelSets = append(labelSets, labels.FromStrings("__name__", "up", "job", "api", "pod", pod))
+		allPods = append(allPods, pod)
+		if i%2 == 0 {
+			evenPods = append(evenPods, pod)
+		}
+	}
+	isEven := func(v string) bool {
+		n, err := strconv.Atoi(strings.TrimPrefix(v, "pod"))
+		return err == nil && n%2 == 0
+	}
+	jobAPI := labels.MustNewMatcher(labels.MatchEqual, "job", "api")
+
+	h, _ := newTestHead(t, 1000, compression.None, false)
+	app := h.AppenderV2(t.Context())
+	for _, ls := range labelSets {
+		_, err := app.Append(0, ls, 0, 2100, 1, nil, nil, storage.AOptions{})
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+
+	block, err := OpenBlock(nil, createBlockFromHead(t, t.TempDir(), h), nil, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, block.Close()) })
+
+	for _, backend := range []struct {
+		name   string
+		reader BlockReader
+	}{
+		{"Head", h},
+		{"Block", block},
+	} {
+		t.Run(backend.name, func(t *testing.T) {
+			ir, err := backend.reader.Index()
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, ir.Close()) })
+
+			t.Run("drops rejected values before their postings lookups", func(t *testing.T) {
+				r := &countingPostingsIndexReader{IndexReader: ir, calls: map[string]int{}}
+				got, err := labelValuesWithMatchers(t.Context(), r, "pod", &storage.LabelHints{ValueFilter: isEven}, jobAPI)
+				require.NoError(t, err)
+				slices.Sort(got)
+				require.Equal(t, evenPods, got)
+				require.Equal(t, len(evenPods), r.calls["pod"])
+			})
+
+			t.Run("skips all postings work when it rejects every value", func(t *testing.T) {
+				r := &countingPostingsIndexReader{IndexReader: ir, calls: map[string]int{}}
+				rejectAll := func(string) bool { return false }
+				got, err := labelValuesWithMatchers(t.Context(), r, "pod", &storage.LabelHints{ValueFilter: rejectAll}, jobAPI)
+				require.NoError(t, err)
+				require.Empty(t, got)
+				require.Empty(t, r.calls)
+			})
+
+			t.Run("is not consulted without matchers for other labels", func(t *testing.T) {
+				calls := 0
+				countAll := func(string) bool {
+					calls++
+					return false
+				}
+				podMatcher := labels.MustNewMatcher(labels.MatchRegexp, "pod", "pod.*")
+				got, err := labelValuesWithMatchers(t.Context(), ir, "pod", &storage.LabelHints{ValueFilter: countAll}, podMatcher)
+				require.NoError(t, err)
+				slices.Sort(got)
+				require.Equal(t, allPods, got)
+				require.Zero(t, calls)
+			})
+
+			t.Run("is set by SearchLabelValues from its filter", func(t *testing.T) {
+				q, err := NewBlockQuerier(backend.reader, 1500, 2500)
+				require.NoError(t, err)
+				t.Cleanup(func() { require.NoError(t, q.Close()) })
+
+				f := &countingFilter{inner: prefixFilter{"pod00"}}
+				rs := q.(storage.Searcher).SearchLabelValues(t.Context(), "pod", &storage.SearchHints{Filter: f}, jobAPI)
+				want := []string{"pod000", "pod001", "pod002", "pod003", "pod004", "pod005", "pod006", "pod007", "pod008", "pod009"}
+				requireSearchValues(t, rs, want)
+				// The pre-filter sees every value; ApplySearchHints then scores the survivors.
+				require.Equal(t, len(allPods)+len(want), f.calls)
+			})
+
+			t.Run("stops when the context is cancelled", func(t *testing.T) {
+				ctx, cancel := context.WithCancel(t.Context())
+				defer cancel()
+				calls := 0
+				cancelOnFirstCall := func(string) bool {
+					calls++
+					cancel()
+					return true
+				}
+				_, err := labelValuesWithMatchers(ctx, ir, "pod", &storage.LabelHints{ValueFilter: cancelOnFirstCall}, jobAPI)
+				require.ErrorIs(t, err, context.Canceled)
+				require.Equal(t, checkContextEveryNIterations-1, calls)
+			})
+		})
+	}
+}
+
+func TestSearchLabelValuesFilterWithMatchersForOtherLabels(t *testing.T) {
+	var labelSets []labels.Labels
+	for i := range 20 {
+		labelSets = append(labelSets, labels.FromStrings("__name__", "up", "job", "api", "pod", fmt.Sprintf("pod%03d", i)))
+	}
+	labelSets = append(labelSets, labels.FromStrings("__name__", "up", "job", "db", "pod", "pod00_db"))
+	jobAPI := labels.MustNewMatcher(labels.MatchEqual, "job", "api")
+	want := []string{"pod000", "pod001", "pod002", "pod003", "pod004", "pod005", "pod006", "pod007", "pod008", "pod009"}
+
+	forEachSearchBackend(t, labelSets, func(t *testing.T, q storage.Searcher) {
+		t.Run("ascending", func(t *testing.T) {
+			rs := q.SearchLabelValues(t.Context(), "pod", &storage.SearchHints{Filter: prefixFilter{"pod00"}}, jobAPI)
+			requireSearchValues(t, rs, want)
+		})
+
+		t.Run("descending", func(t *testing.T) {
+			rs := q.SearchLabelValues(t.Context(), "pod", &storage.SearchHints{Filter: prefixFilter{"pod00"}, OrderBy: storage.OrderByValueDesc}, jobAPI)
+			reversed := slices.Clone(want)
+			slices.Reverse(reversed)
+			requireSearchValues(t, rs, reversed)
+		})
+
+		t.Run("by score", func(t *testing.T) {
+			rs := q.SearchLabelValues(t.Context(), "pod", &storage.SearchHints{Filter: prefixFilter{"pod00"}, OrderBy: storage.OrderByScoreDesc}, jobAPI)
+			got := collectSearchResultSet(t, rs)
+			gotValues := make([]string, len(got))
+			for i, r := range got {
+				gotValues[i] = r.Value
+				require.Equal(t, 1.0, r.Score)
+			}
+			slices.Sort(gotValues)
+			require.Equal(t, want, gotValues)
+		})
+	})
+}

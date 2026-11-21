@@ -1601,7 +1601,8 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_consul_address`: the address of the target
 * `__meta_consul_dc`: the datacenter name for the target
 * `__meta_consul_health`: the health status of the service
-* `__meta_consul_partition`: the admin partition name where the service is registered
+* `__meta_consul_namespace`: the namespace where the service is registered (Consul Enterprise only)
+* `__meta_consul_partition`: the admin partition name where the service is registered (Consul Enterprise only)
 * `__meta_consul_metadata_<key>`: each node metadata key value of the target
 * `__meta_consul_node`: the node name defined for the target
 * `__meta_consul_service_address`: the service address of the target
@@ -2200,11 +2201,11 @@ For OVHcloud's [public cloud instances](https://www.ovhcloud.com/en/public-cloud
 * `__meta_ovhcloud_vps_display_name`: the display name of the server
 * `__meta_ovhcloud_vps_ipv4`: the IPv4 of the server
 * `__meta_ovhcloud_vps_ipv6`: the IPv6 of the server
-* `__meta_ovhcloud_vps_keymap`: the KVM keyboard layout of the server
 * `__meta_ovhcloud_vps_maximum_additional_ip`: the maximum additional IPs of the server
 * `__meta_ovhcloud_vps_memory_limit`: the memory limit of the server
 * `__meta_ovhcloud_vps_memory`: the memory of the server
-* `__meta_ovhcloud_vps_monitoring_ip_blocks`: the monitoring IP blocks of the server
+* `__meta_ovhcloud_vps_model_name`: the model name of the server
+* `__meta_ovhcloud_vps_model_vcore`: the number of virtual cores of the server model
 * `__meta_ovhcloud_vps_name`: the name of the server
 * `__meta_ovhcloud_vps_netboot_mode`: the netboot mode of the server
 * `__meta_ovhcloud_vps_offer_type`: the offer type of the server
@@ -2381,6 +2382,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 
 * `__meta_gce_instance_id`: the numeric id of the instance
 * `__meta_gce_instance_name`: the name of the instance
+* `__meta_gce_instance_status`: the status of the instance
 * `__meta_gce_label_<labelname>`: each GCE label of the instance, with any unsupported characters converted to an underscore
 * `__meta_gce_machine_type`: full or partial URL of the machine type of the instance
 * `__meta_gce_metadata_<name>`: each metadata item of the instance
@@ -2444,6 +2446,7 @@ configuration file](/documentation/examples/prometheus-hetzner.yml).
 
 The following meta labels are available on all targets during [relabeling](#relabel_config):
 
+* `__meta_hetzner_role`: the role of the server (`hcloud` or `robot`)
 * `__meta_hetzner_server_id`: the ID of the server
 * `__meta_hetzner_server_name`: the name of the server
 * `__meta_hetzner_server_status`: the status of the server
@@ -2634,7 +2637,8 @@ Available meta labels:
 * `__meta_kubernetes_service_annotation_<annotationname>`: Each annotation from the service object.
 * `__meta_kubernetes_service_annotationpresent_<annotationname>`: "true" for each annotation of the service object.
 * `__meta_kubernetes_service_cluster_ip`: The cluster IP address of the service. (Does not apply to services of type ExternalName)
-* `__meta_kubernetes_service_loadbalancer_ip`: The IP address of the load balancer, taken from `status.loadBalancer.ingress` (comma-separated when there are multiple). Falls back to the deprecated `spec.loadBalancerIP`. (Applies to services of type LoadBalancer)
+* `__meta_kubernetes_service_loadbalancer_ip`: The IP address of the load balancer, taken from `spec.loadBalancerIP`. (Applies to services of type LoadBalancer; deprecated in favor of `__meta_kubernetes_service_loadbalancer_ips`)
+* `__meta_kubernetes_service_loadbalancer_ips`: Comma-separated list of the load balancer IP addresses, taken from `status.loadBalancer.ingress`, with surrounding commas (e.g. `,192.168.1.15,2001:db8::1,`). Empty when no ingress IPs are set. (Applies to services of type LoadBalancer)
 * `__meta_kubernetes_service_external_name`: The DNS name of the service. (Applies to services of type ExternalName)
 * `__meta_kubernetes_service_label_<labelname>`: Each label from the service object, with any unsupported characters converted to an underscore.
 * `__meta_kubernetes_service_labelpresent_<labelname>`: `true` for each label of the service object, with any unsupported characters converted to an underscore.
@@ -3282,9 +3286,10 @@ scrape targets from various APIs.
 
 The following meta labels are available on targets during [relabeling](#relabel_config):
 
+* `__meta_stackit_project`: The ID of the project the server belongs to.
 * `__meta_stackit_availability_zone`: The availability zone of the server.
-* `__meta_stackit_label_<labelname>`: Each server label, with unsupported characters replaced by underscores.</labelname>
-* `__meta_stackit_labelpresent_<labelname>`: "true" for each label of the server, with unsupported characters replaced by underscores.</labelname>
+* `__meta_stackit_label_<labelname>`: Each server label, with unsupported characters replaced by underscores.
+* `__meta_stackit_labelpresent_<labelname>`: "true" for each label of the server, with unsupported characters replaced by underscores.
 * `__meta_stackit_private_ipv4_<networkname>`: the private ipv4 address of the server within a given network
 * `__meta_stackit_public_ipv4`: the public ipv4 address of the server
 * `__meta_stackit_id`: The ID of the target.

@@ -586,6 +586,10 @@ URL query parameters:
 - `end=<rfc3339 | unix_timestamp>`: End timestamp.
 - `limit=<number>`: Maximum number of returned series. Optional. 0 means disabled.
 
+If `--enable-feature=metadata-default-time-range` is set and `start` or `end` is
+omitted, a default time range applies and the response contains a warning. See
+[Metadata default time range](../feature_flags.md#metadata-default-time-range).
+
 You can URL-encode these parameters directly in the request body by using the `POST` method and
 `Content-Type: application/x-www-form-urlencoded` header. This is useful when specifying a large
 or dynamic number of series selectors that may breach server-side URL character limits.
@@ -642,6 +646,10 @@ URL query parameters:
   series from which to read the label names. Optional.
 - `limit=<number>`: Maximum number of returned series. Optional. 0 means disabled.
 
+If `--enable-feature=metadata-default-time-range` is set and `start` or `end` is
+omitted, a default time range applies and the response contains a warning. See
+[Metadata default time range](../feature_flags.md#metadata-default-time-range).
+
 The `data` section of the JSON response is a list of string label names. Note
 that the `start` and `end` times are approximate and the result may contain
 label names for series which have no samples in the given interval.
@@ -696,6 +704,10 @@ URL query parameters:
 - `match[]=<series_selector>`: Repeated series selector argument that selects the
   series from which to read the label values. Optional.
 - `limit=<number>`: Maximum number of returned series. Optional. 0 means disabled.
+
+If `--enable-feature=metadata-default-time-range` is set and `start` or `end` is
+omitted, a default time range applies and the response contains a warning. See
+[Metadata default time range](../feature_flags.md#metadata-default-time-range).
 
 The `data` section of the JSON response is a list of string label values. Note
 that the `start` and `end` times are approximate and the result may contain
@@ -767,8 +779,12 @@ These endpoints return newline-delimited JSON with content type
 - Zero or more **batch lines**, each with a `results` array and an optional
   `warnings` array.
 - The stream then ends with **either** a **trailer line** (`status`, `has_more`,
-  optional `warnings`) **or** an **error line** (`status`, `errorType`, `error`)
-  if iteration failed mid-stream after the first batch was sent.
+  `returned`, optional `warnings`) **or** an **error line** (`status`,
+  `errorType`, `error`) if iteration failed mid-stream after the first batch was
+  sent.
+
+The `returned` field in the trailer is the number of results in the response,
+across all batch lines.
 
 Searches return results from supported storage backends. Participating
 remote-read storage that does not support search contributes a warning instead
@@ -780,7 +796,7 @@ only describes truncation of the available results by the requested limit.
 
 ```json
 {"results":[{"name":"http_requests_total","type":"counter","help":"Total HTTP requests."}]}
-{"status":"success","has_more":false}
+{"status":"success","has_more":false,"returned":1}
 ```
 
 If an error occurs **before** streaming starts, the API returns the usual
@@ -803,6 +819,13 @@ Common URL query parameters:
   search. Optional.
 - `search[]=<string>`: Repeated search string matched against names or values.
   Multiple values use OR semantics. Optional.
+- `search_expr=<string>`: Boolean search expression matched against names or
+  values. Optional. You cannot use it together with a non-empty `search[]`
+  value. Prometheus treats an empty value as absent. A value with only spaces
+  is not empty, so Prometheus returns an error for it. If the request repeats
+  `search_expr`, Prometheus uses only the first value. In a POST request, the
+  values in the body come before the values in the URL. See the search
+  expression syntax below.
 - `fuzz_threshold=<number>`: Fuzzy threshold from 0 to 100. Optional. A value
   of 0 is the lowest fuzzy threshold.
 - `fuzz_alg=<subsequence | jarowinkler>`: Matching algorithm. Optional. Default
@@ -822,6 +845,10 @@ Common URL query parameters:
 The `start` and `end` parameters narrow results to the selected time window.
 Results may include values from series active slightly outside that window,
 because Prometheus stores data in fixed-size blocks (typically 2 hours each).
+
+If `--enable-feature=metadata-default-time-range` is set and `start` or `end` is
+omitted, a default time range applies and the response contains a warning. See
+[Metadata default time range](../feature_flags.md#metadata-default-time-range).
 
 Additional parameters for `/api/v1/search/metric_names`:
 
@@ -856,6 +883,25 @@ Additional parameters for `/api/v1/search/label_values`:
 - `label=<label_name>`: Label name whose values should be searched. Required.
 - `sort_by=<alpha | score>`
 
+A `search_expr` expression combines terms with `NOT`, `AND`, `OR`, and
+parentheses. `NOT` binds more tightly than `AND`, and `AND` binds more tightly
+than `OR`. Operators are case-insensitive. Write each operator explicitly:
+`http requests` is not valid, but `http AND requests` is. To search for a term
+that contains a space, a parenthesis, or an operator word, put it in double
+quotes. Inside quotes, `\"` and `\\` are the only escapes.
+
+A positive term has an even number of `NOT` operators above it. A negated term
+has an odd number, so in `NOT NOT http` the term `http` is positive. Every
+accepting path must contain a positive term, so `NOT http` alone is not valid.
+An expression can have at most 4096 bytes, 32 terms, and 16 nesting levels.
+Each `NOT` and each parenthesized group adds one nesting level.
+
+A positive term uses the same matching as a `search[]` term, with `fuzz_alg`,
+`fuzz_threshold`, and `case_sensitive`. A negated term excludes only the values
+that contain the term as a substring. A fuzzy match of a negated term never
+excludes a value. The score of a result is the highest mean score of the
+positive terms on any path that accepts the value.
+
 This example searches metric names for autocomplete:
 
 ```bash
@@ -864,7 +910,7 @@ curl -g 'http://localhost:9090/api/v1/search/metric_names?search[]=http_req&sort
 
 ```json
 {"results":[{"name":"http_requests_total","type":"counter","help":"Total HTTP requests."}]}
-{"status":"success","has_more":false}
+{"status":"success","has_more":false,"returned":1}
 ```
 
 This example searches label values for the `instance` label within the `up`
@@ -876,7 +922,13 @@ curl -g 'http://localhost:9090/api/v1/search/label_values?label=instance&match[]
 
 ```json
 {"results":[{"value":"localhost:9090"},{"value":"localhost:9091"}]}
-{"status":"success","has_more":true}
+{"status":"success","has_more":true,"returned":2}
+```
+
+This example searches metric names that contain `http` but not `bucket`:
+
+```bash
+curl -G 'http://localhost:9090/api/v1/search/metric_names' --data-urlencode 'search_expr=http AND NOT bucket'
 ```
 
 ## Querying exemplars

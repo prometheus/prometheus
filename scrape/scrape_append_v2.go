@@ -157,6 +157,16 @@ func (sl *scrapeLoopAppenderV2) append(b []byte, contentType string, ts time.Tim
 	// Take an appender with limits.
 	app := appenderV2WithLimits(sl.AppenderV2, sl.sampleLimit, sl.bucketLimit, sl.maxSchema)
 
+	// Until a scrape of the target succeeds, for example after a restart, the
+	// storage may already hold the target's series while the cache does not.
+	// Take their labels from the storage, so that the cache does not keep a
+	// second copy. After that, a miss is usually a series new to the storage,
+	// and GetRef would only add a hash and a lookup.
+	var getRef storage.GetRef
+	if sl.cache.successfulCount == 0 {
+		getRef = storageGetRef(sl.AppenderV2)
+	}
+
 	defer func() {
 		if err != nil {
 			return
@@ -337,7 +347,7 @@ loop:
 				// The label set may be set to empty to indicate dropping.
 				if lset.IsEmpty() {
 					if seriesCached {
-						sl.cache.deleteSeries(metHash)
+						sl.cache.deleteSeries(metHash, seriesAlreadyScraped)
 					}
 					sl.cache.addDroppedWithMeta(metHash, origMFNameHandle, origMetaHandle)
 					continue
@@ -368,11 +378,19 @@ loop:
 						ref = ce.ref
 						sl.cache.setSeriesMeta(metHash, origMetaHandle, sampleMetaHandle, origMFNameHandle, sampleMFNameHandle)
 					} else {
-						sl.cache.deleteSeries(metHash)
+						sl.cache.deleteSeries(metHash, seriesAlreadyScraped)
 						ce = cacheEntry{}
 						seriesCached = false
 					}
 				}
+			}
+		}
+
+		if !seriesCached && getRef != nil {
+			// Parsers and relabeling build new labels on every call, so the next
+			// iteration does not modify the storage's labels held in lset.
+			if r, l := getRef.GetRef(lset, lset.Hash()); r != 0 {
+				ref, lset = r, l
 			}
 		}
 
@@ -482,6 +500,10 @@ loop:
 				if err == nil && seriesCached && ref != 0 {
 					sl.cache.updateRef(metHash, &ce, ref)
 				}
+			} else if !seriesCached {
+				// Keep ce.ref zero while only anchoring start time so staleness is not
+				// tracked before this scrape loop appends a sample.
+				ref = 0
 			}
 		}
 		sampleAdded, err = sl.checkAddError(met, exemplars, err, &sampleLimitErr, &bucketLimitErr, &appErrs)
@@ -530,7 +552,7 @@ loop:
 		// - Or we are synthesizing start times (stCache != nil), so we can clear stCache if it goes stale.
 		shouldTrackStaleness := parsedTimestamp == nil || sl.trackTimestampsStaleness || stCache != nil
 		if hasCE && ce.ref != 0 && shouldTrackStaleness && sampleAdded {
-			sl.cache.trackStaleness(ce.ref, ce.lset)
+			sl.cache.trackStaleness(metHash)
 		}
 
 		// Increment added even if there's an error so we correctly report the
