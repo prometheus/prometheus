@@ -167,20 +167,6 @@ When enabled together with [`metadata-wal-records`](#metadata-wal-records) or [`
 
 When disabled, recording rules only emit the static `help`, `type`, and `unit` fields explicitly configured under `metadata:`.
 
-## Delay compaction start time
-
-`--enable-feature=delayed-compaction`
-
-A random offset, up to `10%` of the chunk range, is added to the Head compaction start time. This assists Prometheus instances in avoiding simultaneous compactions and reduces the load on shared resources.
-
-Only auto Head compactions and the operations directly resulting from them are subject to this delay.
-
-In the event of multiple consecutive Head compactions being possible, only the first compaction experiences this delay.
-
-Note that during this delay, the Head continues its usual operations, which include serving and appending series.
-
-Despite the delay in compaction, the blocks produced are time-aligned in the same manner as they would be if the delay was not in place.
-
 ## Delay `__name__` label removal for PromQL engine
 
 `--enable-feature=promql-delayed-name-removal`
