@@ -34,6 +34,7 @@ import { LabelBadges } from "../../components/LabelBadges";
 import ErrorBoundary from "../../components/ErrorBoundary";
 import RelabelSteps from "./RelabelSteps";
 import ScrapePoolConfig from "../../components/ScrapePoolConfig";
+import { useI18n } from "../../i18nContext";
 
 type TargetLabels = {
   discoveredLabels: Labels;
@@ -163,6 +164,7 @@ const ScrapePoolList: FC<ScrapePoolListProp> = ({
   stateFilter,
   searchFilter,
 }) => {
+  const { t } = useI18n();
   const dispatch = useAppDispatch();
   const [showEmptyPools, setShowEmptyPools] = useLocalStorage<boolean>({
     key: "serviceDiscoveryPage.showEmptyPools",
@@ -210,8 +212,8 @@ const ScrapePoolList: FC<ScrapePoolListProp> = ({
   return (
     <Stack>
       {allPoolNames.length === 0 ? (
-        <Alert title="No scrape pools found" icon={<IconInfoCircle />}>
-          No scrape pools found.
+          <Alert title={t("targets.noPools")} icon={<IconInfoCircle />}>
+            {t("targets.noPools")}.
         </Alert>
       ) : (
         !showEmptyPools &&
@@ -223,7 +225,7 @@ const ScrapePoolList: FC<ScrapePoolListProp> = ({
             Hiding {allPoolNames.length - shownPoolNames.length} empty pools due
             to filters or no targets.
             <Anchor ml="md" fz="1em" onClick={() => setShowEmptyPools(true)}>
-              Show empty pools
+              {t("targets.showEmptyPools")}
             </Anchor>
           </Alert>
         )
@@ -275,7 +277,7 @@ const ScrapePoolList: FC<ScrapePoolListProp> = ({
                       aria-expanded={configExpanded}
                       aria-controls={configId}
                     >
-                      {configExpanded ? "Hide config" : "Show config"}
+                      {configExpanded ? t("targets.hideConfig") : t("targets.showConfig")}
                     </Anchor>
                     <Text c="gray.6">
                       {pool.active} / {pool.serverTotal}
@@ -324,18 +326,18 @@ const ScrapePoolList: FC<ScrapePoolListProp> = ({
                   </Alert>
                 )}
                 {pool.total === 0 ? (
-                  <Alert title="No targets" icon={<IconInfoCircle />}>
-                    No targets in this scrape pool.
+                  <Alert title={t("targets.noTargets")} icon={<IconInfoCircle />}>
+                    {t("targets.noTargetsActive")}
                     <Anchor
                       ml="md"
                       fz="1em"
                       onClick={() => setShowEmptyPools(false)}
                     >
-                      Hide empty pools
+                      {t("targets.hideEmptyPools")}
                     </Anchor>
                   </Alert>
                 ) : pool.targets.length === 0 ? (
-                  <Alert title="No matching targets" icon={<IconInfoCircle />}>
+                  <Alert title={t("targets.noMatching")} icon={<IconInfoCircle />}>
                     No targets in this pool match your filter criteria (omitted{" "}
                     {pool.total} filtered targets).
                     <Anchor
@@ -343,7 +345,7 @@ const ScrapePoolList: FC<ScrapePoolListProp> = ({
                       fz="1em"
                       onClick={() => setShowEmptyPools(false)}
                     >
-                      Hide empty pools
+                      {t("targets.hideEmptyPools")}
                     </Anchor>
                   </Alert>
                 ) : (
@@ -353,8 +355,8 @@ const ScrapePoolList: FC<ScrapePoolListProp> = ({
                       <Table>
                         <Table.Thead>
                           <Table.Tr>
-                            <Table.Th w="50%">Discovered labels</Table.Th>
-                            <Table.Th w="50%">Target labels</Table.Th>
+                            <Table.Th w="50%">{t("discovery.discoveredLabels")}</Table.Th>
+                            <Table.Th w="50%">{t("discovery.targetLabels")}</Table.Th>
                           </Table.Tr>
                         </Table.Thead>
                         <Table.Tbody>
@@ -374,7 +376,7 @@ const ScrapePoolList: FC<ScrapePoolListProp> = ({
                                 <Stack>
                                   {target.isDropped ? (
                                     <Text c="dimmed" fw="bold">
-                                      dropped
+                                      {t("discovery.dropped")}
                                     </Text>
                                   ) : (
                                     <LabelBadges
@@ -391,7 +393,7 @@ const ScrapePoolList: FC<ScrapePoolListProp> = ({
                                       });
                                     }}
                                   >
-                                    show relabeling
+                                    {t("discovery.showRelabeling")}
                                   </Anchor>
                                 </Stack>
                               </Table.Td>
@@ -411,11 +413,11 @@ const ScrapePoolList: FC<ScrapePoolListProp> = ({
         size="95%"
         opened={showRelabelingSteps !== null}
         onClose={() => setShowRelabelingSteps(null)}
-        title="Relabeling steps for target"
+        title={t("discovery.relabelingSteps")}
       >
         <ErrorBoundary
           key={location.pathname}
-          title="Error showing relabeling steps"
+          title={t("discovery.errorRelabeling")}
         >
           <Suspense
             fallback={
