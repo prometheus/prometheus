@@ -197,6 +197,12 @@ func (h *otlpWriteHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// Indicated an out of order sample is a bad request to prevent retries.
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
+	case errors.Is(err, otlptranslator.ErrInvalidLabels):
+		// Attributes that do not form a valid label set are not going to be
+		// accepted on a retry either, so this is a bad request rather than a
+		// server error.
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
 	default:
 		h.logger.Error("Error appending remote write", "err", err.Error())
 		http.Error(w, err.Error(), http.StatusInternalServerError)

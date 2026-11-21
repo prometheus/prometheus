@@ -23,6 +23,7 @@ import (
 	"math"
 	"time"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/otlptranslator"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
@@ -503,6 +504,19 @@ func (c *PrometheusConverter) setResourceContext(resource pcommon.Resource, sett
 		c.resourceLabels.instanceLabel = instance.AsString()
 	}
 
+	// These labels are merged into the label set of every datapoint of this
+	// resource, and nothing sanitizes the values, so check them once here
+	// instead of once per datapoint. The external labels come from the
+	// Prometheus configuration, which is validated when it is loaded.
+	if err := validateLabelValue(model.JobLabel, c.resourceLabels.jobLabel); err != nil {
+		c.clearResourceContext()
+		return err
+	}
+	if err := validateLabelValue(model.InstanceLabel, c.resourceLabels.instanceLabel); err != nil {
+		c.clearResourceContext()
+		return err
+	}
+
 	if settings.PromoteResourceAttributes != nil {
 		c.builder.Reset(labels.EmptyLabels())
 		if err := settings.PromoteResourceAttributes.addPromotedAttributes(c.builder, resourceAttrs, c.buildLabelName); err != nil {
@@ -510,6 +524,12 @@ func (c *PrometheusConverter) setResourceContext(resource pcommon.Resource, sett
 			return err
 		}
 		c.resourceLabels.promotedLabels = c.builder.Labels()
+		// Promoted attribute keys keep their original form when UTF-8 is
+		// allowed, so the names need checking as well as the values.
+		if err := validateLabels(c.resourceLabels.promotedLabels); err != nil {
+			c.clearResourceContext()
+			return err
+		}
 	}
 	return nil
 }
@@ -545,6 +565,22 @@ func (c *PrometheusConverter) setScopeContext(scope scope, settings Settings) er
 	}
 
 	c.scopeLabels.scopeAttrs = c.builder.Labels()
+	// As in setResourceContext, these labels end up in every datapoint of this
+	// scope, so they are checked once here.
+	if err := validateLabels(c.scopeLabels.scopeAttrs); err != nil {
+		c.scopeLabels = nil
+		return err
+	}
+	for _, l := range []labels.Label{
+		{Name: "otel_scope_name", Value: scope.name},
+		{Name: "otel_scope_version", Value: scope.version},
+		{Name: "otel_scope_schema_url", Value: scope.schemaURL},
+	} {
+		if err := validateLabelValue(l.Name, l.Value); err != nil {
+			c.scopeLabels = nil
+			return err
+		}
+	}
 	return nil
 }
 

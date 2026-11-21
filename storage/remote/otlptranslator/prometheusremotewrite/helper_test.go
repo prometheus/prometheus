@@ -109,6 +109,24 @@ func TestPrometheusConverter_createAttributes(t *testing.T) {
 	collisionWithExtraAttrs.PutStr("a.b", "1")
 	collisionWithExtraAttrs.PutStr("a_b", "2")
 	collisionWithExtraAttrs.PutStr("unrelated", "9")
+	// Attributes that do not form a valid label set.
+	utf8Attrs := pcommon.NewMap()
+	utf8Attrs.PutStr("metric.attr", "metric value")
+	utf8Attrs.PutStr("h\u00e9llo", "w\u00f6rld")
+	emptyNameAttrs := pcommon.NewMap()
+	emptyNameAttrs.PutStr("", "metric value")
+	invalidNameAttrs := pcommon.NewMap()
+	invalidNameAttrs.PutStr("metric\xff\xfeattr", "metric value")
+	invalidValueAttrs := pcommon.NewMap()
+	invalidValueAttrs.PutStr("metric.attr", "metric\xff\xfevalue")
+	invalidResource := pcommon.NewResource()
+	invalidResource.Attributes().PutStr("service.name", "service name")
+	invalidResource.Attributes().PutStr("resource.attr", "resource\xff\xfevalue")
+	invalidScope := scope{
+		name:       "scope name",
+		attributes: pcommon.NewMap(),
+	}
+	invalidScope.attributes.PutStr("scope.attr", "scope\xff\xfevalue")
 
 	testCases := []struct {
 		name                                 string
@@ -122,8 +140,10 @@ func TestPrometheusConverter_createAttributes(t *testing.T) {
 		ignoreAttrs                          []string
 		labelNameUnderscoreSanitization      bool
 		labelNamePreserveMultipleUnderscores bool
+		allowUTF8                            bool
 		expectedLabels                       labels.Labels
 		expectedCollisionWarnings            []string
+		expectedError                        string
 	}{
 		{
 			name:                      "Successful conversion without resource attribute promotion and without scope promotion",
@@ -481,6 +501,47 @@ func TestPrometheusConverter_createAttributes(t *testing.T) {
 				`OTLP data point attributes "a.b", "a_b" collide as label "a_b" after name sanitization, values are concatenated with ';'`,
 			},
 		},
+		{
+			name:      "Attribute keys are kept as they are when UTF-8 is allowed",
+			attrs:     utf8Attrs,
+			allowUTF8: true,
+			expectedLabels: labels.FromStrings(
+				"__name__", "test_metric",
+				"h\u00e9llo", "w\u00f6rld",
+				"instance", "service ID",
+				"job", "service name",
+				"metric.attr", "metric value",
+			),
+		},
+		{
+			name:          "Empty attribute key is rejected when UTF-8 is allowed",
+			attrs:         emptyNameAttrs,
+			allowUTF8:     true,
+			expectedError: `invalid label name ""`,
+		},
+		{
+			name:          "Attribute key that is not valid UTF-8 is rejected when UTF-8 is allowed",
+			attrs:         invalidNameAttrs,
+			allowUTF8:     true,
+			expectedError: "invalid label name",
+		},
+		{
+			name:          "Attribute value that is not valid UTF-8 is rejected",
+			attrs:         invalidValueAttrs,
+			expectedError: `invalid value "metric\xff\xfevalue" for label "metric.attr"`,
+		},
+		{
+			name:                         "Promoted resource attribute value that is not valid UTF-8 is rejected",
+			resource:                     invalidResource,
+			promoteAllResourceAttributes: true,
+			expectedError:                `invalid value "resource\xff\xfevalue" for label "resource_attr"`,
+		},
+		{
+			name:          "Scope attribute value that is not valid UTF-8 is rejected",
+			scope:         invalidScope,
+			promoteScope:  true,
+			expectedError: `invalid value "scope\xff\xfevalue" for label "otel_scope_scope_attr"`,
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -494,6 +555,7 @@ func TestPrometheusConverter_createAttributes(t *testing.T) {
 				PromoteScopeMetadata:                 tc.promoteScope,
 				LabelNameUnderscoreSanitization:      tc.labelNameUnderscoreSanitization,
 				LabelNamePreserveMultipleUnderscores: tc.labelNamePreserveMultipleUnderscores,
+				AllowUTF8:                            tc.allowUTF8,
 			}
 			// Use test case specific resource/attrs if provided, otherwise use defaults
 			// Check if tc.resource is initialized (non-zero) by trying to get its attributes
@@ -509,10 +571,19 @@ func TestPrometheusConverter_createAttributes(t *testing.T) {
 				testAttrs = tc.attrs
 			}
 			// Initialize resource and scope context as FromMetrics would.
-			require.NoError(t, c.setResourceContext(testResource, settings))
-			require.NoError(t, c.setScopeContext(tc.scope, settings))
-
-			lbls, err := c.createAttributes(testAttrs, settings, tc.ignoreAttrs, false, metadata.Metadata{}, model.MetricNameLabel, "test_metric")
+			var lbls labels.Labels
+			err := c.setResourceContext(testResource, settings)
+			if err == nil {
+				err = c.setScopeContext(tc.scope, settings)
+			}
+			if err == nil {
+				lbls, err = c.createAttributes(testAttrs, settings, tc.ignoreAttrs, false, metadata.Metadata{}, model.MetricNameLabel, "test_metric")
+			}
+			if tc.expectedError != "" {
+				require.ErrorIs(t, err, ErrInvalidLabels)
+				require.ErrorContains(t, err, tc.expectedError)
+				return
+			}
 			require.NoError(t, err)
 
 			testutil.RequireEqual(t, tc.expectedLabels, lbls)
