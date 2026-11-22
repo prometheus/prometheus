@@ -216,6 +216,17 @@ func TestRulesUnitTest(t *testing.T) {
 	})
 }
 
+func TestRulesUnitTestEvalErrorTime(t *testing.T) {
+	t.Parallel()
+	errs := ruleUnitTest("./testdata/bad-rules-error-start-timestamp-test.yml", promqltest.LazyLoaderOpts{}, parser.NewParser(parser.Options{}), nil, false, false, false, (&junitxml.JUnitXML{}).Suite("test"))
+	require.Len(t, errs, 2)
+	// The evaluation time in rule evaluation errors is relative to the start
+	// of the test, with or without a custom start_timestamp.
+	for _, err := range errs {
+		require.Contains(t, err.Error(), "rule: joined, time: 2m0s, err:")
+	}
+}
+
 func TestRulesUnitTestRun(t *testing.T) {
 	t.Parallel()
 	type args struct {

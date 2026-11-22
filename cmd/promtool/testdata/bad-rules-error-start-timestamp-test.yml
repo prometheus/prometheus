@@ -1,0 +1,33 @@
+rule_files:
+  - bad-rules-error.yml
+
+evaluation_interval: 1m
+
+tests:
+  # The recording rule starts failing 2m into the test, once join_1 has data.
+  - name: default_start_timestamp
+    input_series:
+      - series: 'join_1{a="1",b="2"}'
+        values: '_ _ 1'
+      - series: 'join_2{a="1",b="3"}'
+        values: 2
+      - series: 'join_2{a="1",b="4"}'
+        values: 3
+    promql_expr_test:
+      - expr: join_1
+        eval_time: 5m
+
+  # Same as above, with a custom start_timestamp: the reported time must
+  # still be relative to the start of the test.
+  - name: custom_start_timestamp
+    start_timestamp: "2024-01-01T00:00:00Z"
+    input_series:
+      - series: 'join_1{a="1",b="2"}'
+        values: '_ _ 1'
+      - series: 'join_2{a="1",b="3"}'
+        values: 2
+      - series: 'join_2{a="1",b="4"}'
+        values: 3
+    promql_expr_test:
+      - expr: join_1
+        eval_time: 5m
