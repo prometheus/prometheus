@@ -64,6 +64,54 @@ func TestGenerateBucket(t *testing.T) {
 	}
 }
 
+func TestDisplayHistogram(t *testing.T) {
+	// Not parallel: the test captures os.Stdout.
+	for _, tc := range []struct {
+		name  string
+		datas []int
+		want  string
+	}{
+		{
+			name:  "all values on a bucket boundary",
+			datas: []int{120, 120, 120, 120, 120, 120, 120, 120, 120, 120},
+			want: "samples per float chunk (min/avg/max): 120/120/120\n" +
+				"[120, 129]: 10 " + strings.Repeat("#", 100) + "\n\n",
+		},
+		{
+			name:  "values spread over two buckets",
+			datas: []int{110, 115, 120},
+			want: "samples per float chunk (min/avg/max): 110/115/120\n" +
+				"[110, 119]: 2 " + strings.Repeat("#", 66) + "\n" +
+				"[120, 129]: 1 " + strings.Repeat("#", 33) + "\n\n",
+		},
+		{
+			name:  "values inside a bucket",
+			datas: []int{101, 141},
+			want: "samples per float chunk (min/avg/max): 101/121/141\n" +
+				"[100, 109]: 1 " + strings.Repeat("#", 50) + "\n" +
+				"[110, 119]: 0 \n" +
+				"[120, 129]: 0 \n" +
+				"[130, 139]: 0 \n" +
+				"[140, 149]: 1 " + strings.Repeat("#", 50) + "\n\n",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			oldStdout := os.Stdout
+			r, w, err := os.Pipe()
+			require.NoError(t, err)
+			os.Stdout = w
+
+			displayHistogram("samples per float chunk", tc.datas, len(tc.datas))
+
+			w.Close()
+			os.Stdout = oldStdout
+			out, err := io.ReadAll(r)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, string(out))
+		})
+	}
+}
+
 // getDumpedSamples dumps samples and returns them.
 func getDumpedSamples(t *testing.T, databasePath, sandboxDirRoot string, mint, maxt int64, match []string, formatter SeriesSetFormatter) string {
 	t.Helper()
