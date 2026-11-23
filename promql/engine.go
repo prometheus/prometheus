@@ -3848,10 +3848,11 @@ func (ev *evaluator) matrixSelector(ctx context.Context, node *parser.MatrixSele
 //
 // This function will also optionally track corresponding StartTimestamps for
 // each float/histogram datapoint if the passed-in startTimestamps is non-nil.
-// In this case, the caller must always pass in startTimestamps with fields
-// whose lengths exactly match those of the "floats" and "histograms" slices.
-// Typically this is accomplished by passing in either all empty slices or the
-// values returned by a previous call.
+// Float points and float start timestamps are owned by floatsWin (whose backing
+// slice floatsWin.buf, not the returned offset subslice, must be passed to
+// putFPointSlice when finished). For histograms, the caller must keep
+// startTimestamps.Histograms length-aligned with histograms (typically by
+// passing empty slices or the values returned by a previous call).
 // ReadStep attributes newly consumed storage points to their evaluation step.
 // A negative value skips charging matrices materialized by a subquery, which
 // already charged its storage reads during evaluation.

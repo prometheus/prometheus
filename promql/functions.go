@@ -44,8 +44,10 @@ import (
 // Vector, scalars a Vector with one series whose value is the scalar
 // value, and nil for strings.
 //
-// Scalar vectors passed to range-vector functions may be reused between series
-// and steps. Function implementations must not retain or modify them.
+// Scalar vectors, matrixVals sample slices (Floats, Histograms), and
+// enh.StartTimestamps slices passed to range-vector functions may be reused
+// between series and steps. Function implementations must copy any data they
+// need to keep and must not retain or modify those slices.
 //
 // args are the original arguments to the function, where you can access
 // matrixSelectors, vectorSelectors, and StringLiterals.
