@@ -2423,6 +2423,10 @@ func (h *Head) getOrCreateWithOptionalID(id chunks.HeadSeriesRef, hash uint64, l
 		shardHash = labels.StableHash(lset)
 	}
 	optimisticallyCreatedSeries := newMemSeries(lset, id, shardHash, h.opts.IsolationDisabled, pendingCommit)
+	// Restored series and series created without a WAL need no new WAL series record.
+	if !pendingCommit || h.wal == nil {
+		optimisticallyCreatedSeries.walState.Store(seriesWALLogged)
+	}
 
 	assignID := id == 0
 	for {
@@ -3182,7 +3186,7 @@ type memSeries struct {
 	// been explicitly enabled in TSDB.
 	shardHash uint64
 
-	// Everything after here should only be accessed with the lock held.
+	// Except for atomic fields, everything after here requires the lock.
 	sync.Mutex
 
 	lset labels.Labels // Locking required with -tags dedupelabels, not otherwise.
@@ -3193,6 +3197,11 @@ type memSeries struct {
 	lastExemplarTs int64
 	// Whether an exemplar timestamp has been recorded, including zero or negative timestamps.
 	hasExemplar bool
+	// Tracks the WAL series record's status before other records reference this series.
+	// seriesWALUnlogged: The series record still needs to be logged.
+	// seriesWALWriting: The series record is being prepared or written to the WAL.
+	// seriesWALLogged: The series record was logged successfully or is not needed.
+	walState stdatomic.Uint32
 
 	// Immutable chunks on disk that have not yet gone into a block, in order of ascending time stamps.
 	// When compaction runs, chunks get moved into a block and all pointers are shifted like so:

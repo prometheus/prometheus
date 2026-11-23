@@ -668,6 +668,31 @@ func (w *WL) Log(recs ...[]byte) error {
 	return nil
 }
 
+// LogWithCallbacks prepares and writes one record while holding the log's write lock.
+// Returning an empty record from prepare skips the write. If finish is non-nil,
+// it is called with the write result before releasing the lock, including when
+// prepare returned an empty record. This lets callers publish state associated
+// with a record before another writer proceeds.
+//
+// The callbacks must not call methods on w that acquire its lock. The log does
+// not retain the prepared record after this method returns.
+func (w *WL) LogWithCallbacks(prepare func() []byte, finish func(error)) error {
+	w.mtx.Lock()
+	defer w.mtx.Unlock()
+
+	var err error
+	if rec := prepare(); len(rec) > 0 {
+		err = w.log(rec, true)
+		if err != nil {
+			w.metrics.writesFailed.Inc()
+		}
+	}
+	if finish != nil {
+		finish(err)
+	}
+	return err
+}
+
 // log writes rec to the log and forces a flush of the current page if:
 // - the final record of a batch
 // - the record is bigger than the page size

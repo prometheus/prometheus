@@ -21,15 +21,20 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 
 	"github.com/prometheus/client_golang/prometheus"
 	client_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
 	"go.uber.org/goleak"
 
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
+	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/util/compression"
 )
 
@@ -565,6 +570,75 @@ func BenchmarkWAL_Log(b *testing.B) {
 	}
 }
 
+// BenchmarkWAL_LogWithCallbacks measures sample encoding and publication of logged
+// timestamps, comparing callbacks under the WAL lock with the same work around Log.
+func BenchmarkWAL_LogWithCallbacks(b *testing.B) {
+	for _, sampleCount := range []int{1, 100, 1000} {
+		for _, compress := range compression.Types() {
+			for _, api := range []string{"Log", "LogWithCallbacks"} {
+				b.Run(fmt.Sprintf("samples=%d/compress=%s/api=%s", sampleCount, compress, api), func(b *testing.B) {
+					w, err := New(nil, nil, b.TempDir(), compress)
+					require.NoError(b, err)
+					defer w.Close()
+
+					series := make([]record.RefSeries, sampleCount)
+					samples := make([]record.RefSample, sampleCount)
+					loggedTimestamps := make([]atomic.Int64, sampleCount)
+					for i := range samples {
+						ref := chunks.HeadSeriesRef(i + 1)
+						series[i] = record.RefSeries{
+							Ref:    ref,
+							Labels: labels.FromStrings("__name__", "benchmark", "series", strconv.Itoa(i)),
+						}
+						samples[i].Ref = ref
+					}
+					var enc record.Encoder
+					// Log the series records before timing sample writes.
+					require.NoError(b, w.Log(enc.Series(series, nil)))
+					buf := enc.Samples(samples, nil)
+					b.SetBytes(int64(len(buf)))
+					b.ReportAllocs()
+
+					prepare := func() []byte {
+						for i := range samples {
+							// Advance from the last successfully logged timestamp.
+							samples[i].T = loggedTimestamps[i].Load() + 1
+							samples[i].V = float64(samples[i].T)
+						}
+						buf = enc.Samples(samples, buf[:0])
+						return buf
+					}
+					finish := func(err error) {
+						if err != nil {
+							return
+						}
+						for i, sample := range samples {
+							loggedTimestamps[i].Store(sample.T)
+						}
+					}
+
+					if api == "LogWithCallbacks" {
+						for b.Loop() {
+							require.NoError(b, w.LogWithCallbacks(prepare, finish))
+						}
+					} else {
+						for b.Loop() {
+							err := w.Log(prepare())
+							finish(err)
+							require.NoError(b, err)
+						}
+					}
+					// Exclude close/fsync and validation, matching BenchmarkWAL_Log.
+					b.StopTimer()
+					for i := range loggedTimestamps {
+						require.Equal(b, int64(b.N), loggedTimestamps[i].Load())
+					}
+				})
+			}
+		}
+	}
+}
+
 func TestUnregisterMetrics(t *testing.T) {
 	reg := prometheus.NewRegistry()
 
@@ -572,5 +646,70 @@ func TestUnregisterMetrics(t *testing.T) {
 		wl, err := New(promslog.NewNopLogger(), reg, t.TempDir(), compression.None)
 		require.NoError(t, err)
 		require.NoError(t, wl.Close())
+	}
+}
+
+func TestLogWithCallbacks(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		rec  []byte
+		fail bool
+	}{
+		{name: "record", rec: []byte("prepared")},
+		{name: "empty"},
+		{name: "partial write", rec: []byte("prepared"), fail: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w, err := New(nil, nil, t.TempDir(), compression.None)
+			require.NoError(t, err)
+			defer func() { require.NoError(t, w.Close()) }()
+			if tc.fail {
+				w.segment.SegmentFile = &faultySegmentFile{
+					SegmentFile: w.segment.SegmentFile, writeFailureAfter: 2, writeFailureErr: io.ErrShortWrite,
+				}
+			}
+			prepared, finished := false, false
+			err = w.LogWithCallbacks(func() []byte {
+				if w.mtx.TryRLock() {
+					w.mtx.RUnlock()
+					t.Fatal("record preparation must hold the write lock")
+				}
+				prepared = true
+				return tc.rec
+			}, func(err error) {
+				require.True(t, prepared)
+				if w.mtx.TryRLock() {
+					w.mtx.RUnlock()
+					t.Fatal("completion must hold the write lock")
+				}
+				if tc.fail {
+					require.ErrorIs(t, err, io.ErrShortWrite)
+				} else {
+					require.NoError(t, err)
+				}
+				finished = true
+			})
+			require.True(t, prepared)
+			require.True(t, finished)
+			if tc.fail {
+				require.ErrorIs(t, err, io.ErrShortWrite)
+			} else {
+				require.NoError(t, err)
+			}
+			// A subsequent writer proceeds after completion, including after a partial write.
+			require.NoError(t, w.Log([]byte("following")))
+			rd, err := NewSegmentsReader(w.Dir())
+			require.NoError(t, err)
+			defer func() { require.NoError(t, rd.Close()) }()
+			r := NewReader(rd)
+			if len(tc.rec) > 0 {
+				require.True(t, r.Next())
+				require.Equal(t, tc.rec, r.Record())
+			}
+			require.True(t, r.Next())
+			require.Equal(t, []byte("following"), r.Record())
+			require.False(t, r.Next())
+			require.NoError(t, r.Err())
+		})
 	}
 }

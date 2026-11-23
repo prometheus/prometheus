@@ -423,8 +423,8 @@ type headAppenderBase struct {
 	headMaxt      int64 // We track it here to not take the lock for every sample appended.
 	oooTimeWindow int64 // Use the same for the entire append, and don't load the atomic for each sample.
 
-	seriesRefs []record.RefSeries // New series records held by this appender.
-	series     []*memSeries       // New series held by this appender (using corresponding slices indexes from seriesRefs)
+	seriesRefs []record.RefSeries // New series records this appender may need to log.
+	series     []*memSeries       // Series created by this appender, with a creation reservation to release.
 	batches    []*appendBatch     // Holds all the other data to append. (In regular cases, there should be only one of these.)
 
 	typesInBatch map[chunks.HeadSeriesRef]sampleType // Which (one) sample type each series holds in the most recent batch.
@@ -502,6 +502,7 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 			return 0, storage.ErrOutOfOrderSample
 		}
 		s.markPendingCommit()
+		a.trackSeriesRecord(s, s.lset)
 	}
 	if delta > 0 {
 		a.head.metrics.oooHistogram.Observe(float64(delta) / 1000)
@@ -560,6 +561,7 @@ func (a *headAppender) AppendSTZeroSample(ref storage.SeriesRef, lset labels.Lab
 		return storage.SeriesRef(s.ref), storage.ErrOutOfOrderST
 	}
 	s.markPendingCommit()
+	a.trackSeriesRecord(s, s.lset)
 	s.Unlock()
 
 	b := a.getCurrentBatch(stFloat, s.ref)
@@ -592,10 +594,7 @@ func (a *headAppenderBase) getOrCreate(lset labels.Labels) (s *memSeries, create
 		return nil, false, err
 	}
 	if created {
-		a.seriesRefs = append(a.seriesRefs, record.RefSeries{
-			Ref:    s.ref,
-			Labels: lset,
-		})
+		a.trackSeriesRecord(s, lset)
 		a.series = append(a.series, s)
 	}
 	return s, created, nil
@@ -944,6 +943,7 @@ func (a *headAppenderBase) reserveSeriesForExemplar(s *memSeries, ts int64) *mem
 		if !s.isGCed() {
 			s.updateExemplarTimestampLocked(ts)
 			s.markPendingCommit()
+			a.trackSeriesRecord(s, s.lset)
 			s.Unlock()
 			return s
 		}
@@ -996,6 +996,7 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 		_, delta, err := s.appendableHistogram(t, h, a.headMaxt, a.minValidTime, a.oooTimeWindow, a.head)
 		if err == nil {
 			s.markPendingCommit()
+			a.trackSeriesRecord(s, s.lset)
 		}
 		s.Unlock()
 		if delta > 0 {
@@ -1031,6 +1032,7 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 		_, delta, err := s.appendableFloatHistogram(t, fh, a.headMaxt, a.minValidTime, a.oooTimeWindow, a.head)
 		if err == nil {
 			s.markPendingCommit()
+			a.trackSeriesRecord(s, s.lset)
 		}
 		s.Unlock()
 		if delta > 0 {
@@ -1109,6 +1111,7 @@ func (a *headAppender) AppendHistogramSTZeroSample(ref storage.SeriesRef, lset l
 		}
 
 		s.markPendingCommit()
+		a.trackSeriesRecord(s, s.lset)
 		s.Unlock()
 		sTyp := stHistogram
 		if h.UsesCustomBuckets() {
@@ -1153,6 +1156,7 @@ func (a *headAppender) AppendHistogramSTZeroSample(ref storage.SeriesRef, lset l
 		}
 
 		s.markPendingCommit()
+		a.trackSeriesRecord(s, s.lset)
 		s.Unlock()
 		sTyp := stFloatHistogram
 		if fh.UsesCustomBuckets() {
@@ -1186,6 +1190,9 @@ func (a *headAppender) UpdateMetadata(ref storage.SeriesRef, lset labels.Labels,
 
 	s.Lock()
 	hasNewMetadata := metadata.IsZeroHandle(s.meta) || s.meta.Value() != meta
+	if hasNewMetadata {
+		a.trackSeriesRecord(s, s.lset)
+	}
 	s.Unlock()
 
 	if hasNewMetadata {
@@ -1213,6 +1220,98 @@ func (a *headAppenderBase) GetRef(lset labels.Labels, hash uint64) (storage.Seri
 	return storage.SeriesRef(s.ref), s.labels()
 }
 
+const (
+	seriesWALUnlogged uint32 = iota
+	seriesWALWriting
+	seriesWALLogged
+)
+
+// trackSeriesRecord buffers a candidate WAL series record if the series still needs one.
+// The labels must be a snapshot obtained while holding the series lock, or the
+// immutable labels used to create the series.
+func (a *headAppenderBase) trackSeriesRecord(s *memSeries, lset labels.Labels) {
+	if s.walState.Load() == seriesWALLogged {
+		return
+	}
+	// Avoid consecutive duplicates - for example when we create a series and append its first sample.
+	// logSeriesRecords performs full deduplication.
+	if n := len(a.seriesRefs); n > 0 && a.seriesRefs[n-1].Ref == s.ref {
+		return
+	}
+	a.seriesRefs = append(a.seriesRefs, record.RefSeries{Ref: s.ref, Labels: lset})
+}
+
+// logSeriesRecords selects and writes the WAL series records still needed
+// under the WAL's existing write lock.
+// Looking up each ref there excludes series removed from the head index. If GC
+// unlinks a series after that lookup, its series record still precedes any
+// tombstone or replacement data, since those writes acquire the same WAL lock.
+func (a *headAppenderBase) logSeriesRecords(enc record.Encoder, buf []byte) ([]byte, error) {
+	if len(a.seriesRefs) == 0 {
+		return buf, nil
+	}
+
+	// Creation reservations keep our own series alive until commit or rollback
+	// finishes. They are ordered by ref, so the usual new-series batch needs no
+	// index lookups. Other appenders' series must still be checked against the head index.
+	owned := 0
+	lookup := func(decl record.RefSeries) *memSeries {
+		for owned < len(a.series) && a.series[owned].ref < decl.Ref {
+			owned++
+		}
+		if owned < len(a.series) && a.series[owned].ref == decl.Ref {
+			return a.series[owned]
+		}
+		if s := a.head.series.getByID(decl.Ref); s != nil {
+			return s
+		}
+		// A new series is visible by labels just before it is indexed by ref.
+		// Match the ref as well, since these labels may already have a replacement.
+		if s := a.head.series.getByHash(decl.Labels.Hash(), decl.Labels); s != nil && s.ref == decl.Ref {
+			return s
+		}
+		return nil
+	}
+	err := a.head.wal.LogWithCallbacks(func() []byte {
+		n := 0
+		for i, decl := range a.seriesRefs {
+			s := lookup(decl)
+			if s == nil || s.walState.Load() != seriesWALUnlogged {
+				continue
+			}
+			// This temporary state also deduplicates refs within this appender.
+			s.walState.Store(seriesWALWriting)
+			if n != i {
+				a.seriesRefs[n] = decl
+			}
+			n++
+		}
+		clear(a.seriesRefs[n:])
+		a.seriesRefs = a.seriesRefs[:n]
+		if n == 0 {
+			return nil
+		}
+		rec := enc.Series(a.seriesRefs, buf)
+		buf = rec[:0]
+		return rec
+	}, func(err error) {
+		state := seriesWALLogged
+		if err != nil {
+			state = seriesWALUnlogged
+		}
+		owned = 0
+		for _, decl := range a.seriesRefs {
+			if s := lookup(decl); s != nil {
+				s.walState.Store(state)
+			}
+		}
+	})
+	if err != nil {
+		return buf, fmt.Errorf("log series: %w", err)
+	}
+	return buf, nil
+}
+
 // log writes all headAppender's data to the WAL.
 func (a *headAppenderBase) log() error {
 	if a.head.wal == nil {
@@ -1225,13 +1324,9 @@ func (a *headAppenderBase) log() error {
 	var rec []byte
 	enc := record.Encoder{EnableSTStorage: a.storeST}
 
-	if len(a.seriesRefs) > 0 {
-		rec = enc.Series(a.seriesRefs, buf)
-		buf = rec[:0]
-
-		if err := a.head.wal.Log(rec); err != nil {
-			return fmt.Errorf("log series: %w", err)
-		}
+	var err error
+	if buf, err = a.logSeriesRecords(enc, buf); err != nil {
+		return err
 	}
 	for _, b := range a.batches {
 		if len(b.metadata) > 0 {
