@@ -1654,91 +1654,117 @@ func TestSeriesCompactionReclaimsChunksWithExemplars(t *testing.T) {
 
 // TestSeriesCompactionWithExemplarsPreservesWALSampleReferences verifies that
 // CompactSelectedSeries and CompactStaleHead retain WAL declarations
-// needed to replay samples after regular GC and checkpointing.
+// needed to replay samples and exemplars after regular GC and checkpointing.
 // Previously, exemplar protection kept empty series without eviction tombstones.
 // GC could then assign a WAL expiry below the last sample's timestamp, allowing
 // checkpointing to drop the declaration while that sample still needed replay.
+// Exemplar timestamps are not bounded by sample timestamps, so the declaration
+// must also be kept until the last exemplar's timestamp.
 func TestSeriesCompactionWithExemplarsPreservesWALSampleReferences(t *testing.T) {
-	for _, compaction := range []string{"selected", "stale"} {
-		t.Run(compaction, func(t *testing.T) {
-			const chunkRange = 1000
-			opts := DefaultOptions()
-			opts.MinBlockDuration = chunkRange
-			opts.MaxBlockDuration = chunkRange
-			opts.EnableExemplarStorage = true
-			opts.MaxExemplars = 10
-			db := newTestDB(t, withOpts(opts))
-			db.DisableCompactions()
-			ctx := context.Background()
+	for _, tc := range []struct {
+		name string
+		// Timestamp of the exemplar, appended with the first sample at 50.
+		exemplarTs int64
+		// Cutoff of the WAL checkpoint.
+		truncateMint int64
+	}{
+		{
+			// The cutoff is between the exemplar and the last sample, at 900.
+			name:         "exemplar before last sample",
+			exemplarTs:   100,
+			truncateMint: 150,
+		},
+		{
+			// The cutoff is between the last sample, at 900, and the exemplar.
+			name:         "exemplar after last sample",
+			exemplarTs:   950,
+			truncateMint: 920,
+		},
+	} {
+		for _, compaction := range []string{"selected", "stale"} {
+			t.Run(tc.name+"/"+compaction, func(t *testing.T) {
+				const chunkRange = 1000
+				opts := DefaultOptions()
+				opts.MinBlockDuration = chunkRange
+				opts.MaxBlockDuration = chunkRange
+				opts.EnableExemplarStorage = true
+				opts.MaxExemplars = 10
+				db := newTestDB(t, withOpts(opts))
+				db.DisableCompactions()
+				ctx := context.Background()
 
-			sel := labels.FromStrings("name", "selected")
-			app := db.AppenderV2(ctx)
-			selRef, err := app.Append(0, sel, 0, 50, 1.0, nil, nil, storage.AOptions{})
-			require.NoError(t, err)
-			e := exemplar.Exemplar{Labels: labels.FromStrings("trace_id", "abc123"), Value: 1, Ts: 100}
-			_, err = app.(storage.ExemplarAppenderV2).AppendExemplars(selRef, sel, []exemplar.Exemplar{e})
-			require.NoError(t, err)
-			require.NoError(t, app.Commit())
-
-			// Keep the declaration and exemplar in an older segment that will be checkpointed.
-			// Write the next sample to a segment outside the checkpoint's range.
-			const preRollSegments = 30
-			for range preRollSegments {
-				_, err := db.head.wal.NextSegment()
+				sel := labels.FromStrings("name", "selected")
+				app := db.AppenderV2(ctx)
+				selRef, err := app.Append(0, sel, 0, 50, 1.0, nil, nil, storage.AOptions{})
 				require.NoError(t, err)
-			}
+				e := exemplar.Exemplar{Labels: labels.FromStrings("trace_id", "abc123"), Value: 1, Ts: tc.exemplarTs}
+				_, err = app.(storage.ExemplarAppenderV2).AppendExemplars(selRef, sel, []exemplar.Exemplar{e})
+				require.NoError(t, err)
+				require.NoError(t, app.Commit())
 
-			// CompactStaleHead selects series whose latest sample is a stale marker.
-			v := 2.0
-			if compaction == "stale" {
-				v = math.Float64frombits(value.StaleNaN)
-			}
-			app = db.AppenderV2(ctx)
-			_, err = app.Append(selRef, sel, 0, 900, v, nil, nil, storage.AOptions{})
-			require.NoError(t, err)
-			require.NoError(t, app.Commit())
-			require.Equal(t, int64(900), db.Head().MaxTime())
-
-			// Persist both samples and evict the series with a WAL tombstone, even though
-			// its exemplar is still eligible for replay.
-			if compaction == "stale" {
-				require.NoError(t, db.CompactStaleHead())
-			} else {
-				require.NoError(t, db.CompactSelectedSeries([]storage.SeriesRef{selRef}))
-			}
-			require.Len(t, db.Blocks(), 1)
-
-			require.NoError(t, db.head.truncateMemory(e.Ts+1))
-			require.Nil(t, db.Head().series.getByID(chunks.HeadSeriesRef(selRef)), "sel must be fully evicted by now")
-
-			// Checkpoint the older segments with a cutoff between the exemplar and last
-			// sample timestamps. The declaration must be retained because the last sample's
-			// segment is outside the checkpoint and will still be replayed.
-			const truncateMint = 150
-			for range 10 {
-				db.head.lastWALTruncationTime.Store(0)
-				require.NoError(t, db.head.truncateWAL(truncateMint))
-				if _, _, err := wlog.LastCheckpoint(db.head.wal.Dir()); err == nil {
-					break
+				// Keep the declaration and exemplar in an older segment that will be checkpointed.
+				// Write the next sample to a segment outside the checkpoint's range.
+				const preRollSegments = 30
+				for range preRollSegments {
+					_, err := db.head.wal.NextSegment()
+					require.NoError(t, err)
 				}
-			}
-			_, _, err = wlog.LastCheckpoint(db.head.wal.Dir())
-			require.NoError(t, err, "a checkpoint must have been produced")
 
-			require.NoError(t, db.Close())
-			reopened, err := Open(db.Dir(), nil, nil, opts, nil)
-			require.NoError(t, err)
-			t.Cleanup(func() { require.NoError(t, reopened.Close()) })
+				// CompactStaleHead selects series whose latest sample is a stale marker.
+				v := 2.0
+				if compaction == "stale" {
+					v = math.Float64frombits(value.StaleNaN)
+				}
+				app = db.AppenderV2(ctx)
+				_, err = app.Append(selRef, sel, 0, 900, v, nil, nil, storage.AOptions{})
+				require.NoError(t, err)
+				require.NoError(t, app.Commit())
+				require.Equal(t, int64(900), db.Head().MaxTime())
 
-			// The samples are already preserved in a local block. Replay must still resolve
-			// the sample in the remaining WAL segment without an unknown-reference warning.
-			unknownSamples := prom_testutil.ToFloat64(reopened.head.metrics.walReplayUnknownRefsTotal.WithLabelValues("samples"))
-			require.Zero(t, unknownSamples,
-				"WAL replay must not report unknown series references for sel's second "+
-					"sample; a regular GC must not let an exemplar-protected series's "+
-					"declaration be dropped from the checkpoint before every WAL record it "+
-					"still has gets a chance to replay or be truncated away")
-		})
+				// Persist both samples and evict the series with a WAL tombstone, even though
+				// its exemplar is still eligible for replay.
+				if compaction == "stale" {
+					require.NoError(t, db.CompactStaleHead())
+				} else {
+					require.NoError(t, db.CompactSelectedSeries([]storage.SeriesRef{selRef}))
+				}
+				require.Len(t, db.Blocks(), 1)
+
+				require.NoError(t, db.head.truncateMemory(e.Ts+1))
+				require.Nil(t, db.Head().series.getByID(chunks.HeadSeriesRef(selRef)), "sel must be fully evicted by now")
+
+				// Checkpoint the older segments with a cutoff between the exemplar and last
+				// sample timestamps. The declaration must be retained because the later of
+				// the two is still replayed, either from the segment outside the checkpoint
+				// or from the checkpoint itself.
+				for range 10 {
+					db.head.lastWALTruncationTime.Store(0)
+					require.NoError(t, db.head.truncateWAL(tc.truncateMint))
+					if _, _, err := wlog.LastCheckpoint(db.head.wal.Dir()); err == nil {
+						break
+					}
+				}
+				_, _, err = wlog.LastCheckpoint(db.head.wal.Dir())
+				require.NoError(t, err, "a checkpoint must have been produced")
+
+				require.NoError(t, db.Close())
+				reopened, err := Open(db.Dir(), nil, nil, opts, nil)
+				require.NoError(t, err)
+				t.Cleanup(func() { require.NoError(t, reopened.Close()) })
+
+				// The samples are already preserved in a local block. Replay must still resolve
+				// the sample in the remaining WAL segment without an unknown-reference warning.
+				unknownSamples := prom_testutil.ToFloat64(reopened.head.metrics.walReplayUnknownRefsTotal.WithLabelValues("samples"))
+				require.Zero(t, unknownSamples,
+					"WAL replay must not report unknown series references for sel's second "+
+						"sample; a regular GC must not let an exemplar-protected series's "+
+						"declaration be dropped from the checkpoint before every WAL record it "+
+						"still has gets a chance to replay or be truncated away")
+				// The exemplar is replayed from the checkpoint or from a later segment.
+				unknownExemplars := prom_testutil.ToFloat64(reopened.head.metrics.walReplayUnknownRefsTotal.WithLabelValues("exemplars"))
+				require.Zero(t, unknownExemplars, "WAL replay must not report unknown series references for sel's exemplar")
+			})
+		}
 	}
 }
 
