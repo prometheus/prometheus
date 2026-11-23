@@ -844,23 +844,30 @@ load 10s
 		Parser:             parser.NewParser(promqltest.TestParserOpts),
 	})
 
-	ctx, cancel := context.WithCancel(t.Context())
-	defer cancel()
+	// Test both timestamp() and disabled start_timestamp(): when UseStartTimestamps
+	// is false, start_timestamp emits no samples so MaxSamples cannot bound the step
+	// loop, making periodic context cancellation checks the only exit path.
+	for _, expr := range []string{"timestamp(metric)", "start_timestamp(metric)"} {
+		t.Run(expr, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
 
-	counted := &sampleReadQueryable{Queryable: stor}
-	counted.onRead = func() {
-		if counted.reads == 1 {
-			cancel()
-		}
+			counted := &sampleReadQueryable{Queryable: stor}
+			counted.onRead = func() {
+				if counted.reads == 1 {
+					cancel()
+				}
+			}
+
+			q, err := engine.NewRangeQuery(ctx, counted, nil, expr, time.Unix(0, 0), time.Unix(3000, 0), time.Second)
+			require.NoError(t, err)
+			t.Cleanup(q.Close)
+
+			res := q.Exec(ctx)
+			var canceled promql.ErrQueryCanceled
+			require.ErrorAs(t, res.Err, &canceled)
+		})
 	}
-
-	q, err := engine.NewRangeQuery(ctx, counted, nil, "start_timestamp(metric)", time.Unix(0, 0), time.Unix(3000, 0), time.Second)
-	require.NoError(t, err)
-	t.Cleanup(q.Close)
-
-	res := q.Exec(ctx)
-	var canceled promql.ErrQueryCanceled
-	require.ErrorAs(t, res.Err, &canceled)
 }
 
 func TestEngineEvalStmtTimestamps(t *testing.T) {
