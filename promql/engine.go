@@ -1850,21 +1850,38 @@ type floatWinScan struct {
 	lastOverlapCurrSeq int // 1-based pair end seq (seq+1); 0 means no overlap recorded.
 }
 
-// prepare synchronizes cached pair-scan state with the current floatWindow
-// and drops event indices that slid out of the left side of the window.
-func (s *floatWinScan) prepare() {
+// advance synchronizes cached pair-scan state with floats, evicts events that
+// slid out of the left side of the window, advances nextPairSeq past newly
+// appended pairs, and returns the half-open logical sequence range [fromSeq, toSeq)
+// to scan. It returns ok == false if floats does not match s.win's active slice.
+func (s *floatWinScan) advance(floats []FPoint) (fromSeq, toSeq int, ok bool) {
 	w := &s.win
+	if len(floats) != w.endSeq-w.startSeq || len(w.buf)-w.off != len(floats) || (len(floats) > 0 && &floats[0] != &w.buf[w.off]) {
+		return 0, 0, false
+	}
 	if w.seriesID != s.seriesID || s.nextPairSeq < w.startSeq || s.nextPairSeq > w.endSeq {
 		s.seriesID = w.seriesID
 		s.nextPairSeq = w.startSeq
 		s.eventSeqs = s.eventSeqs[:0]
 		s.eventOff = 0
 		s.lastOverlapCurrSeq = 0
-		return
+	} else {
+		for s.eventOff < len(s.eventSeqs) && s.eventSeqs[s.eventOff] < w.startSeq {
+			s.eventOff++
+		}
+		if s.eventOff == len(s.eventSeqs) {
+			s.eventSeqs = s.eventSeqs[:0]
+			s.eventOff = 0
+		}
 	}
-	for s.eventOff < len(s.eventSeqs) && s.eventSeqs[s.eventOff] < w.startSeq {
-		s.eventOff++
+	fromSeq = s.nextPairSeq
+	if w.endSeq > w.startSeq {
+		toSeq = w.endSeq - 1
+		s.nextPairSeq = max(s.nextPairSeq, toSeq)
+	} else {
+		toSeq = fromSeq
 	}
+	return fromSeq, toSeq, true
 }
 
 // appendEvent records the logical sequence index of a pair event in the active window.
