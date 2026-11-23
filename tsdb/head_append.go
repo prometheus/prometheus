@@ -256,20 +256,20 @@ func (h *Head) putFloatBuffer(b []record.RefSample) {
 	h.floatsPool.Put(b[:0])
 }
 
-func (h *Head) getExemplarBuffer() []exemplarWithSeriesRef {
+func (h *Head) getExemplarBuffer() []exemplarWithSeries {
 	b := h.exemplarsPool.Get()
 	if b == nil {
-		return make([]exemplarWithSeriesRef, 0, 512)
+		return make([]exemplarWithSeries, 0, 512)
 	}
 	return b
 }
 
-func (h *Head) putExemplarBuffer(b []exemplarWithSeriesRef) {
+func (h *Head) putExemplarBuffer(b []exemplarWithSeries) {
 	if b == nil {
 		return
 	}
-	for i := range b { // Zero out to avoid retaining label data.
-		b[i].exemplar.Labels = labels.EmptyLabels()
+	for i := range b { // Zero out to avoid retaining label data and series.
+		b[i] = exemplarWithSeries{}
 	}
 
 	h.exemplarsPool.Put(b[:0])
@@ -354,8 +354,11 @@ func (h *Head) putBytesBuffer(b []byte) {
 	h.bytesPool.Put(b[:0])
 }
 
-type exemplarWithSeriesRef struct {
-	ref      storage.SeriesRef
+// exemplarWithSeries is an exemplar held by an appender. The appender holds a
+// pending-commit reservation on the series until the exemplar is committed or
+// rolled back.
+type exemplarWithSeries struct {
+	series   *memSeries
 	exemplar exemplar.Exemplar
 }
 
@@ -389,7 +392,7 @@ type appendBatch struct {
 	floatHistogramSeries []*memSeries                     // FloatHistogramSamples series corresponding to the samples held by this appender (using corresponding slice indices - same series may appear more than once).
 	metadata             []record.RefMetadata             // New metadata held by this appender.
 	metadataSeries       []*memSeries                     // Series corresponding to the metadata held by this appender.
-	exemplars            []exemplarWithSeriesRef          // New exemplars held by this appender.
+	exemplars            []exemplarWithSeries             // New exemplars held by this appender.
 }
 
 // close returns all the slices to the pools in Head and nil's them.
@@ -904,6 +907,9 @@ func (a *headAppender) AppendExemplar(ref storage.SeriesRef, lset labels.Labels,
 	if s == nil {
 		return 0, fmt.Errorf("unknown HeadSeriesRef when trying to add exemplar: %d", ref)
 	}
+	if hook := a.head.testAfterSeriesLookup; hook != nil {
+		hook(s)
+	}
 
 	// Ensure no empty labels have gotten through.
 	e.Labels = e.Labels.WithoutEmpty()
@@ -917,12 +923,37 @@ func (a *headAppender) AppendExemplar(ref storage.SeriesRef, lset labels.Labels,
 		return 0, err
 	}
 
-	b := a.getCurrentBatch(stNone, chunks.HeadSeriesRef(ref))
-	// Protect the series from ordinary compaction before the exemplar is committed.
-	s.updateExemplarTimestamp(e.Ts)
-	b.exemplars = append(b.exemplars, exemplarWithSeriesRef{ref, e})
+	if s = a.reserveSeriesForExemplar(s, e.Ts); s == nil {
+		return 0, fmt.Errorf("unknown HeadSeriesRef when trying to add exemplar: %d", ref)
+	}
+	b := a.getCurrentBatch(stNone, s.ref)
+	b.exemplars = append(b.exemplars, exemplarWithSeries{s, e})
 
 	return storage.SeriesRef(s.ref), nil
+}
+
+// reserveSeriesForExemplar takes a pending-commit reservation on s for an
+// exemplar with timestamp ts, so that the series cannot be garbage collected
+// before the exemplar is committed. Otherwise, the commit would log the
+// exemplar after the tombstone of the series. If s was garbage collected in the
+// meantime, it uses the series that replaced it, if any. It returns the reserved
+// series, or nil if there is none.
+func (a *headAppenderBase) reserveSeriesForExemplar(s *memSeries, ts int64) *memSeries {
+	for {
+		s.Lock()
+		if !s.isGCed() {
+			s.updateExemplarTimestampLocked(ts)
+			s.markPendingCommit()
+			s.Unlock()
+			return s
+		}
+		lset := s.lset // Safe to access; the series is locked.
+		s.Unlock()
+
+		if s = a.head.series.getByHash(lset.Hash(), lset); s == nil {
+			return nil
+		}
+	}
 }
 
 func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
@@ -1271,11 +1302,11 @@ func (a *headAppenderBase) log() error {
 	return nil
 }
 
-func exemplarsForEncoding(es []exemplarWithSeriesRef) []record.RefExemplar {
+func exemplarsForEncoding(es []exemplarWithSeries) []record.RefExemplar {
 	ret := make([]record.RefExemplar, 0, len(es))
 	for _, e := range es {
 		ret = append(ret, record.RefExemplar{
-			Ref:    chunks.HeadSeriesRef(e.ref),
+			Ref:    e.series.ref,
 			T:      e.exemplar.Ts,
 			V:      e.exemplar.Value,
 			Labels: e.exemplar.Labels,
@@ -1329,20 +1360,14 @@ type appenderCommitContext struct {
 func (a *headAppenderBase) commitExemplars(b *appendBatch) {
 	// No errors logging to WAL, so pass the exemplars along to the in memory storage.
 	for _, e := range b.exemplars {
-		s := a.head.series.getByID(chunks.HeadSeriesRef(e.ref))
-		if s == nil {
-			// This is very unlikely to happen, but we have seen it in the wild.
-			// It means that the series was truncated between AppendExemplar and Commit.
-			// See TestHeadCompactionWhileAppendAndCommitExemplar.
-			continue
-		}
+		s := e.series
 		// We don't instrument exemplar appends here, all is instrumented by storage.
-		if err := a.head.exemplars.AddExemplar(s.labels(), e.exemplar); err != nil {
-			if errors.Is(err, storage.ErrOutOfOrderExemplar) {
-				continue
-			}
+		if err := a.head.exemplars.AddExemplar(s.labels(), e.exemplar); err != nil && !errors.Is(err, storage.ErrOutOfOrderExemplar) {
 			a.head.logger.Debug("Unknown error while adding exemplar", "err", err)
 		}
+		s.Lock()
+		a.releasePendingCommit(s)
+		s.Unlock()
 	}
 }
 
@@ -1847,9 +1872,10 @@ func (a *headAppenderBase) releaseCreatedSeriesReservations() {
 }
 
 // releasePendingCommit releases one of the series' pending-sample reservations.
-// Reservations are taken once per queued sample and once per series created by
-// this appender. Decrementing without one would underflow into the packed flag
-// bits, so the accounting error is reported instead.
+// Reservations are taken once per queued sample, once per queued exemplar and
+// once per series created by this appender. Decrementing without one would
+// underflow into the packed flag bits, so the accounting error is reported
+// instead.
 //
 // Must be called with the series lock held.
 func (a *headAppenderBase) releasePendingCommit(s *memSeries) {
@@ -2449,6 +2475,11 @@ func (a *headAppenderBase) Rollback() (err error) {
 			series.cleanupAppendIDsBelow(a.cleanupAppendIDsBelow)
 			a.releasePendingCommit(series)
 			series.Unlock()
+		}
+		for _, e := range b.exemplars {
+			e.series.Lock()
+			a.releasePendingCommit(e.series)
+			e.series.Unlock()
 		}
 		b.close(h)
 	}

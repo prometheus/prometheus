@@ -224,7 +224,7 @@ func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t i
 	// Append exemplars if any and if storage was configured for it.
 	if len(opts.Exemplars) > 0 && a.head.opts.EnableExemplarStorage && a.head.opts.MaxExemplars.Load() > 0 {
 		// Currently only exemplars can return partial errors.
-		partialErr = a.appendExemplars(s, opts.Exemplars)
+		s, partialErr = a.appendExemplars(s, opts.Exemplars)
 	}
 	if a.head.opts.EnableMetadataWALRecords && !opts.Metadata.IsEmpty() {
 		s.Lock()
@@ -256,11 +256,15 @@ func (a *headAppenderV2) AppendExemplars(ref storage.SeriesRef, ls labels.Labels
 	if s == nil {
 		return 0, fmt.Errorf("unknown HeadSeriesRef when trying to add exemplars: %d: %w", ref, storage.ErrNotFound)
 	}
+	if hook := a.head.testAfterSeriesLookup; hook != nil {
+		hook(s)
+	}
 	if len(exemplars) == 0 || !a.head.opts.EnableExemplarStorage || a.head.opts.MaxExemplars.Load() <= 0 {
 		return storage.SeriesRef(s.ref), nil
 	}
 
-	return storage.SeriesRef(s.ref), a.appendExemplars(s, exemplars)
+	s, err := a.appendExemplars(s, exemplars)
+	return storage.SeriesRef(s.ref), err
 }
 
 // appendFloat appends v to s, and returns the series the sample was appended to, which
@@ -363,7 +367,10 @@ func (a *headAppenderV2) appendFloatHistogram(s *memSeries, st, t int64, fh *his
 	return s, nil
 }
 
-func (a *headAppenderV2) appendExemplars(s *memSeries, exemplars []exemplar.Exemplar) error {
+// appendExemplars appends the exemplars to s. It returns the series they were
+// appended to, which may differ from s if s was garbage-collected in the
+// meantime (see reserveSeriesForExemplar).
+func (a *headAppenderV2) appendExemplars(s *memSeries, exemplars []exemplar.Exemplar) (*memSeries, error) {
 	var errs []storage.ExemplarError
 	for i, e := range exemplars {
 		// Ensure no empty labels have gotten through.
@@ -379,15 +386,19 @@ func (a *headAppenderV2) appendExemplars(s *memSeries, exemplars []exemplar.Exem
 			}
 			continue
 		}
+		reserved := a.reserveSeriesForExemplar(s, e.Ts)
+		if reserved == nil {
+			errs = append(errs, storage.ExemplarError{Index: i, Err: fmt.Errorf("unknown HeadSeriesRef when trying to add exemplars: %d: %w", s.ref, storage.ErrNotFound)})
+			continue
+		}
+		s = reserved
 		b := a.getCurrentBatch(stNone, s.ref)
-		// Protect the series from compaction before the exemplar is committed.
-		s.updateExemplarTimestamp(e.Ts)
-		b.exemplars = append(b.exemplars, exemplarWithSeriesRef{storage.SeriesRef(s.ref), e})
+		b.exemplars = append(b.exemplars, exemplarWithSeries{s, e})
 	}
 	if len(errs) > 0 {
-		return &storage.AppendPartialError{ExemplarErrors: errs}
+		return s, &storage.AppendPartialError{ExemplarErrors: errs}
 	}
-	return nil
+	return s, nil
 }
 
 // NOTE(bwplotka): This feature might be deprecated and removed once PROM-60

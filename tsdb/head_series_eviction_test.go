@@ -626,6 +626,165 @@ func TestSeriesEviction_SeriesAreOnlyPublishedWhileTheyAreEvicted(t *testing.T) 
 	}
 }
 
+// evictionTestExemplarAppenders returns the ways of appending an exemplar without a sample. Each returns the
+// uncommitted appender and the ref of the series the exemplar was appended to.
+func evictionTestExemplarAppenders() map[string]func(*DB, storage.SeriesRef, labels.Labels, exemplar.Exemplar) (storage.AppenderTransaction, storage.SeriesRef, error) {
+	return map[string]func(*DB, storage.SeriesRef, labels.Labels, exemplar.Exemplar) (storage.AppenderTransaction, storage.SeriesRef, error){
+		"Appender": func(db *DB, ref storage.SeriesRef, lset labels.Labels, e exemplar.Exemplar) (storage.AppenderTransaction, storage.SeriesRef, error) {
+			app := db.Appender(context.Background())
+			ref, err := app.AppendExemplar(ref, lset, e)
+			return app, ref, err
+		},
+		"AppenderV2": func(db *DB, ref storage.SeriesRef, lset labels.Labels, e exemplar.Exemplar) (storage.AppenderTransaction, storage.SeriesRef, error) {
+			app := db.AppenderV2(context.Background())
+			ref, err := app.(storage.ExemplarAppenderV2).AppendExemplars(ref, lset, []exemplar.Exemplar{e})
+			return app, ref, err
+		},
+	}
+}
+
+// TestSeriesEviction_PendingExemplarProtectsSeries verifies that a series that only received an exemplar in an
+// uncommitted appender is not evicted. Otherwise, the commit logs the exemplar after the series' tombstone and
+// drops it from memory. Once the appender is committed or rolled back, the series can be evicted again.
+func TestSeriesEviction_PendingExemplarProtectsSeries(t *testing.T) {
+	for appName, appendExemplar := range evictionTestExemplarAppenders() {
+		for evictName, evict := range evictionTestEvictions() {
+			for _, commit := range []bool{true, false} {
+				t.Run(fmt.Sprintf("%s/%s/commit=%t", appName, evictName, commit), func(t *testing.T) {
+					testDB := newSeriesEvictionTestDB(t, 0)
+					db := testDB.db
+					head := db.Head()
+					lset := evictionTestLabels(0)
+
+					app, _, err := appendExemplar(db, testDB.evictedRefs[0], lset, exemplar.Exemplar{
+						Labels: labels.FromStrings("trace_id", "pending"), Value: 1, Ts: 300,
+					})
+					require.NoError(t, err)
+					require.NoError(t, evict(db, testDB.evictedRefs))
+					require.Equal(t, uint64(evictionTestSeries-evictionTestEvictedSeries+1), head.NumSeries())
+					if commit {
+						require.NoError(t, app.Commit())
+					} else {
+						require.NoError(t, app.Rollback())
+					}
+
+					expectedTraceID := "0"
+					if commit {
+						expectedTraceID = "pending"
+					}
+					q, err := head.ExemplarQuerier(t.Context())
+					require.NoError(t, err)
+					res, err := q.Select(0, 1000, []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "id", lset.Get("id"))})
+					require.NoError(t, err)
+					require.Len(t, res, 1)
+					require.Len(t, res[0].Exemplars, 1)
+					require.Equal(t, expectedTraceID, res[0].Exemplars[0].Labels.Get("trace_id"))
+
+					// The exemplar survives a restart.
+					opts := db.opts
+					require.NoError(t, db.Close())
+					db, err = Open(db.Dir(), nil, nil, opts, nil)
+					require.NoError(t, err)
+					t.Cleanup(func() { require.NoError(t, db.Close()) })
+					head = db.Head()
+					q, err = head.ExemplarQuerier(t.Context())
+					require.NoError(t, err)
+					res, err = q.Select(0, 1000, []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "id", lset.Get("id"))})
+					require.NoError(t, err)
+					require.Len(t, res, 1)
+					require.Len(t, res[0].Exemplars, 1)
+					require.Equal(t, expectedTraceID, res[0].Exemplars[0].Labels.Get("trace_id"))
+
+					// The appender released the series.
+					require.NoError(t, evict(db, testDB.evictedRefs))
+					require.Equal(t, uint64(evictionTestSeries-evictionTestEvictedSeries), head.NumSeries())
+					require.Equal(t, float64(0), prom_testutil.ToFloat64(head.metrics.pendingCommitUnderflow))
+				})
+			}
+		}
+	}
+}
+
+// TestSeriesEviction_ExemplarAppendRetriesAfterEviction verifies that an exemplar append that looked up a series
+// just before its eviction does not reserve the evicted series. It uses the series recreated with the same labels if
+// there is one, and fails otherwise.
+func TestSeriesEviction_ExemplarAppendRetriesAfterEviction(t *testing.T) {
+	for appName, appendExemplar := range evictionTestExemplarAppenders() {
+		for _, recreated := range []bool{true, false} {
+			t.Run(fmt.Sprintf("%s/recreated=%t", appName, recreated), func(t *testing.T) {
+				testDB := newSeriesEvictionTestDB(t, 0)
+				db := testDB.db
+				head := db.Head()
+				oldRef := testDB.evictedRefs[0]
+				lset := evictionTestLabels(0)
+				oldSeries := head.series.getByID(chunks.HeadSeriesRef(oldRef))
+				require.NotNil(t, oldSeries)
+
+				lookupDone := make(chan struct{})
+				resumeAppend := make(chan struct{})
+				// Pause after the appender resolves the old series, before it reserves it.
+				head.testAfterSeriesLookup = func(series *memSeries) {
+					if series != oldSeries {
+						return
+					}
+					close(lookupDone)
+					<-resumeAppend
+				}
+				t.Cleanup(func() { head.testAfterSeriesLookup = nil })
+
+				type result struct {
+					app storage.AppenderTransaction
+					ref storage.SeriesRef
+					err error
+				}
+				appendDone := make(chan result, 1)
+				go func() {
+					app, ref, err := appendExemplar(db, oldRef, lset, exemplar.Exemplar{
+						Labels: labels.FromStrings("trace_id", "pending"), Value: 1, Ts: 300,
+					})
+					appendDone <- result{app, ref, err}
+				}()
+				<-lookupDone
+
+				require.NoError(t, db.CompactSelectedSeries(testDB.evictedRefs))
+				var newRef storage.SeriesRef
+				if recreated {
+					app := db.Appender(context.Background())
+					var err error
+					newRef, err = app.Append(0, lset, 400, 1)
+					require.NoError(t, err)
+					require.NoError(t, app.Commit())
+					require.NotEqual(t, oldRef, newRef)
+				}
+				close(resumeAppend)
+				res := <-appendDone
+
+				if !recreated {
+					require.Error(t, res.err)
+					require.NoError(t, res.app.Commit())
+					require.Equal(t, float64(0), prom_testutil.ToFloat64(head.metrics.pendingCommitUnderflow))
+					return
+				}
+				require.NoError(t, res.err)
+				require.Equal(t, newRef, res.ref)
+				newSeries := head.series.getByID(chunks.HeadSeriesRef(newRef))
+				require.NotNil(t, newSeries)
+				newSeries.Lock()
+				pending := newSeries.pendingCommitCount()
+				newSeries.Unlock()
+				require.Equal(t, uint32(1), pending, "the exemplar must reserve the recreated series")
+
+				require.NoError(t, res.app.Commit())
+				newSeries.Lock()
+				pending = newSeries.pendingCommitCount()
+				newSeries.Unlock()
+				require.Equal(t, uint32(0), pending, "the commit must release the reservation")
+				require.Equal(t, float64(0), prom_testutil.ToFloat64(head.metrics.pendingCommitUnderflow))
+			})
+		}
+	}
+}
+
 type seriesEvictionPostDeletionCallback struct {
 	noopSeriesLifecycleCallback
 	preCreation  func(labels.Labels) error

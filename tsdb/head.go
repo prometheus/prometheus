@@ -98,7 +98,7 @@ type Head struct {
 	// TODO(bwplotka): Consider using record.Pools that's reused with WAL watchers.
 	refSeriesPool       zeropool.Pool[[]record.RefSeries]
 	floatsPool          zeropool.Pool[[]record.RefSample]
-	exemplarsPool       zeropool.Pool[[]exemplarWithSeriesRef]
+	exemplarsPool       zeropool.Pool[[]exemplarWithSeries]
 	histogramsPool      zeropool.Pool[[]record.RefHistogramSample]
 	floatHistogramsPool zeropool.Pool[[]record.RefFloatHistogramSample]
 	metadataPool        zeropool.Pool[[]record.RefMetadata]
@@ -3338,11 +3338,17 @@ func newMemSeries(lset labels.Labels, id chunks.HeadSeriesRef, shardHash uint64,
 // updateExemplarTimestamp records the latest exemplar time while holding the series lock.
 func (s *memSeries) updateExemplarTimestamp(ts int64) {
 	s.Lock()
+	s.updateExemplarTimestampLocked(ts)
+	s.Unlock()
+}
+
+// updateExemplarTimestampLocked records the latest exemplar time.
+// Must be called with the series lock held.
+func (s *memSeries) updateExemplarTimestampLocked(ts int64) {
 	if !s.hasExemplar || ts > s.lastExemplarTs {
 		s.lastExemplarTs = ts
 	}
 	s.hasExemplar = true
-	s.Unlock()
 }
 
 func (s *memSeries) minTime() int64 {
