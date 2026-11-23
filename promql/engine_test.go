@@ -7021,14 +7021,16 @@ load 10s
 	t.Cleanup(func() { s.Close() })
 	engine := newQueryCostEngine(t)
 	for _, tc := range []struct {
-		query  string
-		reads  int64
-		totals []int64
+		query    string
+		enableST bool
+		reads    int64
+		totals   []int64
 	}{
 		{query: "metric", reads: 8, totals: []int64{2, 2, 2, 2}},
 		{query: "abs(metric)", reads: 8, totals: []int64{2, 2, 2, 2}},
 		{query: "timestamp(metric)", reads: 8, totals: []int64{2, 2, 2, 2}},
 		{query: "start_timestamp(metric)", reads: 8, totals: []int64{2, 2, 2, 2}},
+		{query: "start_timestamp(metric)", enableST: true, reads: 8, totals: []int64{2, 2, 2, 2}},
 		{query: "rate(metric[20s])", reads: 16, totals: []int64{4, 4, 4, 4}},
 		{query: "metric + metric @ 100", reads: 10, totals: []int64{4, 4, 4, 4}},
 		// All child reads count against the budget, but totals include only consumed windows.
@@ -7048,13 +7050,31 @@ load 10s
 		{query: "quantile_over_time(time() / 1000, metric[20s:10s] @ end())", reads: 4, totals: []int64{4, 4, 4, 4}},
 	} {
 		for _, perStep := range []bool{false, true} {
-			t.Run(fmt.Sprintf("%s/perStep=%t", tc.query, perStep), func(t *testing.T) {
+			name := fmt.Sprintf("%s/perStep=%t", tc.query, perStep)
+			if tc.enableST {
+				name += "/enableST=true"
+			}
+			t.Run(name, func(t *testing.T) {
 				engine.SetQueryLimits(0, uint64(tc.reads), 0)
-				opts := promql.NewPrometheusQueryOpts(perStep, 0, nil)
+				var useST *bool
+				if tc.enableST {
+					v := true
+					useST = &v
+				}
+				opts := promql.NewPrometheusQueryOpts(perStep, 0, useST)
 				q, err := engine.NewRangeQuery(context.Background(), s, opts, tc.query, time.Unix(100, 0), time.Unix(200, 0), 30*time.Second)
 				require.NoError(t, err)
 				defer q.Close()
-				require.NoError(t, q.Exec(context.Background()).Err)
+				res := q.Exec(context.Background())
+				require.NoError(t, res.Err)
+				if tc.enableST {
+					mat, err := res.Matrix()
+					require.NoError(t, err)
+					require.Len(t, mat, 2)
+					for _, series := range mat {
+						require.Len(t, series.Floats, 4)
+					}
+				}
 				st := q.Stats().Samples
 				series := int64(2)
 				if tc.query == "metric + metric @ 100" {
