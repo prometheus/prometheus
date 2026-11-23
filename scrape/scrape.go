@@ -1063,10 +1063,13 @@ type scrapeCache struct {
 	// pointer-free open-addressed index (buckets []uint32, ~6.5 B/series).
 	// Each non-zero bucket packs an 8-bit hash tag in bits 24..31 and (idx+1)
 	// in bits 0..23 (up to maxCompactSlot series per target; overflowIndex
-	// handles larger targets). Both slices shrink on flush after cardinality spikes.
+	// handles larger targets). nextIdx predicts the next slot in exposition
+	// order so warm steady-state scrapes skip hash-table probes. Both slices
+	// shrink on flush after cardinality spikes.
 	entries       []cacheEntry
 	buckets       []uint32
 	overflowIndex map[uint64]uint32
+	nextIdx       uint32
 
 	// Three 1-bit-per-slot bitsets (0.375 B/series total, pointer-free,
 	// L1-resident even at 100k series):
@@ -1491,6 +1494,7 @@ func (c *scrapeCache) iterDone(flushCache bool) {
 
 	clear(c.seenBits)
 	c.seenSeries = 0
+	c.nextIdx = 0
 
 	// Orphans tracked in this iteration become stale candidates in the next one.
 	if len(c.orphans) > 0 {
@@ -1516,7 +1520,17 @@ func (c *scrapeCache) iterDone(flushCache bool) {
 
 func (c *scrapeCache) get(met []byte) (uint64, uint32, cacheEntry, bool, bool) {
 	h := xxhash.Sum64(met)
-	idx, ok := c.lookupIndex(h)
+	var (
+		idx uint32
+		ok  bool
+	)
+	if ni := c.nextIdx; ni < uint32(len(c.entries)) && c.entries[ni].metHash == h {
+		idx = ni
+		ok = true
+		c.nextIdx = ni + 1
+	} else if idx, ok = c.lookupIndex(h); ok {
+		c.nextIdx = idx + 1
+	}
 	if !ok {
 		return h, 0, cacheEntry{}, false, false
 	}
@@ -1527,6 +1541,21 @@ func (c *scrapeCache) get(met []byte) (uint64, uint32, cacheEntry, bool, bool) {
 		c.seenSeries++
 	}
 	return h, idx, c.entries[idx], true, alreadyScraped
+}
+
+// getReport looks up a report metric without disturbing the scraped-series cursor.
+func (c *scrapeCache) getReport(met []byte) (uint64, cacheEntry, bool) {
+	h := xxhash.Sum64(met)
+	idx, ok := c.lookupIndex(h)
+	if !ok {
+		return h, cacheEntry{}, false
+	}
+	w, mask := idx>>6, uint64(1)<<(idx&63)
+	if c.seenBits[w]&mask == 0 {
+		c.seenBits[w] |= mask
+		c.seenSeries++
+	}
+	return h, c.entries[idx], true
 }
 
 func (c *scrapeCache) addRef(metHash uint64, ref storage.SeriesRef, lset labels.Labels, st *stCache) (uint32, cacheEntry) {
@@ -3295,7 +3324,7 @@ func (sl *scrapeLoop) reportStale(app scrapeLoopAppendAdapter, start time.Time) 
 }
 
 func (sl *scrapeLoopAppender) addReportSample(s reportSample, t int64, v float64, b *labels.Builder, rejectOOO bool) (err error) {
-	metHash, _, ce, ok, _ := sl.cache.get(s.name)
+	metHash, ce, ok := sl.cache.getReport(s.name)
 	var ref storage.SeriesRef
 	var lset labels.Labels
 	if ok {

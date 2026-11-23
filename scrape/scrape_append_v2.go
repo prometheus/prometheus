@@ -594,7 +594,7 @@ loop:
 }
 
 func (sl *scrapeLoopAppenderV2) addReportSample(s reportSample, t int64, v float64, b *labels.Builder, rejectOOO bool) (err error) {
-	metHash, _, ce, ok, _ := sl.cache.get(s.name)
+	metHash, ce, ok := sl.cache.getReport(s.name)
 	var ref storage.SeriesRef
 	var lset labels.Labels
 	if ok {

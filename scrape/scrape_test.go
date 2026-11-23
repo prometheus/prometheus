@@ -11639,6 +11639,72 @@ func TestScrapeCacheCompactIndexAndEviction(t *testing.T) {
 	})
 }
 
+func TestScrapeCacheScrapeOrderCursor(t *testing.T) {
+	c := newScrapeCache(newTestScrapeMetrics(t))
+
+	mets := [][]byte{
+		[]byte(`m{i="0"}`),
+		[]byte(`m{i="1"}`),
+		[]byte(`m{i="2"}`),
+		[]byte(`m{i="3"}`),
+	}
+	for i, met := range mets {
+		c.addRef(xxhash.Sum64(met), storage.SeriesRef(i+1), labels.FromStrings(model.MetricNameLabel, "m", "i", strconv.Itoa(i)), nil)
+		c.trackStaleness(xxhash.Sum64(met))
+	}
+	c.iterDone(true)
+	require.Equal(t, uint32(0), c.nextIdx)
+
+	// Simulate defer sl.report() adding report metrics after iterDone.
+	reports := [][]byte{[]byte("up\xff"), []byte("scrape_duration_seconds\xff")}
+	for i, rep := range reports {
+		c.addRef(xxhash.Sum64(rep), storage.SeriesRef(100+i), labels.FromStrings(model.MetricNameLabel, string(rep[:len(rep)-1])), nil)
+	}
+	require.Equal(t, uint32(0), c.nextIdx)
+
+	// Steady-state scrape advances nextIdx sequentially through scraped entries.
+	for i, met := range mets {
+		_, slot, _, ok, already := c.get(met)
+		require.True(t, ok)
+		require.False(t, already)
+		require.Equal(t, uint32(i), slot)
+		require.Equal(t, uint32(i+1), c.nextIdx)
+		c.trackSlot(slot)
+	}
+	c.iterDone(true)
+	require.Equal(t, uint32(0), c.nextIdx)
+	require.Len(t, c.entries, len(mets)+len(reports))
+
+	// Post-iterDone getReport keeps report metrics seen without disturbing nextIdx.
+	for i, rep := range reports {
+		_, ce, ok := c.getReport(rep)
+		require.True(t, ok)
+		require.Equal(t, storage.SeriesRef(100+i), ce.ref)
+		require.Equal(t, uint32(0), c.nextIdx)
+	}
+
+	// Out-of-order lookup resyncs nextIdx to slot+1; miss leaves nextIdx unchanged.
+	_, slot, _, ok, _ := c.get(mets[2])
+	require.True(t, ok)
+	require.Equal(t, uint32(2), slot)
+	require.Equal(t, uint32(3), c.nextIdx)
+
+	_, _, _, ok, _ = c.get([]byte(`m{i="missing"}`))
+	require.False(t, ok)
+	require.Equal(t, uint32(3), c.nextIdx)
+
+	_, slot, _, ok, _ = c.get(mets[3])
+	require.True(t, ok)
+	require.Equal(t, uint32(3), slot)
+	require.Equal(t, uint32(4), c.nextIdx)
+
+	// Finish seeing remaining scraped metrics and verify report metrics survived flush.
+	c.get(mets[0])
+	c.get(mets[1])
+	c.iterDone(true)
+	require.Len(t, c.entries, len(mets)+len(reports))
+}
+
 // BenchmarkScrapeCacheStaleness benchmarks scrapeCache staleness tracking across
 // steady-state scrapes, shuffled scrape order, and series churn, reporting
 // retained staleness bytes per series.
