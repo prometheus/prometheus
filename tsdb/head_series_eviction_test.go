@@ -626,6 +626,65 @@ func TestSeriesEviction_SeriesAreOnlyPublishedWhileTheyAreEvicted(t *testing.T) 
 	}
 }
 
+// TestSeriesEviction_PendingExemplarProtectsSeries verifies that a series that only received an exemplar in an
+// uncommitted appender is not evicted. Otherwise, the commit logs the exemplar after the series' tombstone and
+// drops it from memory. Once the appender is committed or rolled back, the series can be evicted again.
+func TestSeriesEviction_PendingExemplarProtectsSeries(t *testing.T) {
+	appendExemplar := map[string]func(*DB, storage.SeriesRef, labels.Labels, exemplar.Exemplar) (storage.AppenderTransaction, error){
+		"Appender": func(db *DB, ref storage.SeriesRef, lset labels.Labels, e exemplar.Exemplar) (storage.AppenderTransaction, error) {
+			app := db.Appender(context.Background())
+			_, err := app.AppendExemplar(ref, lset, e)
+			return app, err
+		},
+		"AppenderV2": func(db *DB, ref storage.SeriesRef, lset labels.Labels, e exemplar.Exemplar) (storage.AppenderTransaction, error) {
+			app := db.AppenderV2(context.Background())
+			_, err := app.(storage.ExemplarAppenderV2).AppendExemplars(ref, lset, []exemplar.Exemplar{e})
+			return app, err
+		},
+	}
+	for appName, appendExemplar := range appendExemplar {
+		for evictName, evict := range evictionTestEvictions() {
+			for _, commit := range []bool{true, false} {
+				t.Run(fmt.Sprintf("%s/%s/commit=%t", appName, evictName, commit), func(t *testing.T) {
+					testDB := newSeriesEvictionTestDB(t, 0)
+					db := testDB.db
+					head := db.Head()
+					lset := evictionTestLabels(0)
+
+					app, err := appendExemplar(db, testDB.evictedRefs[0], lset, exemplar.Exemplar{
+						Labels: labels.FromStrings("trace_id", "pending"), Value: 1, Ts: 300,
+					})
+					require.NoError(t, err)
+					require.NoError(t, evict(db, testDB.evictedRefs))
+					require.Equal(t, uint64(evictionTestSeries-evictionTestEvictedSeries+1), head.NumSeries())
+					if commit {
+						require.NoError(t, app.Commit())
+					} else {
+						require.NoError(t, app.Rollback())
+					}
+
+					expectedTraceID := "0"
+					if commit {
+						expectedTraceID = "pending"
+					}
+					q, err := head.ExemplarQuerier(t.Context())
+					require.NoError(t, err)
+					res, err := q.Select(0, 1000, []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "id", lset.Get("id"))})
+					require.NoError(t, err)
+					require.Len(t, res, 1)
+					require.Len(t, res[0].Exemplars, 1)
+					require.Equal(t, expectedTraceID, res[0].Exemplars[0].Labels.Get("trace_id"))
+
+					// The appender released the series.
+					require.NoError(t, evict(db, testDB.evictedRefs))
+					require.Equal(t, uint64(evictionTestSeries-evictionTestEvictedSeries), head.NumSeries())
+					require.Equal(t, float64(0), prom_testutil.ToFloat64(head.metrics.pendingCommitUnderflow))
+				})
+			}
+		}
+	}
+}
+
 type seriesEvictionPostDeletionCallback struct {
 	noopSeriesLifecycleCallback
 	preCreation  func(labels.Labels) error
