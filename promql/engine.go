@@ -3384,7 +3384,7 @@ func (ev *evaluator) rangeEvalTimestampFunctionOverVectorSelector(ctx context.Co
 			step++
 			if budgetedIterator != nil {
 				budgetedIterator.checkContext()
-			} else if step&1023 == 0 {
+			} else if step&1023 == 1023 {
 				// Without a budgeted iterator, check cancellation periodically so a
 				// single series over many steps (e.g. disabled start_timestamp) cannot
 				// spin past context cancellation or timeout.
