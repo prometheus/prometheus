@@ -156,11 +156,6 @@ type RulesRetriever interface {
 // StatsRenderer converts engine statistics into a format suitable for the API.
 type StatsRenderer func(context.Context, *stats.Statistics, string) stats.QueryStats
 
-// DefaultStatsRenderer is the default stats renderer for the API: any
-// non-empty `stats` value includes statistics in the response. The API
-// handlers reject unsupported values of the parameter with a bad_data error
-// before they reach the renderer. Custom StatsRenderer implementations are
-// exempt and may define their own values.
 func DefaultStatsRenderer(_ context.Context, s *stats.Statistics, param string) stats.QueryStats {
 	if param != "" {
 		return stats.NewQueryStats(s)
@@ -260,7 +255,7 @@ type API struct {
 	gatherer            prometheus.Gatherer
 	isAgent             bool
 	statsRenderer       StatsRenderer
-	customStatsRenderer bool // See validateStatsParam: a custom StatsRenderer's `stats` vocabulary is not validated.
+	customStatsRenderer bool // See parseStatsParam: a custom StatsRenderer's `stats` vocabulary is not validated.
 	notificationsGetter func() []notifications.Notification
 	notificationsSub    func() (<-chan notifications.Notification, func(), bool)
 	// Allows customizing the default mapping
@@ -572,7 +567,7 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 
 	opts, err := api.extractQueryOpts(r)
 	if err != nil {
-		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
+		return invalidParamError(err, "stats")
 	}
 
 	ctx, span := otel.Tracer("").Start(ctx, "promqlInstantQuery")
@@ -651,7 +646,7 @@ func (api *API) parseQuery(r *http.Request) apiFuncResult {
 }
 
 func (api *API) extractQueryOpts(r *http.Request) (promql.QueryOpts, error) {
-	if err := api.validateStatsParam(r.FormValue("stats")); err != nil {
+	if err := api.parseStatsParam(r); err != nil {
 		return nil, err
 	}
 
@@ -687,15 +682,14 @@ const (
 	statsAll  = "all"
 )
 
-// validateStatsParam checks that the `stats` query parameter is a supported
-// enum value ("true", "all", or empty). When the API uses a custom
-// StatsRenderer, the parameter vocabulary is defined by the embedder, so
-// validation is skipped.
-func (api *API) validateStatsParam(s string) error {
+// parseStatsParam validates the `stats` query parameter, returning an error
+// for unsupported values. When the API uses a custom StatsRenderer, the
+// parameter vocabulary is defined by the embedder, so validation is skipped.
+func (api *API) parseStatsParam(r *http.Request) error {
 	if api.customStatsRenderer {
 		return nil
 	}
-	switch s {
+	switch s := r.FormValue("stats"); s {
 	case "", statsTrue, statsAll:
 		return nil
 	default:
@@ -750,7 +744,7 @@ func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 
 	opts, err := api.extractQueryOpts(r)
 	if err != nil {
-		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
+		return invalidParamError(err, "stats")
 	}
 
 	ctx, span := otel.Tracer("").Start(ctx, "promqlRangeQuery")
