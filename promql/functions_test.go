@@ -770,10 +770,20 @@ func TestRangeSlidingWindowMatchesInstantQueries(t *testing.T) {
 				// Start-timestamp overlap warning case on series="1" only, testing per-series warning isolation.
 				val += 3
 				st = ts - 5000
+			case i == 96:
+				// Start-timestamp reset right after the NaN at i == 95 so prevPoint.F (NaN)
+				// enters eventSeqs, poisons rate/increase, and recovers after sliding out.
+				val += 4
+				st = ts - 200
 			default:
 				val += float64((i % 5) + 1)
 			}
-			_, err := app.Append(0, counter, st, ts, val, nil, nil, storage.AOptions{})
+			appendVal := val
+			if i == 60 || i == 95 {
+				// Plain NaN at i == 60 and NaN before an ST reset at i == 95.
+				appendVal = math.NaN()
+			}
+			_, err := app.Append(0, counter, st, ts, appendVal, nil, nil, storage.AOptions{})
 			require.NoError(t, err)
 
 			gVal := float64(i%4) + float64(seriesIdx)*10
