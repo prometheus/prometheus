@@ -403,3 +403,144 @@ func TestFloatWinScanAdvanceResync(t *testing.T) {
 		require.False(t, ok)
 	})
 }
+
+func TestFloatWindowCompactionAndGrowth(t *testing.T) {
+	for _, withST := range []bool{false, true} {
+		name := "st=false"
+		if withST {
+			name = "st=true"
+		}
+		t.Run(name, func(t *testing.T) {
+			var empty floatWindow
+			require.Nil(t, empty.activeSlice())
+
+			var sts *StartTimestamps
+			if withST {
+				sts = &StartTimestamps{}
+			}
+
+			// Compact in place at the exact off >= n/4 threshold (off=4, n=12, n/4=3).
+			w := floatWindow{buf: make([]FPoint, 0, 16)}
+			if withST {
+				w.stBuf = make([]int64, 0, 16)
+			}
+			for i := range 16 {
+				w.append(FPoint{T: int64(i * 1000), F: float64(i)}, int64(i*100), sts)
+			}
+			w.drop(4, sts)
+			require.Equal(t, 4, w.off)
+			require.Equal(t, 4, w.startSeq)
+			w.append(FPoint{T: 16_000, F: 16}, 1600, sts)
+			require.Zero(t, w.off)
+			require.Equal(t, 16, cap(w.buf))
+			require.Len(t, w.activeSlice(), 13)
+			require.Equal(t, int64(4000), w.activeSlice()[0].T)
+			require.Equal(t, int64(16_000), w.activeSlice()[12].T)
+			if withST {
+				require.Equal(t, 16, cap(w.stBuf))
+				require.Len(t, sts.Floats, 13)
+				require.Equal(t, int64(400), sts.Floats[0])
+				require.Equal(t, int64(1600), sts.Floats[12])
+			}
+
+			// Grow when 0 < off < n/4 (off=2, n=14, n/4=3 -> newCap = 14 + max(7, 16) = 30).
+			wGrow := floatWindow{buf: make([]FPoint, 0, 16)}
+			if withST {
+				wGrow.stBuf = make([]int64, 0, 16)
+			}
+			for i := range 16 {
+				wGrow.append(FPoint{T: int64(i * 1000), F: float64(i)}, int64(i*100), sts)
+			}
+			wGrow.drop(2, sts)
+			wGrow.append(FPoint{T: 16_000, F: 16}, 1600, sts)
+			require.Zero(t, wGrow.off)
+			require.Equal(t, 30, cap(wGrow.buf))
+			require.Len(t, wGrow.activeSlice(), 15)
+			require.Equal(t, int64(2000), wGrow.activeSlice()[0].T)
+			if withST {
+				require.Equal(t, 30, cap(wGrow.stBuf))
+				require.Len(t, sts.Floats, 15)
+				require.Equal(t, int64(200), sts.Floats[0])
+				require.Equal(t, int64(1600), sts.Floats[14])
+			}
+
+			// Growth when off == 0 lets append grow normally without compacting.
+			wZeroOff := floatWindow{buf: make([]FPoint, 0, 16)}
+			if withST {
+				wZeroOff.stBuf = make([]int64, 0, 16)
+			}
+			for i := range 17 {
+				wZeroOff.append(FPoint{T: int64(i * 1000), F: float64(i)}, int64(i*100), sts)
+			}
+			require.Zero(t, wZeroOff.off)
+			require.Greater(t, cap(wZeroOff.buf), 16)
+			require.Len(t, wZeroOff.activeSlice(), 17)
+			if withST {
+				require.Len(t, sts.Floats, 17)
+			}
+		})
+	}
+
+	t.Run("large pooled buf bounds stBuf capacity", func(t *testing.T) {
+		sts := &StartTimestamps{}
+		w := floatWindow{buf: make([]FPoint, 0, 5000)}
+		for i := range 10 {
+			w.append(FPoint{T: int64(i * 1000), F: float64(i)}, int64(i*10), sts)
+		}
+		for step := 10; step < 210; step++ {
+			w.drop(1, sts)
+			w.append(FPoint{T: int64(step * 1000), F: float64(step)}, int64(step*10), sts)
+			require.Len(t, w.activeSlice(), 10)
+			require.Len(t, sts.Floats, 10)
+			require.Equal(t, int64((step-9)*1000), w.activeSlice()[0].T)
+			require.Equal(t, int64((step-9)*10), sts.Floats[0])
+			require.Equal(t, int64(step*10), sts.Floats[9])
+		}
+		require.Equal(t, 5000, cap(w.buf), "large pooled w.buf should compact in place without reallocating")
+		require.LessOrEqual(t, cap(w.stBuf), 32, "w.stBuf capacity should stay bounded by active window size")
+	})
+}
+
+func TestFloatWinScanAppendEvent(t *testing.T) {
+	t.Run("compacts in place when eventOff >= n/4", func(t *testing.T) {
+		s := &floatWinScan{eventSeqs: make([]int, 0, 16)}
+		for i := range 16 {
+			s.appendEvent(i)
+		}
+		s.eventOff = 4 // n = 12, n/4 = 3 -> compact in place.
+		s.appendEvent(16)
+		require.Zero(t, s.eventOff)
+		require.Equal(t, 16, cap(s.eventSeqs))
+		require.Equal(t, []int{4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}, s.eventSeqs)
+	})
+
+	t.Run("grows to 1.5x when 0 < eventOff < n/4", func(t *testing.T) {
+		s := &floatWinScan{eventSeqs: make([]int, 0, 16)}
+		for i := range 16 {
+			s.appendEvent(i)
+		}
+		s.eventOff = 2 // n = 14, n/4 = 3 -> grow to 14 + max(7, 16) = 30.
+		s.appendEvent(16)
+		require.Zero(t, s.eventOff)
+		require.Equal(t, 30, cap(s.eventSeqs))
+		require.Equal(t, []int{2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}, s.eventSeqs)
+	})
+
+	t.Run("compacts when all prior events evicted (n == 0)", func(t *testing.T) {
+		s := &floatWinScan{eventSeqs: make([]int, 0, 16)}
+		for i := range 16 {
+			s.appendEvent(i)
+		}
+		s.eventOff = 16
+		s.appendEvent(100)
+		require.Zero(t, s.eventOff)
+		require.Equal(t, 16, cap(s.eventSeqs))
+		require.Equal(t, []int{100}, s.eventSeqs)
+	})
+
+	t.Run("putWinEventSeqs drops oversized slices", func(t *testing.T) {
+		putWinEventSeqs(make([]int, 0, maxWinEventSeqsPoolCap+1))
+		got := getWinEventSeqs(16)
+		require.LessOrEqual(t, cap(got), maxWinEventSeqsPoolCap)
+	})
+}
