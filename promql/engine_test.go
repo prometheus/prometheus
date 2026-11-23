@@ -835,7 +835,8 @@ func TestEngineShutdown(t *testing.T) {
 func TestRangeTimestampSelectorCancellationWithoutBudget(t *testing.T) {
 	stor := promqltest.LoadedStorage(t, `
 load 10s
-  metric 1+1x300
+  metric{a="1"} 1+1x300
+  metric{a="2"} 1+1x300
 `)
 	engine := promqltest.NewTestEngineWithOpts(t, promql.EngineOpts{
 		MaxSamples:         promqltest.DefaultMaxSamplesPerQuery,
@@ -847,8 +848,34 @@ load 10s
 	// Test both timestamp() and disabled start_timestamp(): when UseStartTimestamps
 	// is false, start_timestamp emits no samples so MaxSamples cannot bound the step
 	// loop, making periodic context cancellation checks the only exit path.
-	for _, expr := range []string{"timestamp(metric)", "start_timestamp(metric)"} {
-		t.Run(expr, func(t *testing.T) {
+	cases := []struct {
+		name            string
+		expr            string
+		end             time.Time
+		wantSamplesRead int64
+	}{
+		{
+			name:            "periodic check/timestamp",
+			expr:            `timestamp(metric{a="1"})`,
+			end:             time.Unix(3000, 0),
+			wantSamplesRead: 1023, // Stops at step 1023 (step&1023 == 1023) before reading step 1023.
+		},
+		{
+			name:            "periodic check/disabled start_timestamp",
+			expr:            `start_timestamp(metric{a="1"})`,
+			end:             time.Unix(3000, 0),
+			wantSamplesRead: 1023,
+		},
+		{
+			name:            "per-series check/timestamp",
+			expr:            `timestamp(metric)`,
+			end:             time.Unix(20, 0),
+			wantSamplesRead: 21, // Completes series 1 (21 steps) and cancels before iterating series 2.
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
 
@@ -859,13 +886,16 @@ load 10s
 				}
 			}
 
-			q, err := engine.NewRangeQuery(ctx, counted, nil, expr, time.Unix(0, 0), time.Unix(3000, 0), time.Second)
+			q, err := engine.NewRangeQuery(ctx, counted, nil, tc.expr, time.Unix(0, 0), tc.end, time.Second)
 			require.NoError(t, err)
 			t.Cleanup(q.Close)
 
 			res := q.Exec(ctx)
 			var canceled promql.ErrQueryCanceled
 			require.ErrorAs(t, res.Err, &canceled)
+			// Verify evaluation actually halted inside the loop rather than completing
+			// and being caught by execEvalStmt's post-eval contextDone check.
+			require.Equal(t, tc.wantSamplesRead, q.Stats().Samples.SamplesRead)
 		})
 	}
 }
