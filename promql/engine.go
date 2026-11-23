@@ -2903,13 +2903,24 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		}
 
 		// Reuse objects across steps to save memory allocations.
-		scan := &floatWinScan{}
-		floatsWin := &scan.win
+		var localFloatsWin floatWindow
+		floatsWin := &localFloatsWin
 		var floats []FPoint
 		var histograms []HPoint
 		var prevSS *Series
 		inMatrix := make(Matrix, 1)
-		enh := &EvalNodeHelper{Out: make(Vector, 0, 1), LookbackDelta: ev.lookbackDelta, enableDelayedNameRemoval: ev.enableDelayedNameRemoval, floatWinScan: scan}
+		enh := &EvalNodeHelper{Out: make(Vector, 0, 1), LookbackDelta: ev.lookbackDelta, enableDelayedNameRemoval: ev.enableDelayedNameRemoval}
+		// Only allocate incremental pair-scan state when consecutive steps can share
+		// float window samples and the function uses it; single-step and non-overlapping
+		// queries stay on the zero-allocation fallback loop.
+		if numSteps > 1 && (selRange > ev.interval || selVS.Timestamp != nil) && !selVS.Anchored && !selVS.Smoothed {
+			switch e.Func.Name {
+			case "rate", "increase", "resets", "changes":
+				scan := &floatWinScan{}
+				enh.floatWinScan = scan
+				floatsWin = &scan.win
+			}
+		}
 		// Process all the calls for one time series at a time.
 		// For anchored and smoothed selectors, we need to iterate over a
 		// larger range than the query range to account for the lookback delta.
