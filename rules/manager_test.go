@@ -3283,12 +3283,13 @@ groups:
 			opt.EnableMetadataWALRecords = true
 		})
 
+		var notified []*Alert
 		mgr := NewManager(&ManagerOptions{
 			Context:                 t.Context(),
 			AppendableV2:            appendStore,
 			Queryable:               schemaQueryStore,
 			QueryFunc:               EngineQueryFunc(schemaEngine, schemaQueryStore),
-			NotifyFunc:              func(context.Context, string, ...*Alert) {},
+			NotifyFunc:              func(_ context.Context, _ string, alerts ...*Alert) { notified = append(notified, alerts...) },
 			Logger:                  promslog.NewNopLogger(),
 			AppendMetadata:          true,
 			EnableTypeAndUnitLabels: true,
@@ -3304,6 +3305,9 @@ groups:
 				require.NoError(t, r.LastError())
 			}
 		}
+		require.Len(t, notified, 1)
+		require.Equal(t, StateFiring, notified[0].State)
+		prom_testutil.RequireEqual(t, labels.FromStrings(labels.AlertName, "HighRequests", "job", "api"), notified[0].Labels)
 
 		q, err := appendStore.Querier(0, timestamp.FromTime(evalTime))
 		require.NoError(t, err)
@@ -3341,6 +3345,17 @@ groups:
 			"job:latency_seconds:rate5m": labels.FromStrings(
 				model.MetricNameLabel, "job:latency_seconds:rate5m",
 				model.MetricTypeLabel, "gaugehistogram",
+				"job", "api",
+			),
+			alertMetricName: labels.FromStrings(
+				model.MetricNameLabel, alertMetricName,
+				labels.AlertName, "HighRequests",
+				alertStateLabel, "firing",
+				"job", "api",
+			),
+			alertForStateMetricName: labels.FromStrings(
+				model.MetricNameLabel, alertForStateMetricName,
+				labels.AlertName, "HighRequests",
 				"job", "api",
 			),
 		}
@@ -3563,7 +3578,7 @@ func TestAlertingRuleSchemaLabelsAndRestoreForState(t *testing.T) {
 			15*time.Minute,
 			0,
 			ruleLabels,
-			labels.EmptyLabels(),
+			labels.FromStrings("summary", "{{ $labels.__name__ }} {{ $labels.__type__ }} {{ $labels.__unit__ }}"),
 			labels.EmptyLabels(),
 			"",
 			false,
@@ -3589,6 +3604,12 @@ func TestAlertingRuleSchemaLabelsAndRestoreForState(t *testing.T) {
 			t,
 			labels.FromStrings(labels.AlertName, "HighRequests", "job", "api", "severity", "critical"),
 			alerts[0].Labels,
+		)
+		// Alert templates still see the input series's schema labels before stripping.
+		prom_testutil.RequireEqual(
+			t,
+			labels.FromStrings("summary", "http_requests_total counter requests"),
+			alerts[0].Annotations,
 		)
 		// Restored ActiveAt shifts by downDuration (restoreTime - baseTime = 2m) from baseTime.
 		require.Equal(t, baseTime.Add(2*time.Minute), alerts[0].ActiveAt)
