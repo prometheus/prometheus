@@ -1658,6 +1658,28 @@ load 10s
 			},
 		},
 		{
+			// Evaluating abs() on the RHS retains LHS samples in currentSamples reconciliation.
+			Query:        "metricWith1SampleEvery10Seconds + abs(metricWith1SampleEvery10Seconds)",
+			Start:        time.Unix(201, 0),
+			End:          time.Unix(220, 0),
+			Interval:     5 * time.Second,
+			PeakSamples:  14,
+			TotalSamples: 8,
+			TotalSamplesPerStep: stats.TotalSamplesPerStep{
+				201000: 2,
+				206000: 2,
+				211000: 2,
+				216000: 2,
+			},
+			SamplesRead: 8,
+			SamplesReadPerStep: stats.TotalSamplesPerStep{
+				201000: 2,
+				206000: 2,
+				211000: 2,
+				216000: 2,
+			},
+		},
+		{
 			Query:        `max_over_time(metricWith3SampleEvery10Seconds{a="1"}[10s])`,
 			Start:        time.Unix(991, 0),
 			End:          time.Unix(1021, 0),
@@ -2541,6 +2563,14 @@ load 10s
 			// abs() reconciles currentSamples after absent_over_time synthesizes points.
 			Query:      "abs(absent_over_time(nonexistent[10s]))",
 			MaxSamples: 5,
+			Start:      time.Unix(0, 0),
+			End:        time.Unix(4, 0),
+			Interval:   time.Second,
+		},
+		{
+			// abs() on the RHS retains prior LHS samples when reconciling currentSamples.
+			Query:      "bigmetric or abs(absent_over_time(nonexistent[10s]))",
+			MaxSamples: 33,
 			Start:      time.Unix(0, 0),
 			End:        time.Unix(4, 0),
 			Interval:   time.Second,
