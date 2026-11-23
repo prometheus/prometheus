@@ -951,9 +951,6 @@ type cacheEntry struct {
 	ref      storage.SeriesRef
 	lastIter uint64
 	lset     labels.Labels
-
-	// st is an optional state for ST synthesis.
-	st *stCache
 }
 
 type staleSeries struct {
@@ -1095,6 +1092,10 @@ type scrapeCache struct {
 	seriesMeta        map[uint64]seriesMetaEntry
 	droppedSeriesMeta map[uint64]seriesMetaEntry
 
+	// Lazily allocated start-time synthesis state per metric hash, only populated
+	// when SynthesizeST is enabled.
+	stCache map[uint64]*stCache
+
 	// TODO(bwplotka): Consider moving metadata caching to head. See
 	// https://github.com/prometheus/prometheus/issues/17619.
 	metaMtx  sync.Mutex            // Mutex is needed due to api touching it when metadata is queried.
@@ -1197,6 +1198,9 @@ func (c *scrapeCache) iterDone(flushCache bool) {
 				if c.seriesMeta != nil {
 					delete(c.seriesMeta, h)
 				}
+				if c.stCache != nil {
+					delete(c.stCache, h)
+				}
 			}
 		}
 		for h, iter := range c.droppedSeries {
@@ -1248,9 +1252,30 @@ func (c *scrapeCache) get(met []byte) (uint64, cacheEntry, bool, bool) {
 }
 
 func (c *scrapeCache) addRef(metHash uint64, ref storage.SeriesRef, lset labels.Labels, st *stCache) cacheEntry {
-	ce := cacheEntry{ref: ref, lastIter: c.iter, lset: lset, st: st}
+	ce := cacheEntry{ref: ref, lastIter: c.iter, lset: lset}
 	c.series[metHash] = ce
+	c.setST(metHash, st)
 	return ce
+}
+
+func (c *scrapeCache) getST(metHash uint64) *stCache {
+	if c.stCache == nil {
+		return nil
+	}
+	return c.stCache[metHash]
+}
+
+func (c *scrapeCache) setST(metHash uint64, st *stCache) {
+	if st == nil {
+		if c.stCache != nil {
+			delete(c.stCache, metHash)
+		}
+		return
+	}
+	if c.stCache == nil {
+		c.stCache = make(map[uint64]*stCache)
+	}
+	c.stCache[metHash] = st
 }
 
 func (c *scrapeCache) setSeriesMeta(metHash uint64, origMeta, meta unique.Handle[metadata.Metadata], origMFName, mfName unique.Handle[string]) {
@@ -1304,6 +1329,9 @@ func (c *scrapeCache) deleteSeries(metHash uint64, alreadyScraped bool) {
 	}
 	if c.seriesMeta != nil {
 		delete(c.seriesMeta, metHash)
+	}
+	if c.stCache != nil {
+		delete(c.stCache, metHash)
 	}
 }
 

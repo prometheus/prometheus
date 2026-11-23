@@ -417,6 +417,10 @@ loop:
 
 			// TODO(ridwanmsharif): Consider injecting a 0 value with the st == t here, instead of skipping an append.
 			if sl.synthesizeST && st == 0 {
+				prevST := sl.cache.getST(metHash)
+				if !seriesCached {
+					prevST = nil
+				}
 				if !needsSeriesMetadata {
 					var stType model.MetricType
 					if lastMeta != nil {
@@ -426,9 +430,9 @@ loop:
 						}
 						stType = lastMetaMD.Type
 					}
-					st, val, h, fh, skipAppend, stCache = sl.checkAndSynthesizeStartTime(st, lset, ce.st, yoloString(lastMFName), stType, val, h, fh, t)
+					st, val, h, fh, skipAppend, stCache = sl.checkAndSynthesizeStartTime(st, lset, prevST, yoloString(lastMFName), stType, val, h, fh, t)
 				} else {
-					st, val, h, fh, skipAppend, stCache = sl.checkAndSynthesizeStartTime(st, lset, ce.st, sampleMFName, sampleMeta.Type, val, h, fh, t)
+					st, val, h, fh, skipAppend, stCache = sl.checkAndSynthesizeStartTime(st, lset, prevST, sampleMFName, sampleMeta.Type, val, h, fh, t)
 				}
 				appOpts.RejectOutOfOrder = true
 			}
@@ -533,13 +537,9 @@ loop:
 			}
 		} else if sl.synthesizeST {
 			if sampleAdded {
-				if ce.st != stCache {
-					ce.st = stCache // Set it, even if it's nil (explicit reset).
-					sl.cache.series[metHash] = ce
-				}
-			} else if ce.st != nil {
-				ce.st = nil // Clear state on failure for existing series.
-				sl.cache.series[metHash] = ce
+				sl.cache.setST(metHash, stCache)
+			} else {
+				sl.cache.setST(metHash, nil)
 			}
 		}
 
