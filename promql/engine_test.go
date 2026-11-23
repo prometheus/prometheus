@@ -832,7 +832,7 @@ func TestEngineShutdown(t *testing.T) {
 	require.ErrorAs(t, res2.Err, &e, "expected cancellation error but got: %s", res2.Err)
 }
 
-func TestRangeTimestampSelectorCancellationWithoutBudget(t *testing.T) {
+func TestFastPathCancellationWithoutBudget(t *testing.T) {
 	stor := promqltest.LoadedStorage(t, `
 load 10s
   metric{a="1"} 1+1x300
@@ -851,7 +851,7 @@ load 10s
 	cases := []struct {
 		name            string
 		expr            string
-		end             time.Time
+		end             time.Time // Zero value runs an instant query at Unix(0, 0).
 		wantSamplesRead int64
 	}{
 		{
@@ -872,6 +872,13 @@ load 10s
 			end:             time.Unix(20, 0),
 			wantSamplesRead: 21, // Completes series 1 (21 steps) and cancels before iterating series 2.
 		},
+		{
+			// Instant queries skip execEvalStmt's post-eval contextDone check, so only
+			// evalInPlaceFloatUnary's per-series check catches cancellation after the child read.
+			name:            "per-series check/abs",
+			expr:            `abs(metric{a="1"})`,
+			wantSamplesRead: 1,
+		},
 	}
 
 	for _, tc := range cases {
@@ -886,7 +893,15 @@ load 10s
 				}
 			}
 
-			q, err := engine.NewRangeQuery(ctx, counted, nil, tc.expr, time.Unix(0, 0), tc.end, time.Second)
+			var (
+				q   promql.Query
+				err error
+			)
+			if tc.end.IsZero() {
+				q, err = engine.NewInstantQuery(ctx, counted, nil, tc.expr, time.Unix(0, 0))
+			} else {
+				q, err = engine.NewRangeQuery(ctx, counted, nil, tc.expr, time.Unix(0, 0), tc.end, time.Second)
+			}
 			require.NoError(t, err)
 			t.Cleanup(q.Close)
 
