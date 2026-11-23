@@ -3604,30 +3604,38 @@ func (w *floatWindow) append(pt FPoint, st int64, startTimestamps *StartTimestam
 	if w.buf == nil {
 		w.buf = getFPointSlice(16)
 	}
-	if len(w.buf) == cap(w.buf) && w.off > 0 {
+	if startTimestamps != nil && w.stBuf == nil {
+		w.stBuf = make([]int64, 0, 16)
+	}
+	if w.off > 0 && (len(w.buf) == cap(w.buf) || (startTimestamps != nil && len(w.stBuf) == cap(w.stBuf))) {
 		n := len(w.buf) - w.off
-		if w.off >= n/4 {
-			copy(w.buf, w.buf[w.off:])
-			w.buf = w.buf[:n]
-			if startTimestamps != nil {
-				copy(w.stBuf, w.stBuf[w.off:])
-				w.stBuf = w.stBuf[:n]
-			}
-			w.off = 0
-		} else {
-			// Grow to 2*(n+1) so subsequent step slides have O(n) tail slack.
-			newCap := max(2*(n+1), 16)
+		newCap := 0
+		if w.off < n/4 {
+			// Grow so subsequent step slides have O(n) tail slack; compact in place
+			// any slice whose capacity already meets newCap (e.g. a large pooled w.buf
+			// paired with a smaller w.stBuf).
+			newCap = max(2*(n+1), 16)
+		}
+		if cap(w.buf) < newCap {
 			newBuf := make([]FPoint, n, newCap)
 			copy(newBuf, w.buf[w.off:])
 			putFPointSlice(w.buf)
 			w.buf = newBuf
-			if startTimestamps != nil {
+		} else {
+			copy(w.buf, w.buf[w.off:])
+			w.buf = w.buf[:n]
+		}
+		if startTimestamps != nil {
+			if cap(w.stBuf) < newCap {
 				newST := make([]int64, n, newCap)
 				copy(newST, w.stBuf[w.off:])
 				w.stBuf = newST
+			} else {
+				copy(w.stBuf, w.stBuf[w.off:])
+				w.stBuf = w.stBuf[:n]
 			}
-			w.off = 0
 		}
+		w.off = 0
 	}
 	w.buf = append(w.buf, pt)
 	w.endSeq++
