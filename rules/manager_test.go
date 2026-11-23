@@ -3611,88 +3611,120 @@ func TestAlertingRuleSchemaLabelsAndRestoreForState(t *testing.T) {
 	})
 
 	t.Run("prefers_newest_for_state_sample_when_colliding_schema_series_exist", func(t *testing.T) {
-		st := teststorage.New(t)
-		seedInputCounter(t, st)
-
-		// Seed two colliding ALERTS_FOR_STATE series within OutageTolerance:
-		// 1. An older series without __type__ that was active long enough ago to fire immediately.
-		// 2. A newer series with __type__="gauge" (which sorts lexicographically BEFORE alertname)
-		//    marked StaleNaN at t=1m because the alert resolved before the restart.
-		seedApp := st.AppenderV2(t.Context())
-		_, err := seedApp.Append(
-			0,
-			labels.FromStrings(
-				model.MetricNameLabel, alertForStateMetricName,
-				labels.AlertName, "HighRequests",
-				"job", "api",
-			),
-			0,
-			timestamp.FromTime(baseTime),
-			float64(baseTime.Add(-20*time.Minute).Unix()),
-			nil,
-			nil,
-			storage.AOptions{},
-		)
-		require.NoError(t, err)
-		_, err = seedApp.Append(
-			0,
-			labels.FromStrings(
-				model.MetricNameLabel, alertForStateMetricName,
-				model.MetricTypeLabel, "gauge",
-				labels.AlertName, "HighRequests",
-				"job", "api",
-			),
-			0,
-			timestamp.FromTime(baseTime.Add(time.Minute)),
-			math.Float64frombits(value.StaleNaN),
-			nil,
-			nil,
-			storage.AOptions{},
-		)
-		require.NoError(t, err)
-		require.NoError(t, seedApp.Commit())
-
-		opts := &ManagerOptions{
-			Context:                 t.Context(),
-			AppendableV2:            st,
-			Queryable:               st,
-			QueryFunc:               EngineQueryFunc(engine, st),
-			NotifyFunc:              func(context.Context, string, ...*Alert) {},
-			Logger:                  promslog.NewNopLogger(),
-			EnableTypeAndUnitLabels: true,
-			OutageTolerance:         30 * time.Minute,
-			ForGracePeriod:          10 * time.Minute,
+		type seededSeries struct {
+			lbls labels.Labels
+			ts   time.Time
+			val  float64
 		}
-
-		restoredRule := NewAlertingRule(
-			"HighRequests",
-			expr,
-			15*time.Minute,
-			0,
-			labels.EmptyLabels(),
-			labels.EmptyLabels(),
-			labels.EmptyLabels(),
-			"",
-			false,
-			promslog.NewNopLogger(),
-		)
-		restoredGroup := NewGroup(GroupOptions{
-			Name:          "alert_schema",
-			Interval:      time.Minute,
-			Rules:         []Rule{restoredRule},
-			ShouldRestore: true,
-			Opts:          opts,
-		})
-
+		stale := math.Float64frombits(value.StaleNaN)
+		restoredActiveAt := baseTime.Add(-20 * time.Minute)
+		activeVal := float64(restoredActiveAt.Unix())
 		restoreTime := baseTime.Add(2 * time.Minute)
-		restoredGroup.Eval(t.Context(), restoreTime)
-		restoredGroup.RestoreForState(restoreTime)
-		require.True(t, restoredRule.Restored())
 
-		// Because the newer series at t=1m ended in StaleNaN, RestoreForState must not
-		// restore the stale ActiveAt from the older t=0 series.
-		alerts := restoredRule.ActiveAlerts()
-		require.Len(t, alerts, 1)
-		require.Equal(t, restoreTime, alerts[0].ActiveAt)
+		untypedLbls := labels.FromStrings(
+			model.MetricNameLabel, alertForStateMetricName,
+			labels.AlertName, "HighRequests",
+			"job", "api",
+		)
+		typedGaugeLbls := labels.FromStrings(
+			model.MetricNameLabel, alertForStateMetricName,
+			model.MetricTypeLabel, "gauge",
+			labels.AlertName, "HighRequests",
+			"job", "api",
+		)
+
+		// QueryForStateSeries uses sortSeries=false, so teststorage returns series in
+		// append order. Append the winning/older series in orders that would fail under
+		// a naive last-series-wins overwrite or missing same-timestamp tie-breaker.
+		for _, tc := range []struct {
+			name         string
+			series       []seededSeries
+			wantActiveAt time.Time
+		}{
+			{
+				name: "newer_stale_first_beats_older_active",
+				series: []seededSeries{
+					{lbls: typedGaugeLbls, ts: baseTime.Add(time.Minute), val: stale},
+					{lbls: untypedLbls, ts: baseTime, val: activeVal},
+				},
+				wantActiveAt: restoreTime,
+			},
+			{
+				name: "newer_active_first_beats_older_stale",
+				series: []seededSeries{
+					{lbls: typedGaugeLbls, ts: baseTime.Add(time.Minute), val: activeVal},
+					{lbls: untypedLbls, ts: baseTime, val: stale},
+				},
+				wantActiveAt: restoredActiveAt,
+			},
+			{
+				name: "same_timestamp_stale_first_loses_to_active",
+				series: []seededSeries{
+					{lbls: typedGaugeLbls, ts: baseTime.Add(time.Minute), val: stale},
+					{lbls: untypedLbls, ts: baseTime.Add(time.Minute), val: activeVal},
+				},
+				wantActiveAt: restoredActiveAt,
+			},
+			{
+				name: "same_timestamp_active_first_beats_stale",
+				series: []seededSeries{
+					{lbls: untypedLbls, ts: baseTime.Add(time.Minute), val: activeVal},
+					{lbls: typedGaugeLbls, ts: baseTime.Add(time.Minute), val: stale},
+				},
+				wantActiveAt: restoredActiveAt,
+			},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				st := teststorage.New(t)
+				seedInputCounter(t, st)
+
+				seedApp := st.AppenderV2(t.Context())
+				for _, s := range tc.series {
+					_, err := seedApp.Append(0, s.lbls, 0, timestamp.FromTime(s.ts), s.val, nil, nil, storage.AOptions{})
+					require.NoError(t, err)
+				}
+				require.NoError(t, seedApp.Commit())
+
+				opts := &ManagerOptions{
+					Context:                 t.Context(),
+					AppendableV2:            st,
+					Queryable:               st,
+					QueryFunc:               EngineQueryFunc(engine, st),
+					NotifyFunc:              func(context.Context, string, ...*Alert) {},
+					Logger:                  promslog.NewNopLogger(),
+					EnableTypeAndUnitLabels: true,
+					OutageTolerance:         30 * time.Minute,
+					ForGracePeriod:          10 * time.Minute,
+				}
+
+				restoredRule := NewAlertingRule(
+					"HighRequests",
+					expr,
+					15*time.Minute,
+					0,
+					labels.EmptyLabels(),
+					labels.EmptyLabels(),
+					labels.EmptyLabels(),
+					"",
+					false,
+					promslog.NewNopLogger(),
+				)
+				restoredGroup := NewGroup(GroupOptions{
+					Name:          "alert_schema",
+					Interval:      time.Minute,
+					Rules:         []Rule{restoredRule},
+					ShouldRestore: true,
+					Opts:          opts,
+				})
+
+				restoredGroup.Eval(t.Context(), restoreTime)
+				restoredGroup.RestoreForState(restoreTime)
+				require.True(t, restoredRule.Restored())
+
+				alerts := restoredRule.ActiveAlerts()
+				require.Len(t, alerts, 1)
+				require.Equal(t, tc.wantActiveAt, alerts[0].ActiveAt)
+			})
+		}
 	})
 }
