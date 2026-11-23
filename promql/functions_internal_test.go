@@ -199,7 +199,9 @@ func TestInPlaceFloatUnaryFuncsParity(t *testing.T) {
 			spec, ok := parser.Functions[name]
 			require.True(t, ok, "missing parser.Functions entry for %s", name)
 			require.Equal(t, []parser.ValueType{parser.ValueTypeVector}, spec.ArgTypes)
+			require.Equal(t, parser.ValueTypeVector, spec.ReturnType)
 			require.Zero(t, spec.Variadic)
+			require.NotContains(t, AtModifierUnsafeFunctions, name)
 
 			call := FunctionCalls[name]
 			require.NotNil(t, call, "missing FunctionCalls entry for %s", name)
@@ -228,6 +230,40 @@ func TestInPlaceFloatUnaryFuncsParity(t *testing.T) {
 					}
 				})
 			}
+		})
+	}
+}
+
+func TestDirectTimestampFunctionCalls(t *testing.T) {
+	metric := labels.FromStrings("__name__", "test_metric", "__type__", "gauge", "__unit__", "seconds", "k", "1")
+	strippedMetric := metric.DropReserved(schema.IsMetadataLabel)
+	inVec := Vector{{Metric: metric, T: 12_500, F: 42}}
+
+	for _, delayedNameRemoval := range []bool{false, true} {
+		t.Run("delayedNameRemoval="+strconv.FormatBool(delayedNameRemoval), func(t *testing.T) {
+			wantMetric := strippedMetric
+			if delayedNameRemoval {
+				wantMetric = metric
+			}
+
+			got, annos := FunctionCalls["timestamp"]([]Vector{inVec}, nil, nil, &EvalNodeHelper{
+				enableDelayedNameRemoval: delayedNameRemoval,
+			})
+			require.Empty(t, annos)
+			require.Equal(t, Vector{{Metric: wantMetric, F: 12.5, DropName: true}}, got)
+
+			got, annos = FunctionCalls["start_timestamp"]([]Vector{inVec}, nil, nil, &EvalNodeHelper{
+				enableDelayedNameRemoval: delayedNameRemoval,
+				StartTimestamps:          &StartTimestamps{Floats: []int64{9_500}},
+			})
+			require.Empty(t, annos)
+			require.Equal(t, Vector{{Metric: wantMetric, F: 9.5, DropName: true}}, got)
+
+			got, annos = FunctionCalls["start_timestamp"]([]Vector{inVec}, nil, nil, &EvalNodeHelper{
+				enableDelayedNameRemoval: delayedNameRemoval,
+			})
+			require.Empty(t, annos)
+			require.Empty(t, got)
 		})
 	}
 }
