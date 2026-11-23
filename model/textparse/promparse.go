@@ -437,6 +437,9 @@ func (p *PromParser) Next() (Entry, error) {
 			p.series = p.l.b[p.start:p.l.i]
 			return p.parseMetricSuffix(p.nextToken())
 		case tMName:
+			if p.l.i-p.start > labels.MaxLabelLength {
+				return EntryInvalid, fmt.Errorf("metric name exceeds limit of %d bytes", labels.MaxLabelLength)
+			}
 			p.offsets = append(p.offsets, p.start, p.l.i)
 			p.series = p.l.b[p.start:p.l.i]
 			t2 := p.nextToken()
@@ -480,6 +483,9 @@ func (p *PromParser) parseLVals() error {
 			if p.offsets[0] != -1 || p.offsets[1] != -1 {
 				return fmt.Errorf("metric name already set while parsing: %q", p.l.b[p.start:p.l.i])
 			}
+			if (curTI-1)-(curTStart+1) > labels.MaxLabelLength {
+				return fmt.Errorf("metric name exceeds limit of %d bytes", labels.MaxLabelLength)
+			}
 			p.offsets[0] = curTStart + 1
 			p.offsets[1] = curTI - 1
 			if t == tBraceClose {
@@ -493,6 +499,9 @@ func (p *PromParser) parseLVals() error {
 			curTStart++
 			curTI--
 		}
+		if curTI-curTStart > labels.MaxLabelLength {
+			return fmt.Errorf("label name exceeds limit of %d bytes", labels.MaxLabelLength)
+		}
 		p.offsets = append(p.offsets, curTStart, curTI)
 		if t != tEqual {
 			return p.parseError("expected equal", t)
@@ -502,6 +511,9 @@ func (p *PromParser) parseLVals() error {
 		}
 		if !utf8.Valid(p.l.buf()) {
 			return fmt.Errorf("invalid UTF-8 label value: %q", p.l.buf())
+		}
+		if (p.l.i-1)-(p.l.start+1) > labels.MaxLabelLength {
+			return fmt.Errorf("label value exceeds limit of %d bytes", labels.MaxLabelLength)
 		}
 
 		// The promlexer ensures the value string is quoted. Strip first
