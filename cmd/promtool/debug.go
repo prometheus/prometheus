@@ -44,6 +44,9 @@ func debugWrite(cfg debugWriterConfig) error {
 			if err != nil {
 				return fmt.Errorf("error reading the response body: %w", err)
 			}
+			if res.StatusCode != http.StatusOK {
+				return fmt.Errorf("unexpected HTTP status %q from %s", res.Status, url)
+			}
 
 			if endPointGroup.postProcess != nil {
 				body, err = endPointGroup.postProcess(body)
