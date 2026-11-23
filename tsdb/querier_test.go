@@ -3485,6 +3485,7 @@ func BenchmarkQueries(b *testing.B) {
 		for _, nSeries := range []int{10} {
 			for _, nSamples := range []int64{1000, 10000, 100000} {
 				dir := b.TempDir()
+				firstQuery := len(queryTypes)
 
 				series := genSeries(nSeries, 5, 1, nSamples)
 
@@ -3536,6 +3537,7 @@ func BenchmarkQueries(b *testing.B) {
 					totalOOOSamples := oooPercentage * int(nSamples) / 100
 					oooSampleFrequency := int(nSamples) / totalOOOSamples
 					head := createHeadWithOOOSamples(b, nil, series, chunkDir, oooSampleFrequency)
+					b.Cleanup(func() { require.NoError(b, head.Close()) })
 
 					qHead, err := NewBlockQuerier(NewRangeHead(head, 1, nSamples), 1, nSamples)
 					require.NoError(b, err)
@@ -3547,7 +3549,7 @@ func BenchmarkQueries(b *testing.B) {
 					})
 				}
 
-				for _, q := range queryTypes {
+				for _, q := range queryTypes[firstQuery:] {
 					b.Run(title+q.typ+"_nSeries:"+strconv.Itoa(nSeries)+"_nSamples:"+strconv.Itoa(int(nSamples)), func(b *testing.B) {
 						expExpansions, err := strconv.Atoi(string(title[len(title)-1]))
 						require.NoError(b, err)
