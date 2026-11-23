@@ -3307,7 +3307,7 @@ func (ev *evaluator) evalInPlaceFloatUnary(ctx context.Context, arg parser.Expr,
 		if err := contextDone(ctx, "expression evaluation"); err != nil {
 			ev.error(err)
 		}
-		if len(mat[i].Histograms) > 0 {
+		if mat[i].Histograms != nil {
 			putHPointSlice(mat[i].Histograms)
 			mat[i].Histograms = nil
 		}
@@ -3327,10 +3327,8 @@ func (ev *evaluator) evalInPlaceFloatUnary(ctx context.Context, arg parser.Expr,
 		mat[outIdx] = mat[i]
 		outIdx++
 	}
+	clear(mat[outIdx:])
 	mat = mat[:outIdx]
-	if !ev.enableDelayedNameRemoval {
-		mat = ev.mergeSeriesWithSameLabelset(mat)
-	}
 	// Reconcile currentSamples like rangeEval rather than subtracting dropped
 	// histogram sizes so children like smoothSeries or absent_over_time cannot
 	// leave currentSamples skewed or negative.
@@ -3338,6 +3336,9 @@ func (ev *evaluator) evalInPlaceFloatUnary(ctx context.Context, arg parser.Expr,
 	ev.samplesStats.UpdatePeak(ev.currentSamples)
 	if ev.currentSamples > ev.maxSamples {
 		ev.error(ErrTooManySamples(env))
+	}
+	if !ev.enableDelayedNameRemoval {
+		mat = ev.mergeSeriesWithSameLabelset(mat)
 	}
 	return mat, ws
 }
