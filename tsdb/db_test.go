@@ -1739,6 +1739,14 @@ func TestSeriesCompactionWithExemplarsPreservesWALSampleReferences(t *testing.T)
 					require.NoError(t, db.CompactSelectedSeries([]storage.SeriesRef{selRef}))
 				}
 				require.Len(t, db.Blocks(), 1)
+				// The declaration is kept until the later of the last sample and exemplar.
+				keepUntil := max(int64(900), tc.exemplarTs)
+				walExpiry := func(db *DB) int64 {
+					db.head.walExpiriesMtx.Lock()
+					defer db.head.walExpiriesMtx.Unlock()
+					return db.head.walExpiries[chunks.HeadSeriesRef(selRef)]
+				}
+				require.Equal(t, keepUntil, walExpiry(db), "WAL expiry set when evicting the series")
 
 				require.NoError(t, db.head.truncateMemory(e.Ts+1))
 				require.Nil(t, db.Head().series.getByID(chunks.HeadSeriesRef(selRef)), "sel must be fully evicted by now")
@@ -1749,6 +1757,7 @@ func TestSeriesCompactionWithExemplarsPreservesWALSampleReferences(t *testing.T)
 					require.NoError(t, err)
 					db.DisableCompactions()
 					require.Nil(t, db.Head().series.getByID(chunks.HeadSeriesRef(selRef)), "sel must be deleted by its replayed tombstone")
+					require.Equal(t, keepUntil, walExpiry(db), "WAL expiry set when replaying the eviction tombstone")
 				}
 
 				// Checkpoint the older segments with a cutoff between the exemplar and last
