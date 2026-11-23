@@ -802,6 +802,26 @@ func TestRangeSlidingWindowMatchesInstantQueries(t *testing.T) {
 			}
 		}
 	}
+
+	// Append a mixed float -> histogram -> float series whose float window stays overlapping
+	// across the histogram so range queries hit the floatWinScan nextPairSeq < startSeq resync path.
+	mixed := labels.FromStrings("__name__", "sliding_mixed_total", "series", "1")
+	var mVal float64
+	for i := range 40 {
+		ts := int64((i + 1) * 1000)
+		if i == 14 {
+			_, err := app.Append(0, mixed, 0, ts, 0, nil, &histogram.FloatHistogram{Count: 1, Sum: 1}, storage.AOptions{})
+			require.NoError(t, err)
+			continue
+		}
+		if i%9 == 4 {
+			mVal = 1
+		} else {
+			mVal += float64((i % 3) + 1)
+		}
+		_, err := app.Append(0, mixed, 0, ts, mVal, nil, nil, storage.AOptions{})
+		require.NoError(t, err)
+	}
 	require.NoError(t, app.Commit())
 
 	engine := promqltest.NewTestEngineWithOpts(t, promql.EngineOpts{
@@ -818,6 +838,10 @@ func TestRangeSlidingWindowMatchesInstantQueries(t *testing.T) {
 		"changes(sliding_gauge[10s])",
 		"changes(sliding_gauge[25s])",
 		"absent_over_time(sliding_gauge[10s])",
+		"rate(sliding_mixed_total[10s])",
+		"increase(sliding_mixed_total[10s])",
+		"resets(sliding_mixed_total[10s])",
+		"changes(sliding_mixed_total[10s])",
 	}
 	start := time.Unix(1, 0)
 	end := time.Unix(125, 0)

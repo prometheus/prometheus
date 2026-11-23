@@ -303,3 +303,103 @@ func TestCostFallbackSampleWindow(t *testing.T) {
 		})
 	}
 }
+
+func TestFloatWinScanAdvanceResync(t *testing.T) {
+	newScanWithPoints := func(n int) *floatWinScan {
+		s := &floatWinScan{}
+		t.Cleanup(func() {
+			putFPointSlice(s.win.buf)
+			putWinEventSeqs(s.eventSeqs)
+		})
+		s.win.reset(nil)
+		for i := range n {
+			s.win.append(FPoint{T: int64((i + 1) * 1000), F: float64(i)}, 0, nil)
+		}
+		return s
+	}
+
+	t.Run("seriesID mismatch resets state", func(t *testing.T) {
+		s := newScanWithPoints(4)
+		from, to, ok := s.advance(s.win.activeSlice())
+		require.True(t, ok)
+		require.Equal(t, 0, from)
+		require.Equal(t, 3, to)
+		s.appendEvent(1)
+		s.lastOverlapCurrSeq = 2
+
+		s.win.reset(nil)
+		s.win.append(FPoint{T: 10_000, F: 1}, 0, nil)
+		s.win.append(FPoint{T: 11_000, F: 2}, 0, nil)
+		from, to, ok = s.advance(s.win.activeSlice())
+		require.True(t, ok)
+		require.Equal(t, 0, from)
+		require.Equal(t, 1, to)
+		require.Empty(t, s.eventSeqs)
+		require.Zero(t, s.eventOff)
+		require.Zero(t, s.lastOverlapCurrSeq)
+	})
+
+	t.Run("nextPairSeq behind startSeq resyncs", func(t *testing.T) {
+		s := newScanWithPoints(3)
+		_, _, ok := s.advance(s.win.activeSlice())
+		require.True(t, ok)
+		s.appendEvent(0)
+		s.lastOverlapCurrSeq = 1
+		require.Equal(t, 2, s.nextPairSeq)
+
+		// Advance the window past nextPairSeq without calling advance on intermediate steps
+		// (as happens while mixed float+histogram windows bypass the fast path).
+		s.win.append(FPoint{T: 4000, F: 4}, 0, nil)
+		s.win.append(FPoint{T: 5000, F: 5}, 0, nil)
+		s.win.drop(3, nil)
+		from, to, ok := s.advance(s.win.activeSlice())
+		require.True(t, ok)
+		require.Equal(t, 3, from)
+		require.Equal(t, 4, to)
+		require.Empty(t, s.eventSeqs)
+		require.Zero(t, s.lastOverlapCurrSeq)
+	})
+
+	t.Run("nextPairSeq past endSeq resyncs", func(t *testing.T) {
+		s := newScanWithPoints(3)
+		_, _, ok := s.advance(s.win.activeSlice())
+		require.True(t, ok)
+		s.appendEvent(1)
+		s.nextPairSeq = s.win.endSeq + 1
+
+		from, to, ok := s.advance(s.win.activeSlice())
+		require.True(t, ok)
+		require.Equal(t, 0, from)
+		require.Equal(t, 2, to)
+		require.Empty(t, s.eventSeqs)
+		require.Zero(t, s.eventOff)
+	})
+
+	t.Run("drained events reset slice offset", func(t *testing.T) {
+		s := newScanWithPoints(4)
+		_, _, ok := s.advance(s.win.activeSlice())
+		require.True(t, ok)
+		s.appendEvent(0)
+		s.appendEvent(1)
+
+		s.win.drop(2, nil)
+		s.win.append(FPoint{T: 5000, F: 5}, 0, nil)
+		from, to, ok := s.advance(s.win.activeSlice())
+		require.True(t, ok)
+		require.Equal(t, 3, from)
+		require.Equal(t, 4, to)
+		require.Empty(t, s.eventSeqs)
+		require.Zero(t, s.eventOff)
+	})
+
+	t.Run("misaligned floats returns false", func(t *testing.T) {
+		s := newScanWithPoints(3)
+		_, _, ok := s.advance([]FPoint{{T: 1000, F: 0}, {T: 2000, F: 1}})
+		require.False(t, ok)
+
+		// Same length but different backing array must also fall back.
+		copied := append([]FPoint(nil), s.win.activeSlice()...)
+		_, _, ok = s.advance(copied)
+		require.False(t, ok)
+	})
+}
