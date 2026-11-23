@@ -342,9 +342,6 @@ load 10s
 		opt.EnableHistogramSTEncoding = true
 	})
 
-	enableST := true
-	qOpts := promql.NewPrometheusQueryOpts(false, 15*time.Second, &enableST)
-
 	start := time.Unix(10, 0)
 	end := time.Unix(60, 0)
 	// Query every 5s across 10s sample intervals so odd steps exercise PeekPrev lookback.
@@ -447,9 +444,7 @@ load 10s
 			engine := promqltest.NewTestEngineWithOpts(t, promql.EngineOpts{
 				MaxSamples:               promqltest.DefaultMaxSamplesPerQuery,
 				Timeout:                  100 * time.Second,
-				NoStepSubqueryIntervalFn: func(int64) int64 { return 60_000 },
 				EnableAtModifier:         true,
-				EnableNegativeOffset:     true,
 				LookbackDelta:            15 * time.Second,
 				EnableDelayedNameRemoval: delayedNameRemoval,
 				UseStartTimestamps:       true,
@@ -458,7 +453,7 @@ load 10s
 
 			for _, tc := range testCases {
 				t.Run("expr="+tc.expr, func(t *testing.T) {
-					rq, err := engine.NewRangeQuery(t.Context(), stor, qOpts, tc.expr, start, end, step)
+					rq, err := engine.NewRangeQuery(t.Context(), stor, nil, tc.expr, start, end, step)
 					require.NoError(t, err)
 					t.Cleanup(rq.Close)
 
@@ -500,7 +495,7 @@ load 10s
 						}
 						require.Equal(t, want, gotAtTS[tsMS], "ts=%d", tsMS)
 
-						iq, err := engine.NewInstantQuery(t.Context(), stor, qOpts, tc.expr, ts)
+						iq, err := engine.NewInstantQuery(t.Context(), stor, nil, tc.expr, ts)
 						require.NoError(t, err)
 						iRes := iq.Exec(t.Context())
 						iq.Close()
@@ -539,7 +534,7 @@ load 10s
 
 			for _, expr := range []string{`abs({k="dup_err"})`, `timestamp({k="dup_err"})`, `start_timestamp({k="dup_err"})`} {
 				t.Run("duplicate labelset error/"+expr, func(t *testing.T) {
-					rq, err := engine.NewRangeQuery(t.Context(), stor, qOpts, expr, start, end, step)
+					rq, err := engine.NewRangeQuery(t.Context(), stor, nil, expr, start, end, step)
 					require.NoError(t, err)
 					t.Cleanup(rq.Close)
 
@@ -569,7 +564,7 @@ load 10s
 			}
 			for _, tc := range nestedLabelCases {
 				t.Run("nested label_replace/"+tc.expr, func(t *testing.T) {
-					rq, err := engine.NewRangeQuery(t.Context(), stor, qOpts, tc.expr, start, end, step)
+					rq, err := engine.NewRangeQuery(t.Context(), stor, nil, tc.expr, start, end, step)
 					require.NoError(t, err)
 					t.Cleanup(rq.Close)
 
@@ -592,7 +587,7 @@ load 10s
 
 			for _, expr := range []string{`count(abs({k="dup_err"}))`, `count(timestamp({k="dup_err"}))`, `count(start_timestamp({k="dup_err"}))`} {
 				t.Run("nested count/"+expr, func(t *testing.T) {
-					rq, err := engine.NewRangeQuery(t.Context(), stor, qOpts, expr, start, end, step)
+					rq, err := engine.NewRangeQuery(t.Context(), stor, nil, expr, start, end, step)
 					require.NoError(t, err)
 					t.Cleanup(rq.Close)
 
