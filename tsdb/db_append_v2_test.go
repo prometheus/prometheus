@@ -543,6 +543,17 @@ func TestDB_Snapshot_AppendV2(t *testing.T) {
 	require.NoError(t, db.Snapshot(snap, true))
 	require.NoError(t, db.Close())
 
+	// A snapshot has no WAL directory. Reading it with a read-only DB, as
+	// promtool tsdb dump does, must still work.
+	require.NoDirExists(t, filepath.Join(snap, "wal"))
+	dbReadOnly, err := OpenDBReadOnly(snap, t.TempDir(), nil)
+	require.NoError(t, err)
+	readOnlyQuerier, err := dbReadOnly.Querier(math.MinInt64, math.MaxInt64)
+	require.NoError(t, err)
+	readOnlySeries := query(t, readOnlyQuerier, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+	require.Len(t, readOnlySeries[`{foo="bar"}`], 1000)
+	require.NoError(t, dbReadOnly.Close())
+
 	// reopen DB from snapshot
 	db = newTestDB(t, withDir(snap))
 

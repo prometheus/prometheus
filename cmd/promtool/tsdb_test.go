@@ -350,11 +350,6 @@ func TestTSDBDumpOpenMetricsRoundTrip(t *testing.T) {
 	// Import samples from OM format
 	err = backfill(5000, initialMetrics, dbDir, false, false, 2*time.Hour, map[string]string{})
 	require.NoError(t, err)
-	db, err := tsdb.Open(dbDir, nil, nil, tsdb.DefaultOptions(), nil)
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		require.NoError(t, db.Close())
-	})
 
 	// Dump the blocks into OM format
 	dumpedMetrics := getDumpedSamples(t, dbDir, "", math.MinInt64, math.MaxInt64, []string{"{__name__=~'(?s:.*)'}"}, formatSeriesSetOpenMetrics)
