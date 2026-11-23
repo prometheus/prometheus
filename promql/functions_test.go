@@ -23,8 +23,10 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/promqltest"
@@ -336,11 +338,34 @@ load 10s
 	dup_err_a{k="dup_err"}                                    _ -1
 	dup_err_b{k="dup_err"}@st                                 _ -5s
 	dup_err_b{k="dup_err"}                                    _ -2
+	mix_dup_a{k="mix_dup"}@st                                 _ -1s -2s
+	mix_dup_a{k="mix_dup"}                                    _ -1  -2
+	mix_dup_b{k="mix_dup"}@st                                 _ -1s -2s _   _   -5s -6s
+	mix_dup_b{k="mix_dup"}                                    _ {{sum:1}} {{sum:2}} _ _ -5 -6
+	stale_float{k="stale"}@st                                 _ -1s _   _   -4s
+	stale_float{k="stale"}                                    _ -1  stale _ -4
 `, func(opt *tsdb.Options) {
 		opt.EnableSTStorage = true
 		opt.FloatChunkEncoding = chunkenc.EncXOR2
 		opt.EnableHistogramSTEncoding = true
 	})
+
+	// Append a native histogram series with an explicit stale histogram marker
+	// (promqltest load syntax does not support stale inside {{...}} histograms).
+	app := stor.AppenderV2(t.Context())
+	staleHistLbls := labels.FromStrings(model.MetricNameLabel, "stale_hist", "k", "stale_h")
+	for _, pt := range []struct {
+		st, ts int64
+		fh     *histogram.FloatHistogram
+	}{
+		{st: 9_000, ts: 10_000, fh: &histogram.FloatHistogram{Count: 1, Sum: 1}},
+		{st: 0, ts: 20_000, fh: &histogram.FloatHistogram{Sum: math.Float64frombits(value.StaleNaN)}},
+		{st: 36_000, ts: 40_000, fh: &histogram.FloatHistogram{Count: 1, Sum: 4}},
+	} {
+		_, err := app.Append(0, staleHistLbls, pt.st, pt.ts, 0, nil, pt.fh, storage.AppendV2Options{})
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
 
 	start := time.Unix(10, 0)
 	end := time.Unix(60, 0)
@@ -383,9 +408,41 @@ load 10s
 			},
 		},
 		{
+			expr: `abs(unary_hist)`,
+			want: func(int64) map[string]float64 {
+				return nil
+			},
+		},
+		{
 			expr: `timestamp(unary_float @ 30)`,
 			want: func(int64) map[string]float64 {
 				return map[string]float64{`{k="1"}`: 30}
+			},
+		},
+		{
+			expr: `start_timestamp(unary_float @ 30)`,
+			want: func(int64) map[string]float64 {
+				return map[string]float64{`{k="1"}`: 27}
+			},
+		},
+		{
+			expr: `timestamp(unary_float offset 10s)`,
+			want: func(tsMS int64) map[string]float64 {
+				if tsMS < 20_000 {
+					return nil
+				}
+				sampleTS := float64((expectedSampleIdx(tsMS-10_000) + 1) * 10)
+				return map[string]float64{`{k="1"}`: sampleTS}
+			},
+		},
+		{
+			expr: `start_timestamp(unary_float offset 10s)`,
+			want: func(tsMS int64) map[string]float64 {
+				if tsMS < 20_000 {
+					return nil
+				}
+				sampleST := float64((expectedSampleIdx(tsMS-10_000) + 1) * 9)
+				return map[string]float64{`{k="1"}`: sampleST}
 			},
 		},
 		{
@@ -437,6 +494,60 @@ load 10s
 				return map[string]float64{`{k="dup"}`: sampleST}
 			},
 		},
+		{
+			// abs drops mix_dup_b's histograms at 10s..30s before duplicate-labelset merging,
+			// so the remaining float points from mix_dup_a and mix_dup_b do not collide.
+			expr: `abs({k="mix_dup"})`,
+			want: func(tsMS int64) map[string]float64 {
+				if tsMS >= 35_000 && tsMS < 50_000 {
+					return nil
+				}
+				idx := expectedSampleIdx(tsMS)
+				if tsMS == 30_000 {
+					idx = 1
+				}
+				return map[string]float64{`{k="mix_dup"}`: float64(idx + 1)}
+			},
+		},
+		{
+			expr: `abs({k=~"stale|stale_h"})`,
+			want: func(tsMS int64) map[string]float64 {
+				switch {
+				case tsMS <= 15_000:
+					return map[string]float64{`{k="stale"}`: 1}
+				case tsMS >= 40_000 && tsMS <= 50_000:
+					return map[string]float64{`{k="stale"}`: 4}
+				default:
+					return nil
+				}
+			},
+		},
+		{
+			expr: `timestamp({k=~"stale|stale_h"})`,
+			want: func(tsMS int64) map[string]float64 {
+				switch {
+				case tsMS <= 15_000:
+					return map[string]float64{`{k="stale"}`: 10, `{k="stale_h"}`: 10}
+				case tsMS >= 40_000 && tsMS <= 50_000:
+					return map[string]float64{`{k="stale"}`: 40, `{k="stale_h"}`: 40}
+				default:
+					return nil
+				}
+			},
+		},
+		{
+			expr: `start_timestamp({k=~"stale|stale_h"})`,
+			want: func(tsMS int64) map[string]float64 {
+				switch {
+				case tsMS <= 15_000:
+					return map[string]float64{`{k="stale"}`: 9, `{k="stale_h"}`: 9}
+				case tsMS >= 40_000 && tsMS <= 50_000:
+					return map[string]float64{`{k="stale"}`: 36, `{k="stale_h"}`: 36}
+				default:
+					return nil
+				}
+			},
+		},
 	}
 
 	for _, delayedNameRemoval := range []bool{false, true} {
@@ -462,7 +573,6 @@ load 10s
 					require.Empty(t, rRes.Warnings)
 					mat, err := rRes.Matrix()
 					require.NoError(t, err)
-					require.NotEmpty(t, mat)
 
 					// Verify that duplicate labelsets were actually merged into one Series,
 					// timestamps are strictly increasing per series, and no stray timestamps exist.
@@ -514,6 +624,11 @@ load 10s
 						}
 						require.Equal(t, want, instGot, "instant ts=%d", tsMS)
 					}
+					if expectedSteps == 0 {
+						require.Empty(t, mat)
+					} else {
+						require.NotEmpty(t, mat)
+					}
 					require.Len(t, gotAtTS, expectedSteps)
 				})
 			}
@@ -532,7 +647,13 @@ load 10s
 				require.Empty(t, mat)
 			})
 
-			for _, expr := range []string{`abs({k="dup_err"})`, `timestamp({k="dup_err"})`, `start_timestamp({k="dup_err"})`} {
+			for _, expr := range []string{
+				`abs({k="dup_err"})`,
+				`timestamp({k="dup_err"})`,
+				`start_timestamp({k="dup_err"})`,
+				`timestamp({k="mix_dup"})`,
+				`start_timestamp({k="mix_dup"})`,
+			} {
 				t.Run("duplicate labelset error/"+expr, func(t *testing.T) {
 					rq, err := engine.NewRangeQuery(t.Context(), stor, nil, expr, start, end, step)
 					require.NoError(t, err)
