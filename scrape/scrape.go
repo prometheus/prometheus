@@ -23,6 +23,7 @@ import (
 	"io"
 	"log/slog"
 	"math"
+	"math/bits"
 	"net"
 	"net/http"
 	"net/http/httptrace"
@@ -947,16 +948,21 @@ type loop interface {
 	disableEndOfRunStalenessMarkers()
 }
 
+// cacheEntry holds a cached scraped series in scrapeCache.entries.
+// Keeping metHash, ref, and lset together (32 B with stringlabels) keeps warm
+// lookups to a single cache line with only one GC-scanned pointer (inside lset).
 type cacheEntry struct {
-	ref      storage.SeriesRef
-	lastIter uint64
-	lset     labels.Labels
+	metHash uint64
+	ref     storage.SeriesRef
+	lset    labels.Labels
 }
 
 type staleSeries struct {
-	lset  labels.Labels
-	ref   storage.SeriesRef
-	alive bool
+	lset   labels.Labels
+	ref    storage.SeriesRef
+	inPrev bool
+	inCur  bool
+	alive  bool
 }
 
 // seriesMetaEntry caches a series' post-relabel metadata and metric family name (meta, mfName)
@@ -1053,35 +1059,28 @@ type scrapeCache struct {
 	// How many series and metadata entries there were at the last success.
 	successfulCount int
 
-	// Hash of exposed metric string (xxhash.Sum64) to an entry with information
-	// about the actual label set and its storage reference. Keyed by hash and
-	// stored by value to avoid retaining a heap-allocated metric string and
-	// *cacheEntry pointer per active series.
-	series map[uint64]cacheEntry
+	// Dense series arena indexed by slot id (0..len(entries)-1) and hash-to-slot
+	// index. Both shrink on flush after cardinality spikes.
+	entries []cacheEntry
+	index   map[uint64]uint32
+
+	// Three 1-bit-per-slot bitsets (0.375 B/series total, pointer-free,
+	// L1-resident even at 100k series):
+	// - seenBits: accessed via get or addRef in the current scrape (replaces lastIter).
+	// - prevBits: tracked for staleness in the previous scrape.
+	// - curBits:  tracked for staleness in the current scrape.
+	seenBits   []uint64
+	prevBits   []uint64
+	curBits    []uint64
+	seenSeries int
 
 	// Cache of dropped metric string hashes (xxhash.Sum64) and their last seen iteration.
 	droppedSeries map[uint64]uint64
 
-	// Metric hashes (matching keys in series) seen in the current and previous
-	// scrape, for staleness detection. Storing uint64 hashes keeps both slices
-	// pointer-free (noscan) at ~16 B/series across both slices.
-	seriesCur  []uint64
-	seriesPrev []uint64
+	// Preserves entries tracked in the previous or current iteration that were
+	// removed from entries mid-scrape (e.g. metadata relabeling drops or label changes).
+	orphans []staleSeries
 
-	// Lazily allocated only when deleteSeries removes a cached entry mid-scrape
-	// (e.g. metadata relabeling drops or changes a series' labels):
-	// - replacedPrev preserves the previous-scrape (ref, lset) when a cached entry
-	//   is deleted before being tracked in the current scrape (cleared in iterDone).
-	// - extraPrev/extraCur preserve entries already tracked in seriesCur before a
-	//   mid-scrape deletion (swapped in iterDone) so they never shadow a newer
-	//   series stored under the same metHash in c.series.
-	replacedPrev map[uint64]staleSeries
-	extraPrev    []staleSeries
-	extraCur     []staleSeries
-	// Lazily populated only when deleteSeries runs on an already-scraped hash so
-	// checking seriesCur membership stays amortized O(1) instead of O(N).
-	seriesCurSet     map[uint64]struct{}
-	seriesCurIndexed int
 	// Lazily populated only when updateRef changes a non-zero SeriesRef, recording
 	// oldRef -> (newRef, lset) so stale aliases sharing the same label set follow
 	// the rotated reference in forEachStale (cleared in iterDone).
@@ -1160,11 +1159,80 @@ func (m *metaEntry) size() int {
 
 func newScrapeCache(metrics *scrapeMetrics) *scrapeCache {
 	return &scrapeCache{
-		series:        map[uint64]cacheEntry{},
 		droppedSeries: map[uint64]uint64{},
 		metadata:      map[string]*metaEntry{},
 		metrics:       metrics,
 	}
+}
+
+func getBit(bs []uint64, idx uint32) bool {
+	return bs[idx>>6]&(1<<(idx&63)) != 0
+}
+
+func setBit(bs []uint64, idx uint32, val bool) {
+	w, mask := idx>>6, uint64(1)<<(idx&63)
+	if val {
+		bs[w] |= mask
+	} else {
+		bs[w] &^= mask
+	}
+}
+
+func (c *scrapeCache) lookupIndex(h uint64) (uint32, bool) {
+	idx, ok := c.index[h]
+	return idx, ok
+}
+
+func (c *scrapeCache) rebuildIndex() {
+	if len(c.entries) == 0 {
+		c.index = nil
+		return
+	}
+	m := make(map[uint64]uint32, len(c.entries))
+	for i := range c.entries {
+		m[c.entries[i].metHash] = uint32(i)
+	}
+	c.index = m
+}
+
+// insertIndex indexes c.entries[idx] (where idx == len(c.entries)-1).
+func (c *scrapeCache) insertIndex(h uint64, idx uint32) {
+	if c.index == nil {
+		c.index = make(map[uint64]uint32)
+	}
+	c.index[h] = idx
+}
+
+func (c *scrapeCache) updateIndex(h uint64, _, newIdx uint32) {
+	c.index[h] = newIdx
+}
+
+func (c *scrapeCache) deleteIndex(h uint64, _ uint32) {
+	delete(c.index, h)
+}
+
+// removeSlot swap-removes idx from entries, index, and all three bitsets.
+func (c *scrapeCache) removeSlot(idx uint32) {
+	h := c.entries[idx].metHash
+	c.deleteIndex(h, idx)
+	last := uint32(len(c.entries) - 1)
+	if idx != last {
+		moved := c.entries[last]
+		c.entries[idx] = moved
+		c.updateIndex(moved.metHash, last, idx)
+		setBit(c.seenBits, idx, getBit(c.seenBits, last))
+		setBit(c.prevBits, idx, getBit(c.prevBits, last))
+		setBit(c.curBits, idx, getBit(c.curBits, last))
+	}
+	c.entries[last] = cacheEntry{}
+	c.entries = c.entries[:last]
+	setBit(c.seenBits, last, false)
+	setBit(c.prevBits, last, false)
+	setBit(c.curBits, last, false)
+	needWords := (len(c.entries) + 63) / 64
+	c.seenBits = c.seenBits[:needWords]
+	c.prevBits = c.prevBits[:needWords]
+	c.curBits = c.curBits[:needWords]
 }
 
 func (c *scrapeCache) iterDone(flushCache bool) {
@@ -1172,7 +1240,7 @@ func (c *scrapeCache) iterDone(flushCache bool) {
 	c.flushPending()
 	c.pendingHelp = nil
 	c.pendingUnit = nil
-	count := len(c.series) + len(c.droppedSeries) + len(c.metadata)
+	count := len(c.entries) + len(c.droppedSeries) + len(c.metadata)
 	c.metaMtx.Unlock()
 
 	switch {
@@ -1188,20 +1256,99 @@ func (c *scrapeCache) iterDone(flushCache bool) {
 		c.metrics.targetScrapeCacheFlushForced.Inc()
 	}
 
+	// Swap staleness bitsets before eviction so prevBits carries the current
+	// scrape's tracked set and compaction or swap-remove preserves it cleanly.
+	c.prevBits, c.curBits = c.curBits, c.prevBits
+	clear(c.curBits)
+
 	if flushCache {
 		// All caches may grow over time through series churn
 		// or multiple string representations of the same metric. Clean up entries
 		// that haven't appeared in the last scrape.
-		for h, e := range c.series {
-			if c.iter != e.lastIter {
-				delete(c.series, h)
-				if c.seriesMeta != nil {
-					delete(c.seriesMeta, h)
+		if c.seenSeries != len(c.entries) {
+			evictCount := len(c.entries) - c.seenSeries
+			switch {
+			case c.seenSeries == 0:
+				clear(c.entries)
+				c.entries = nil
+				c.index = nil
+				c.seenBits = nil
+				c.prevBits = nil
+				c.curBits = nil
+				c.seriesMeta = nil
+				c.stCache = nil
+			case evictCount*4 > len(c.entries):
+				// Order-preserving compaction keeps surviving entries contiguous
+				// and rebuilds the index in one linear pass.
+				dst := uint32(0)
+				for src := uint32(0); src < uint32(len(c.entries)); src++ {
+					if !getBit(c.seenBits, src) {
+						h := c.entries[src].metHash
+						if c.seriesMeta != nil {
+							delete(c.seriesMeta, h)
+						}
+						if c.stCache != nil {
+							delete(c.stCache, h)
+						}
+						continue
+					}
+					if dst != src {
+						c.entries[dst] = c.entries[src]
+						setBit(c.prevBits, dst, getBit(c.prevBits, src))
+					}
+					dst++
 				}
-				if c.stCache != nil {
-					delete(c.stCache, h)
+				clear(c.entries[dst:])
+				c.entries = c.entries[:dst]
+				if rem := dst & 63; rem != 0 {
+					c.prevBits[dst>>6] &= (uint64(1) << rem) - 1
+				}
+				needWords := (int(dst) + 63) / 64
+				clear(c.prevBits[needWords:])
+				c.prevBits = c.prevBits[:needWords]
+				c.curBits = c.curBits[:needWords]
+				c.seenBits = c.seenBits[:needWords]
+				c.rebuildIndex()
+			default:
+				// Small churn: scan ^seenBits backward so swap-remove only moves
+				// already-verified surviving entries from the tail.
+				n := len(c.entries)
+				lastWord := len(c.seenBits) - 1
+				for w, seen := range slices.Backward(c.seenBits) {
+					unseen := ^seen
+					if w == lastWord {
+						if rem := n & 63; rem != 0 {
+							unseen &= (uint64(1) << rem) - 1
+						}
+					}
+					for unseen != 0 {
+						bit := 63 - bits.LeadingZeros64(unseen)
+						unseen &^= uint64(1) << bit
+						idx := uint32(w<<6 + bit)
+						h := c.entries[idx].metHash
+						if c.seriesMeta != nil {
+							delete(c.seriesMeta, h)
+						}
+						if c.stCache != nil {
+							delete(c.stCache, h)
+						}
+						c.removeSlot(idx)
+					}
 				}
 			}
+		}
+		if cap(c.entries) > 1024 && len(c.entries) < cap(c.entries)/4 {
+			n := len(c.entries)
+			newEntries := make([]cacheEntry, n)
+			copy(newEntries, c.entries)
+			c.entries = newEntries
+			words := (n + 63) / 64
+			newPrev := make([]uint64, words)
+			copy(newPrev, c.prevBits)
+			c.prevBits = newPrev
+			c.curBits = make([]uint64, words)
+			c.seenBits = make([]uint64, words)
+			c.rebuildIndex()
 		}
 		for h, iter := range c.droppedSeries {
 			if c.iter != iter {
@@ -1222,40 +1369,63 @@ func (c *scrapeCache) iterDone(flushCache bool) {
 		c.metaMtx.Unlock()
 	}
 
-	// Swap current and previous series slices, reusing backing arrays.
-	// Elements are uint64 hashes (pointer-free), so no clear() is needed.
-	c.seriesPrev, c.seriesCur = c.seriesCur, c.seriesPrev[:0]
-	if flushCache && cap(c.seriesCur) > 1024 && len(c.seriesPrev) < cap(c.seriesCur)/4 {
-		c.seriesCur = nil
+	clear(c.seenBits)
+	c.seenSeries = 0
+
+	// Orphans tracked in this iteration become stale candidates in the next one.
+	if len(c.orphans) > 0 {
+		out := c.orphans[:0]
+		for _, o := range c.orphans {
+			if o.inCur {
+				o.inPrev = true
+				o.inCur = false
+				out = append(out, o)
+			}
+		}
+		clear(c.orphans[len(out):])
+		if len(out) == 0 {
+			c.orphans = nil
+		} else {
+			c.orphans = out
+		}
 	}
-	c.replacedPrev = nil
-	c.extraPrev, c.extraCur = c.extraCur, nil
-	c.seriesCurSet = nil
-	c.seriesCurIndexed = 0
 	c.movedRefs = nil
 
 	c.iter++
 }
 
-func (c *scrapeCache) get(met []byte) (uint64, cacheEntry, bool, bool) {
+func (c *scrapeCache) get(met []byte) (uint64, uint32, cacheEntry, bool, bool) {
 	h := xxhash.Sum64(met)
-	e, ok := c.series[h]
+	idx, ok := c.lookupIndex(h)
 	if !ok {
-		return h, cacheEntry{}, false, false
+		return h, 0, cacheEntry{}, false, false
 	}
-	alreadyScraped := e.lastIter == c.iter
+	w, mask := idx>>6, uint64(1)<<(idx&63)
+	alreadyScraped := c.seenBits[w]&mask != 0
 	if !alreadyScraped {
-		e.lastIter = c.iter
-		c.series[h] = e
+		c.seenBits[w] |= mask
+		c.seenSeries++
 	}
-	return h, e, true, alreadyScraped
+	return h, idx, c.entries[idx], true, alreadyScraped
 }
 
-func (c *scrapeCache) addRef(metHash uint64, ref storage.SeriesRef, lset labels.Labels, st *stCache) cacheEntry {
-	ce := cacheEntry{ref: ref, lastIter: c.iter, lset: lset}
-	c.series[metHash] = ce
+func (c *scrapeCache) addRef(metHash uint64, ref storage.SeriesRef, lset labels.Labels, st *stCache) (uint32, cacheEntry) {
+	if oldIdx, ok := c.lookupIndex(metHash); ok {
+		c.forgetSlot(oldIdx)
+	}
+	idx := uint32(len(c.entries))
+	ce := cacheEntry{metHash: metHash, ref: ref, lset: lset}
+	c.entries = append(c.entries, ce)
+	if int(idx>>6) >= len(c.seenBits) {
+		c.seenBits = append(c.seenBits, 0)
+		c.prevBits = append(c.prevBits, 0)
+		c.curBits = append(c.curBits, 0)
+	}
+	c.seenBits[idx>>6] |= 1 << (idx & 63)
+	c.seenSeries++
+	c.insertIndex(metHash, idx)
 	c.setST(metHash, st)
-	return ce
+	return idx, ce
 }
 
 func (c *scrapeCache) getST(metHash uint64) *stCache {
@@ -1290,42 +1460,30 @@ func (c *scrapeCache) setSeriesMeta(metHash uint64, origMeta, meta unique.Handle
 	}
 }
 
-func (c *scrapeCache) inSeriesCur(metHash uint64) bool {
-	if len(c.seriesCur) == 0 {
-		return false
+// forgetSlot preserves an entry's staleness state in orphans before swap-removing it.
+func (c *scrapeCache) forgetSlot(idx uint32) {
+	old := c.entries[idx]
+	if getBit(c.seenBits, idx) {
+		c.seenSeries--
 	}
-	if c.seriesCurSet == nil {
-		c.seriesCurSet = make(map[uint64]struct{}, len(c.seriesCur))
+	inPrev := getBit(c.prevBits, idx)
+	inCur := getBit(c.curBits, idx)
+	if old.ref != 0 && (inPrev || inCur) {
+		c.orphans = append(c.orphans, staleSeries{
+			ref:    old.ref,
+			lset:   old.lset,
+			inPrev: inPrev,
+			inCur:  inCur,
+		})
 	}
-	for _, h := range c.seriesCur[c.seriesCurIndexed:] {
-		c.seriesCurSet[h] = struct{}{}
-	}
-	c.seriesCurIndexed = len(c.seriesCur)
-	_, ok := c.seriesCurSet[metHash]
-	return ok
+	c.removeSlot(idx)
 }
 
-// deleteSeries removes metHash from series and seriesMeta while preserving its
-// (ref, lset) for staleness emission. Callers must pass alreadyScraped from get
-// because get updates ce.lastIter to c.iter before deleteSeries runs; when true
-// and metHash was already tracked in seriesCur, the deleted entry is saved in
-// extraCur instead of replacedPrev.
-func (c *scrapeCache) deleteSeries(metHash uint64, alreadyScraped bool) {
-	if ce, ok := c.series[metHash]; ok {
-		if ce.ref != 0 {
-			old := staleSeries{ref: ce.ref, lset: ce.lset}
-			if alreadyScraped && c.inSeriesCur(metHash) {
-				c.extraCur = append(c.extraCur, old)
-			} else {
-				if c.replacedPrev == nil {
-					c.replacedPrev = make(map[uint64]staleSeries)
-				}
-				if _, exists := c.replacedPrev[metHash]; !exists {
-					c.replacedPrev[metHash] = old
-				}
-			}
-		}
-		delete(c.series, metHash)
+// deleteSeries removes metHash from entries, seriesMeta, and stCache while
+// preserving its (ref, lset) for staleness emission.
+func (c *scrapeCache) deleteSeries(metHash uint64) {
+	if idx, ok := c.lookupIndex(metHash); ok {
+		c.forgetSlot(idx)
 	}
 	if c.seriesMeta != nil {
 		delete(c.seriesMeta, metHash)
@@ -1377,11 +1535,20 @@ func (c *scrapeCache) getDroppedWithMeta(metHash uint64, origMFName unique.Handl
 }
 
 // updateRef points the cache entry at a new storage reference, e.g. because the
-// storage garbage collected the series and had to recreate it. Updating c.series
+// storage garbage collected the series and had to recreate it. Updating c.entries
 // keeps the current metric hash in sync, and recording the remap in movedRefs
 // lets any other cached metric hash sharing the same label set follow the new
 // reference in forEachStale without affecting unrelated series.
 func (c *scrapeCache) updateRef(metHash uint64, ce *cacheEntry, ref storage.SeriesRef) {
+	if ce.ref == ref {
+		return
+	}
+	if idx, ok := c.lookupIndex(metHash); ok {
+		c.updateSlotRef(idx, ce, ref)
+	}
+}
+
+func (c *scrapeCache) updateSlotRef(idx uint32, ce *cacheEntry, ref storage.SeriesRef) {
 	if ce.ref == ref {
 		return
 	}
@@ -1392,7 +1559,7 @@ func (c *scrapeCache) updateRef(metHash uint64, ce *cacheEntry, ref storage.Seri
 		c.movedRefs[ce.ref] = append(c.movedRefs[ce.ref], staleSeries{ref: ref, lset: ce.lset})
 	}
 	ce.ref = ref
-	c.series[metHash] = *ce
+	c.entries[idx].ref = ref
 }
 
 func (c *scrapeCache) remapRef(ref storage.SeriesRef, lset labels.Labels) storage.SeriesRef {
@@ -1416,16 +1583,16 @@ func (c *scrapeCache) remapRef(ref storage.SeriesRef, lset labels.Labels) storag
 	return ref
 }
 
-// trackStaleness records metHash as exposed in the current scrape. Callers must
-// ensure metHash is present in c.series with a non-zero ref and lastIter == c.iter
-// (via get or addRef) so iterDone(true) does not evict it before forEachStale runs.
-// Only adjacent duplicates are skipped on the hot path; non-adjacent duplicates
-// (possible only with explicit timestamps) are deduplicated by SeriesRef in forEachStale.
+// trackStaleness records metHash as exposed in the current scrape.
 func (c *scrapeCache) trackStaleness(metHash uint64) {
-	if n := len(c.seriesCur); n > 0 && c.seriesCur[n-1] == metHash {
-		return
+	if idx, ok := c.lookupIndex(metHash); ok {
+		c.trackSlot(idx)
 	}
-	c.seriesCur = append(c.seriesCur, metHash)
+}
+
+// trackSlot records slot idx as tracked in the current scrape.
+func (c *scrapeCache) trackSlot(idx uint32) {
+	c.curBits[idx>>6] |= 1 << (idx & 63)
 }
 
 func cmpStaleSeriesByRef(a, b staleSeries) int {
@@ -1457,83 +1624,61 @@ func (b *refBloom) mayContain(ref storage.SeriesRef) bool {
 	return b[(h2>>57)&127]&(1<<(h2&63)) != 0
 }
 
-// filterStaleHashes partitions unmatchedPrev in-place via swaps so all hashes
-// missing from unmatchedCur/curSet (or present in replacedPrev) occupy the returned
-// prefix, keeping every hash intact in unmatchedPrev for retry safety.
-func filterStaleHashes(unmatchedPrev, unmatchedCur []uint64, curSet map[uint64]struct{}, replacedPrev map[uint64]staleSeries, hashMapThreshold int) []uint64 {
-	if curSet == nil && len(unmatchedCur) == 0 {
-		return unmatchedPrev
-	}
-	if curSet == nil && len(unmatchedCur) > hashMapThreshold {
-		curSet = make(map[uint64]struct{}, len(unmatchedCur))
-		for _, h := range unmatchedCur {
-			curSet[h] = struct{}{}
+func (c *scrapeCache) countStaleOrphansFrom(start int) int {
+	n := 0
+	for _, o := range c.orphans[start:] {
+		if o.inPrev && !o.inCur {
+			n++
 		}
-		unmatchedCur = nil
 	}
+	return n
+}
 
-	hasReplacedPrev := len(replacedPrev) > 0
-	keep := func(staleEnd, i int) int {
-		if staleEnd != i {
-			unmatchedPrev[staleEnd], unmatchedPrev[i] = unmatchedPrev[i], unmatchedPrev[staleEnd]
-		}
-		return staleEnd + 1
+func (c *scrapeCache) countStaleBitsFrom(startWord int) int {
+	n := 0
+	prevBits := c.prevBits
+	curBits := c.curBits[:len(prevBits)]
+	for w := startWord; w < len(prevBits); w++ {
+		n += bits.OnesCount64(prevBits[w] &^ curBits[w])
 	}
-	isReplaced := func(h uint64) bool {
-		if !hasReplacedPrev {
-			return false
-		}
-		_, replaced := replacedPrev[h]
-		return replaced
-	}
+	return n
+}
 
-	staleEnd := 0
-	switch {
-	case curSet != nil:
-		for i, h := range unmatchedPrev {
-			if isReplaced(h) {
-				staleEnd = keep(staleEnd, i)
-				continue
-			}
-			if _, found := curSet[h]; !found {
-				staleEnd = keep(staleEnd, i)
-			}
+func (c *scrapeCache) isRefLive(ref storage.SeriesRef, hasMovedRefs bool) bool {
+	for _, o := range c.orphans {
+		if !o.inCur {
+			continue
 		}
-	case len(unmatchedPrev) <= 16:
-		slices.Sort(unmatchedCur)
-		for i, h := range unmatchedPrev {
-			if isReplaced(h) {
-				staleEnd = keep(staleEnd, i)
-				continue
-			}
-			if _, found := slices.BinarySearch(unmatchedCur, h); !found {
-				staleEnd = keep(staleEnd, i)
-			}
+		curRef := o.ref
+		if hasMovedRefs {
+			curRef = c.remapRef(curRef, o.lset)
 		}
-	default:
-		slices.Sort(unmatchedCur)
-		slices.Sort(unmatchedPrev)
-		ci := 0
-		// NOTE: staleEnd <= i holds throughout, so swapping into unmatchedPrev[staleEnd]
-		// only touches already-visited indices and preserves sorted order of unmatchedPrev[i+1:].
-		for i, h := range unmatchedPrev {
-			if isReplaced(h) {
-				staleEnd = keep(staleEnd, i)
-				continue
+		if curRef == ref {
+			return true
+		}
+	}
+	entries := c.entries
+	for w, word := range c.curBits {
+		base := w << 6
+		for word != 0 {
+			bit := bits.TrailingZeros64(word)
+			word &= word - 1
+			e := &entries[base+bit]
+			curRef := e.ref
+			if hasMovedRefs {
+				curRef = c.remapRef(curRef, e.lset)
 			}
-			for ci < len(unmatchedCur) && unmatchedCur[ci] < h {
-				ci++
-			}
-			if ci >= len(unmatchedCur) || unmatchedCur[ci] != h {
-				staleEnd = keep(staleEnd, i)
+			if curRef == ref {
+				return true
 			}
 		}
 	}
-	return unmatchedPrev[:staleEnd]
+	return false
 }
 
 // markLiveStaleSeries marks entries in sorted, deduplicated stale whose SeriesRef
-// is still live in seriesCur or extraCur. Returns true if all entries are alive.
+// is still held by an entry tracked in the current iteration. Returns true if all
+// entries are alive.
 func (c *scrapeCache) markLiveStaleSeries(stale []staleSeries, hasMovedRefs bool) bool {
 	minRef := stale[0].ref
 	maxRef := stale[len(stale)-1].ref
@@ -1555,219 +1700,109 @@ func (c *scrapeCache) markLiveStaleSeries(stale []staleSeries, hasMovedRefs bool
 		return false
 	}
 
-	for _, curH := range c.seriesCur {
-		if ce, ok := c.series[curH]; ok {
-			curRef := ce.ref
-			if hasMovedRefs {
-				curRef = c.remapRef(curRef, ce.lset)
-			}
-			if markAlive(curRef) {
-				return true
-			}
+	for _, o := range c.orphans {
+		if !o.inCur {
+			continue
+		}
+		ref := o.ref
+		if hasMovedRefs {
+			ref = c.remapRef(ref, o.lset)
+		}
+		if markAlive(ref) {
+			return true
 		}
 	}
-	for _, cur := range c.extraCur {
-		curRef := cur.ref
-		if hasMovedRefs {
-			curRef = c.remapRef(curRef, cur.lset)
-		}
-		if markAlive(curRef) {
-			return true
+
+	entries := c.entries
+	for w, word := range c.curBits {
+		base := w << 6
+		for word != 0 {
+			bit := bits.TrailingZeros64(word)
+			word &= word - 1
+			e := &entries[base+bit]
+			ref := e.ref
+			if hasMovedRefs {
+				ref = c.remapRef(ref, e.lset)
+			}
+			if markAlive(ref) {
+				return true
+			}
 		}
 	}
 	return false
 }
 
-func (c *scrapeCache) prevSeries(h uint64) (storage.SeriesRef, labels.Labels, bool) {
-	if len(c.replacedPrev) > 0 {
-		if old, ok := c.replacedPrev[h]; ok {
-			return old.ref, old.lset, true
-		}
-	}
-	if ce, ok := c.series[h]; ok {
-		return ce.ref, ce.lset, true
-	}
-	return 0, labels.EmptyLabels(), false
-}
-
+// forEachStale calls f for each series tracked in the previous iteration and
+// not in the current one, unless another entry tracked in the current iteration
+// holds the same SeriesRef. It does not modify staleness state, so it is
+// retry-safe before iterDone.
 func (c *scrapeCache) forEachStale(f func(storage.SeriesRef, labels.Labels) bool) {
-	if len(c.seriesPrev) == 0 && len(c.extraPrev) == 0 {
+	if len(c.prevBits) == 0 && len(c.orphans) == 0 {
 		return
 	}
 
-	hasReplacedPrev := len(c.replacedPrev) > 0
-	hasExtraPrev := len(c.extraPrev) > 0
-
-	// Fast path: when no cached entries were deleted mid-scrape and the scrape
-	// exposed the exact same metric hashes in the same order, nothing is stale.
-	if !hasReplacedPrev && !hasExtraPrev && slices.Equal(c.seriesPrev, c.seriesCur) {
-		return
-	}
-
-	var staleHashes []uint64
-	if len(c.seriesPrev) > 0 {
-		// Scan index-by-index so unchanged series at identical positions skip hash
-		// sorting and map lookups completely.
-		minLen := min(len(c.seriesPrev), len(c.seriesCur))
-		firstMismatch := -1
-		for i := range minLen {
-			ph := c.seriesPrev[i]
-			if ph != c.seriesCur[i] {
-				firstMismatch = i
-				break
-			}
-			if hasReplacedPrev {
-				if _, replaced := c.replacedPrev[ph]; replaced {
-					firstMismatch = i
-					break
-				}
-			}
+	var (
+		stackStale [32]staleSeries
+		stale      []staleSeries
+	)
+	initStale := func(hint int) {
+		if stale != nil {
+			return
 		}
-		if firstMismatch < 0 && len(c.seriesPrev) > len(c.seriesCur) {
-			firstMismatch = minLen
+		if hint <= len(stackStale) {
+			stale = stackStale[:0]
+		} else {
+			stale = make([]staleSeries, 0, hint)
 		}
-
-		if firstMismatch >= 0 {
-			// Partition mismatched previous hashes into c.seriesPrev[firstMismatch:prevEnd]
-			// via swaps so c.seriesPrev keeps every hash intact for any retry before iterDone.
-			// Collect mismatched current hashes separately so c.seriesCur retains scrape order
-			// for the next iteration's fast path.
-			const hashMapThreshold = 2048
-			prevEnd := firstMismatch
-			var stackCur [64]uint64
-			unmatchedCur := stackCur[:0]
-			var curSet map[uint64]struct{}
-			for i := firstMismatch; i < minLen; i++ {
-				ph := c.seriesPrev[i]
-				ch := c.seriesCur[i]
-				if ph == ch {
-					if !hasReplacedPrev {
-						continue
-					}
-					if _, replaced := c.replacedPrev[ph]; !replaced {
-						continue
-					}
-				}
-				if prevEnd != i {
-					c.seriesPrev[prevEnd], c.seriesPrev[i] = c.seriesPrev[i], c.seriesPrev[prevEnd]
-				}
-				prevEnd++
-				if curSet != nil {
-					curSet[ch] = struct{}{}
-				} else {
-					unmatchedCur = append(unmatchedCur, ch)
-					// When mismatch density is high (e.g. shuffled scrape order or heavy churn),
-					// switch to a presized map directly instead of growing and sorting a large slice.
-					if len(unmatchedCur) == hashMapThreshold && i-firstMismatch < hashMapThreshold*2 {
-						curSet = make(map[uint64]struct{}, len(c.seriesCur)-firstMismatch)
-						for _, h := range unmatchedCur {
-							curSet[h] = struct{}{}
-						}
-						unmatchedCur = nil
-					}
-				}
-			}
-			for i := max(firstMismatch, minLen); i < len(c.seriesPrev); i++ {
-				if prevEnd != i {
-					c.seriesPrev[prevEnd], c.seriesPrev[i] = c.seriesPrev[i], c.seriesPrev[prevEnd]
-				}
-				prevEnd++
-			}
-			if tailStart := max(firstMismatch, minLen); len(c.seriesCur) > tailStart {
-				if curSet != nil {
-					for _, h := range c.seriesCur[tailStart:] {
-						curSet[h] = struct{}{}
-					}
-				} else {
-					unmatchedCur = append(unmatchedCur, c.seriesCur[tailStart:]...)
-				}
-			}
-
-			unmatchedPrev := c.seriesPrev[firstMismatch:prevEnd]
-			if len(unmatchedPrev) > 0 {
-				// Remove hashes from unmatchedPrev that still appear in unmatchedCur (e.g. due to
-				// reordered metrics or shifted positions), unless they were deleted/replaced mid-scrape.
-				staleHashes = filterStaleHashes(unmatchedPrev, unmatchedCur, curSet, c.replacedPrev, hashMapThreshold)
-			}
-		}
-	}
-
-	totalCandidates := len(staleHashes) + len(c.extraPrev)
-	if totalCandidates == 0 {
-		return
 	}
 
 	hasMovedRefs := len(c.movedRefs) > 0
-
-	// Another cacheEntry (e.g. from changed label ordering or multiple raw metrics
-	// relabeling to the same series) may still have kept ref alive in seriesCur,
-	// or multiple disappearing entries may share the same ref.
-	if totalCandidates == 1 {
-		var (
-			ref  storage.SeriesRef
-			lset labels.Labels
-			ok   bool
-		)
-		if len(staleHashes) == 1 {
-			ref, lset, ok = c.prevSeries(staleHashes[0])
-		} else {
-			ref, lset, ok = c.extraPrev[0].ref, c.extraPrev[0].lset, true
+	for i, o := range c.orphans {
+		if !o.inPrev || o.inCur {
+			continue
 		}
-		if !ok {
-			return
+		if stale == nil {
+			initStale(c.countStaleOrphansFrom(i) + c.countStaleBitsFrom(0))
 		}
+		ref := o.ref
 		if hasMovedRefs {
-			ref = c.remapRef(ref, lset)
+			ref = c.remapRef(ref, o.lset)
 		}
-		if len(c.seriesCur) > 0 || len(c.extraCur) > 0 {
-			for _, curH := range c.seriesCur {
-				if ce, ok := c.series[curH]; ok {
-					curRef := ce.ref
-					if hasMovedRefs {
-						curRef = c.remapRef(curRef, ce.lset)
-					}
-					if curRef == ref {
-						return
-					}
-				}
-			}
-			for _, cur := range c.extraCur {
-				curRef := cur.ref
-				if hasMovedRefs {
-					curRef = c.remapRef(curRef, cur.lset)
-				}
-				if curRef == ref {
-					return
-				}
-			}
+		stale = append(stale, staleSeries{ref: ref, lset: o.lset})
+	}
+
+	prevBits := c.prevBits
+	curBits := c.curBits[:len(prevBits)]
+	entries := c.entries
+	for w, p := range prevBits {
+		staleWord := p &^ curBits[w]
+		if staleWord == 0 {
+			continue
 		}
-		f(ref, lset)
+		if stale == nil {
+			initStale(c.countStaleBitsFrom(w))
+		}
+		base := w << 6
+		for staleWord != 0 {
+			bit := bits.TrailingZeros64(staleWord)
+			staleWord &= staleWord - 1
+			e := &entries[base+bit]
+			ref := e.ref
+			if hasMovedRefs {
+				ref = c.remapRef(ref, e.lset)
+			}
+			stale = append(stale, staleSeries{ref: ref, lset: e.lset})
+		}
+	}
+
+	if len(stale) == 0 {
 		return
 	}
 
-	var stackStale [32]staleSeries
-	var stale []staleSeries
-	if totalCandidates <= len(stackStale) {
-		stale = stackStale[:0]
-	} else {
-		stale = make([]staleSeries, 0, totalCandidates)
-	}
-	for _, h := range staleHashes {
-		if ref, lset, ok := c.prevSeries(h); ok {
-			if hasMovedRefs {
-				ref = c.remapRef(ref, lset)
-			}
-			stale = append(stale, staleSeries{ref: ref, lset: lset})
+	if len(stale) == 1 {
+		if !c.isRefLive(stale[0].ref, hasMovedRefs) {
+			f(stale[0].ref, stale[0].lset)
 		}
-	}
-	for _, extra := range c.extraPrev {
-		ref := extra.ref
-		if hasMovedRefs {
-			ref = c.remapRef(ref, extra.lset)
-		}
-		stale = append(stale, staleSeries{ref: ref, lset: extra.lset})
-	}
-	if len(stale) == 0 {
 		return
 	}
 
@@ -1776,10 +1811,8 @@ func (c *scrapeCache) forEachStale(f func(storage.SeriesRef, labels.Labels) bool
 		return a.ref == b.ref
 	})
 
-	if len(c.seriesCur) > 0 || len(c.extraCur) > 0 {
-		if c.markLiveStaleSeries(stale, hasMovedRefs) {
-			return
-		}
+	if c.markLiveStaleSeries(stale, hasMovedRefs) {
+		return
 	}
 
 	for _, s := range stale {
@@ -2652,7 +2685,7 @@ loop:
 			t = *parsedTimestamp
 		}
 
-		metHash, ce, seriesCached, seriesAlreadyScraped := sl.cache.get(met)
+		metHash, slot, ce, seriesCached, seriesAlreadyScraped := sl.cache.get(met)
 		if !seriesCached && sl.cache.getDropped(metHash) {
 			continue
 		}
@@ -2733,10 +2766,10 @@ loop:
 		if err == nil && seriesCached {
 			// Append may return a new ref; keep the cache in sync.
 			if ref != 0 {
-				sl.cache.updateRef(metHash, &ce, ref)
+				sl.cache.updateSlotRef(slot, &ce, ref)
 			}
 			if (parsedTimestamp == nil || sl.trackTimestampsStaleness) && ce.ref != 0 {
-				sl.cache.trackStaleness(metHash)
+				sl.cache.trackSlot(slot)
 			}
 		}
 
@@ -2753,10 +2786,10 @@ loop:
 		// If a series was new but we didn't append it due to sample_limit or other errors then we don't need
 		// it in the scrape cache because we don't need to emit StaleNaNs for it when it disappears.
 		if !seriesCached && sampleAdded {
-			ce = sl.cache.addRef(metHash, ref, lset, nil)
+			slot, ce = sl.cache.addRef(metHash, ref, lset, nil)
 			if ce.ref != 0 && (parsedTimestamp == nil || sl.trackTimestampsStaleness) {
 				// Bypass staleness logic if there is an explicit timestamp.
-				sl.cache.trackStaleness(metHash)
+				sl.cache.trackSlot(slot)
 			}
 			if sampleLimitErr == nil && bucketLimitErr == nil {
 				seriesAdded++
@@ -3142,7 +3175,7 @@ func (sl *scrapeLoop) reportStale(app scrapeLoopAppendAdapter, start time.Time) 
 }
 
 func (sl *scrapeLoopAppender) addReportSample(s reportSample, t int64, v float64, b *labels.Builder, rejectOOO bool) (err error) {
-	metHash, ce, ok, _ := sl.cache.get(s.name)
+	metHash, _, ce, ok, _ := sl.cache.get(s.name)
 	var ref storage.SeriesRef
 	var lset labels.Labels
 	if ok {

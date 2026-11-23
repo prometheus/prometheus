@@ -259,7 +259,7 @@ loop:
 			sampleMFNameHandle unique.Handle[string]
 		)
 
-		metHash, ce, seriesCached, seriesAlreadyScraped := sl.cache.get(met)
+		metHash, slot, ce, seriesCached, seriesAlreadyScraped := sl.cache.get(met)
 
 		if !needsSeriesMetadata {
 			if !seriesCached && sl.cache.getDropped(metHash) {
@@ -347,7 +347,7 @@ loop:
 				// The label set may be set to empty to indicate dropping.
 				if lset.IsEmpty() {
 					if seriesCached {
-						sl.cache.deleteSeries(metHash, seriesAlreadyScraped)
+						sl.cache.deleteSeries(metHash)
 					}
 					sl.cache.addDroppedWithMeta(metHash, origMFNameHandle, origMetaHandle)
 					continue
@@ -378,7 +378,7 @@ loop:
 						ref = ce.ref
 						sl.cache.setSeriesMeta(metHash, origMetaHandle, sampleMetaHandle, origMFNameHandle, sampleMFNameHandle)
 					} else {
-						sl.cache.deleteSeries(metHash, seriesAlreadyScraped)
+						sl.cache.deleteSeries(metHash)
 						ce = cacheEntry{}
 						seriesCached = false
 					}
@@ -502,7 +502,7 @@ loop:
 				// Append sample to the storage.
 				ref, err = app.Append(ref, lset, st, t, val, h, fh, appOpts)
 				if err == nil && seriesCached && ref != 0 {
-					sl.cache.updateRef(metHash, &ce, ref)
+					sl.cache.updateSlotRef(slot, &ce, ref)
 				}
 			} else if !seriesCached {
 				// Keep ce.ref zero while only anchoring start time so staleness is not
@@ -525,7 +525,7 @@ loop:
 		hasCE := seriesCached
 		if !seriesCached {
 			if sampleAdded {
-				ce = sl.cache.addRef(metHash, ref, lset, stCache)
+				slot, ce = sl.cache.addRef(metHash, ref, lset, stCache)
 				hasCE = true
 				if needsSeriesMetadata {
 					sl.cache.setSeriesMeta(metHash, origMetaHandle, sampleMetaHandle, origMFNameHandle, sampleMFNameHandle)
@@ -552,7 +552,7 @@ loop:
 		// - Or we are synthesizing start times (stCache != nil), so we can clear stCache if it goes stale.
 		shouldTrackStaleness := parsedTimestamp == nil || sl.trackTimestampsStaleness || stCache != nil
 		if hasCE && ce.ref != 0 && shouldTrackStaleness && sampleAdded {
-			sl.cache.trackStaleness(metHash)
+			sl.cache.trackSlot(slot)
 		}
 
 		// Increment added even if there's an error so we correctly report the
@@ -594,7 +594,7 @@ loop:
 }
 
 func (sl *scrapeLoopAppenderV2) addReportSample(s reportSample, t int64, v float64, b *labels.Builder, rejectOOO bool) (err error) {
-	metHash, ce, ok, _ := sl.cache.get(s.name)
+	metHash, _, ce, ok, _ := sl.cache.get(s.name)
 	var ref storage.SeriesRef
 	var lset labels.Labels
 	if ok {
