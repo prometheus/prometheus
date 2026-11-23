@@ -1659,7 +1659,8 @@ func TestSeriesCompactionReclaimsChunksWithExemplars(t *testing.T) {
 // GC could then assign a WAL expiry below the last sample's timestamp, allowing
 // checkpointing to drop the declaration while that sample still needed replay.
 // Exemplar timestamps are not bounded by sample timestamps, so the declaration
-// must also be kept until the last exemplar's timestamp.
+// must also be kept until the last exemplar's timestamp, including when the
+// eviction tombstone is replayed after a restart.
 func TestSeriesCompactionWithExemplarsPreservesWALSampleReferences(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -1667,6 +1668,9 @@ func TestSeriesCompactionWithExemplarsPreservesWALSampleReferences(t *testing.T)
 		exemplarTs int64
 		// Cutoff of the WAL checkpoint.
 		truncateMint int64
+		// Restart after the eviction, so that the checkpoint uses the WAL expiry
+		// set when replaying the eviction tombstone.
+		restartBeforeCheckpoint bool
 	}{
 		{
 			// The cutoff is between the exemplar and the last sample, at 900.
@@ -1679,6 +1683,12 @@ func TestSeriesCompactionWithExemplarsPreservesWALSampleReferences(t *testing.T)
 			name:         "exemplar after last sample",
 			exemplarTs:   950,
 			truncateMint: 920,
+		},
+		{
+			name:                    "exemplar after last sample, restart before checkpoint",
+			exemplarTs:              950,
+			truncateMint:            920,
+			restartBeforeCheckpoint: true,
 		},
 	} {
 		for _, compaction := range []string{"selected", "stale"} {
@@ -1732,6 +1742,14 @@ func TestSeriesCompactionWithExemplarsPreservesWALSampleReferences(t *testing.T)
 
 				require.NoError(t, db.head.truncateMemory(e.Ts+1))
 				require.Nil(t, db.Head().series.getByID(chunks.HeadSeriesRef(selRef)), "sel must be fully evicted by now")
+
+				if tc.restartBeforeCheckpoint {
+					require.NoError(t, db.Close())
+					db, err = Open(db.Dir(), nil, nil, opts, nil)
+					require.NoError(t, err)
+					db.DisableCompactions()
+					require.Nil(t, db.Head().series.getByID(chunks.HeadSeriesRef(selRef)), "sel must be deleted by its replayed tombstone")
+				}
 
 				// Checkpoint the older segments with a cutoff between the exemplar and last
 				// sample timestamps. The declaration must be retained because the later of
