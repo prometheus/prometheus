@@ -226,6 +226,10 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 		resp.Body.Close()
 	}()
 
+	if resp.StatusCode/100 != 2 {
+		return nil, fmt.Errorf("non 2xx status '%d' response during triton service discovery", resp.StatusCode)
+	}
+
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("an error occurred when reading the response body: %w", err)
