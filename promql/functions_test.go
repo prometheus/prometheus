@@ -543,27 +543,28 @@ load 10s
 				})
 			}
 
-			// Nested expressions observe __name__ preservation and delayed duplicate
-			// merging, which top-level queries mask via Eval's final cleanupMetricLabels.
+			// Nested expressions observe metadata label preservation (__name__, __type__,
+			// __unit__) and delayed duplicate merging, which top-level queries mask via
+			// Eval's final cleanupMetricLabels.
 			nestedLabelCases := []struct {
 				expr string
 				want func(tsMS int64) float64
 			}{
 				{
-					expr: `label_replace(abs(unary_float), "orig", "$1", "__name__", "(.+)")`,
+					expr: `label_join(abs(unary_float), "meta", ",", "__name__", "__type__", "__unit__")`,
 					want: func(tsMS int64) float64 { return float64(expectedSampleIdx(tsMS) + 1) },
 				},
 				{
-					expr: `label_replace(timestamp(unary_float), "orig", "$1", "__name__", "(.+)")`,
+					expr: `label_join(timestamp(unary_float), "meta", ",", "__name__", "__type__", "__unit__")`,
 					want: func(tsMS int64) float64 { return float64((expectedSampleIdx(tsMS) + 1) * 10) },
 				},
 				{
-					expr: `label_replace(start_timestamp(unary_float), "orig", "$1", "__name__", "(.+)")`,
+					expr: `label_join(start_timestamp(unary_float), "meta", ",", "__name__", "__type__", "__unit__")`,
 					want: func(tsMS int64) float64 { return float64((expectedSampleIdx(tsMS) + 1) * 9) },
 				},
 			}
 			for _, tc := range nestedLabelCases {
-				t.Run("nested label_replace/"+tc.expr, func(t *testing.T) {
+				t.Run("nested label_join/"+tc.expr, func(t *testing.T) {
 					rq, err := engine.NewRangeQuery(t.Context(), stor, nil, tc.expr, start, end, step)
 					require.NoError(t, err)
 					t.Cleanup(rq.Close)
@@ -574,14 +575,17 @@ load 10s
 					require.NoError(t, err)
 					require.Len(t, mat, 1)
 
-					wantLabels := `{k="1"}`
+					wantLabels := `{k="1", meta=",,"}`
 					if delayedNameRemoval {
-						wantLabels = `{k="1", orig="unary_float"}`
+						wantLabels = `{k="1", meta="unary_float,gauge,seconds"}`
 					}
 					require.Equal(t, wantLabels, mat[0].Metric.String())
-					for _, pt := range mat[0].Floats {
-						require.Equal(t, tc.want(pt.T), pt.F, "ts=%d", pt.T)
+					var wantFloats []promql.FPoint
+					for ts := start; !ts.After(end); ts = ts.Add(step) {
+						tsMS := timestamp.FromTime(ts)
+						wantFloats = append(wantFloats, promql.FPoint{T: tsMS, F: tc.want(tsMS)})
 					}
+					require.Equal(t, wantFloats, mat[0].Floats)
 				})
 			}
 
