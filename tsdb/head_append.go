@@ -936,8 +936,8 @@ func (a *headAppender) AppendExemplar(ref storage.SeriesRef, lset labels.Labels,
 // exemplar with timestamp ts, so that the series cannot be garbage collected
 // before the exemplar is committed. Otherwise, the commit would log the
 // exemplar after the tombstone of the series. If s was garbage collected in the
-// meantime, it uses the series that replaced it. It returns the reserved series,
-// or nil if there is none.
+// meantime, it uses the series that replaced it, if any. It returns the reserved
+// series, or nil if there is none.
 func (a *headAppenderBase) reserveSeriesForExemplar(s *memSeries, ts int64) *memSeries {
 	for {
 		s.Lock()
