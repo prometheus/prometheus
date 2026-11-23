@@ -741,7 +741,7 @@ func TestRangeSlidingWindowMatchesInstantQueries(t *testing.T) {
 	})
 	app := stor.AppenderV2(t.Context())
 
-	for _, seriesID := range []string{"1", "2"} {
+	for seriesIdx, seriesID := range []string{"1", "2"} {
 		// Use distinct metric names so NewStartTimeOverlapWarning (which keys on metric name)
 		// catches any warning leak across series.
 		counter := labels.FromStrings("__name__", "sliding_counter_"+seriesID+"_total", "series", seriesID)
@@ -776,7 +776,7 @@ func TestRangeSlidingWindowMatchesInstantQueries(t *testing.T) {
 			_, err := app.Append(0, counter, st, ts, val, nil, nil, storage.AOptions{})
 			require.NoError(t, err)
 
-			gVal := float64(i % 4)
+			gVal := float64(i%4) + float64(seriesIdx)*10
 			if i == 22 || i == 23 {
 				gVal = math.NaN()
 			}
@@ -827,7 +827,9 @@ func TestRangeSlidingWindowMatchesInstantQueries(t *testing.T) {
 	engine := promqltest.NewTestEngineWithOpts(t, promql.EngineOpts{
 		MaxSamples:               promqltest.DefaultMaxSamplesPerQuery,
 		Timeout:                  10 * time.Second,
+		LookbackDelta:            5 * time.Second,
 		EnableDelayedNameRemoval: false,
+		Parser:                   parser.NewParser(promqltest.TestParserOpts),
 	})
 
 	queries := []string{
@@ -838,6 +840,7 @@ func TestRangeSlidingWindowMatchesInstantQueries(t *testing.T) {
 		"changes(sliding_gauge[10s])",
 		"changes(sliding_gauge[25s])",
 		"absent_over_time(sliding_gauge[10s])",
+		"sliding_gauge smoothed",
 		"rate(sliding_mixed_total[10s])",
 		"increase(sliding_mixed_total[10s])",
 		"resets(sliding_mixed_total[10s])",
