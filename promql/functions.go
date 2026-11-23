@@ -2952,9 +2952,11 @@ func funcYear(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNode
 }
 
 // FunctionCalls is a list of all functions supported by PromQL, including their types.
-// Note that Engine evaluates inPlaceFloatUnaryFuncs and direct vector-selector calls to
-// timestamp and start_timestamp via matrix fast paths instead of invoking these entries;
-// those entries remain populated for callers dispatching through FunctionCalls directly.
+// Note that Engine evaluates single-argument float math functions (abs, ceil, floor,
+// exp, sqrt, ln, log2, log10, trigonometric/hyperbolic functions, rad, deg, sgn) and
+// direct vector-selector calls to timestamp and start_timestamp via matrix fast paths
+// instead of invoking these entries; those entries remain populated for callers
+// dispatching through FunctionCalls directly.
 var FunctionCalls = map[string]FunctionCall{
 	"absent":                       funcAbsent,
 	"absent_over_time":             funcAbsentOverTime,
