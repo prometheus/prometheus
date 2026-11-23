@@ -847,70 +847,77 @@ func TestRangeSlidingWindowMatchesInstantQueries(t *testing.T) {
 	end := time.Unix(125, 0)
 	step := time.Second
 
-	enableST := true
-	qOpts := promql.NewPrometheusQueryOpts(false, 0, &enableST)
-	for _, expr := range queries {
-		t.Run("expr="+expr, func(t *testing.T) {
-			rq, err := engine.NewRangeQuery(t.Context(), stor, qOpts, expr, start, end, step)
-			require.NoError(t, err)
-			t.Cleanup(rq.Close)
+	for _, enableST := range []bool{true, false} {
+		t.Run("enableST="+strconv.FormatBool(enableST), func(t *testing.T) {
+			qOpts := promql.NewPrometheusQueryOpts(false, 0, &enableST)
+			for _, expr := range queries {
+				t.Run("expr="+expr, func(t *testing.T) {
+					rq, err := engine.NewRangeQuery(t.Context(), stor, qOpts, expr, start, end, step)
+					require.NoError(t, err)
+					t.Cleanup(rq.Close)
 
-			rRes := rq.Exec(t.Context())
-			require.NoError(t, rRes.Err)
-			mat, err := rRes.Matrix()
-			require.NoError(t, err)
+					rRes := rq.Exec(t.Context())
+					require.NoError(t, rRes.Err)
+					mat, err := rRes.Matrix()
+					require.NoError(t, err)
 
-			type sampleKey struct {
-				series string
-				ts     int64
-			}
-			gotByKey := make(map[sampleKey]float64)
-			for _, ser := range mat {
-				sID := ser.Metric.Get("series")
-				for _, pt := range ser.Floats {
-					gotByKey[sampleKey{series: sID, ts: pt.T}] = pt.F
-				}
-			}
-
-			var wantAnnos annotations.Annotations
-			for ts := start; !ts.After(end); ts = ts.Add(step) {
-				iq, err := engine.NewInstantQuery(t.Context(), stor, qOpts, expr, ts)
-				require.NoError(t, err)
-				iRes := iq.Exec(t.Context())
-				iq.Close()
-				require.NoError(t, iRes.Err)
-				wantAnnos.Merge(iRes.Warnings)
-				vec, err := iRes.Vector()
-				require.NoError(t, err)
-
-				tsMS := timestamp.FromTime(ts)
-				wantAtStep := make(map[string]float64, len(vec))
-				for _, smpl := range vec {
-					wantAtStep[smpl.Metric.Get("series")] = smpl.F
-				}
-				for _, sID := range []string{"", "1", "2"} {
-					got, hasGot := gotByKey[sampleKey{series: sID, ts: tsMS}]
-					want, hasWant := wantAtStep[sID]
-					if !hasWant {
-						require.False(t, hasGot, "unexpected sample for series=%q at ts=%d", sID, tsMS)
-						continue
+					type sampleKey struct {
+						series string
+						ts     int64
 					}
-					require.True(t, hasGot, "missing sample for series=%q at ts=%d", sID, tsMS)
-					if math.IsNaN(want) {
-						require.True(t, math.IsNaN(got), "series=%q ts=%d", sID, tsMS)
-					} else {
-						require.InDelta(t, want, got, 1e-12, "series=%q ts=%d", sID, tsMS)
+					gotByKey := make(map[sampleKey]float64)
+					for _, ser := range mat {
+						sID := ser.Metric.Get("series")
+						for _, pt := range ser.Floats {
+							gotByKey[sampleKey{series: sID, ts: pt.T}] = pt.F
+						}
 					}
-				}
-			}
-			wantWarns, wantInfos := wantAnnos.AsStrings(expr, 0, 0)
-			gotWarns, gotInfos := rRes.Warnings.AsStrings(expr, 0, 0)
-			require.ElementsMatch(t, wantWarns, gotWarns)
-			require.ElementsMatch(t, wantInfos, gotInfos)
-			if expr == `increase({__name__=~"sliding_counter_.*_total"}[10s])` || expr == `rate({__name__=~"sliding_counter_.*_total"}[25s])` {
-				require.Len(t, gotWarns, 1)
-				require.Contains(t, gotWarns[0], "sliding_counter_1_total")
-				require.NotContains(t, gotWarns[0], "sliding_counter_2_total")
+
+					var wantAnnos annotations.Annotations
+					for ts := start; !ts.After(end); ts = ts.Add(step) {
+						iq, err := engine.NewInstantQuery(t.Context(), stor, qOpts, expr, ts)
+						require.NoError(t, err)
+						iRes := iq.Exec(t.Context())
+						iq.Close()
+						require.NoError(t, iRes.Err)
+						wantAnnos.Merge(iRes.Warnings)
+						vec, err := iRes.Vector()
+						require.NoError(t, err)
+
+						tsMS := timestamp.FromTime(ts)
+						wantAtStep := make(map[string]float64, len(vec))
+						for _, smpl := range vec {
+							wantAtStep[smpl.Metric.Get("series")] = smpl.F
+						}
+						for _, sID := range []string{"", "1", "2"} {
+							got, hasGot := gotByKey[sampleKey{series: sID, ts: tsMS}]
+							want, hasWant := wantAtStep[sID]
+							if !hasWant {
+								require.False(t, hasGot, "unexpected sample for series=%q at ts=%d", sID, tsMS)
+								continue
+							}
+							require.True(t, hasGot, "missing sample for series=%q at ts=%d", sID, tsMS)
+							if math.IsNaN(want) {
+								require.True(t, math.IsNaN(got), "series=%q ts=%d", sID, tsMS)
+							} else {
+								require.InDelta(t, want, got, 1e-12, "series=%q ts=%d", sID, tsMS)
+							}
+						}
+					}
+					wantWarns, wantInfos := wantAnnos.AsStrings(expr, 0, 0)
+					gotWarns, gotInfos := rRes.Warnings.AsStrings(expr, 0, 0)
+					require.ElementsMatch(t, wantWarns, gotWarns)
+					require.ElementsMatch(t, wantInfos, gotInfos)
+					if expr == `increase({__name__=~"sliding_counter_.*_total"}[10s])` || expr == `rate({__name__=~"sliding_counter_.*_total"}[25s])` {
+						if enableST {
+							require.Len(t, gotWarns, 1)
+							require.Contains(t, gotWarns[0], "sliding_counter_1_total")
+							require.NotContains(t, gotWarns[0], "sliding_counter_2_total")
+						} else {
+							require.Empty(t, gotWarns)
+						}
+					}
+				})
 			}
 		})
 	}
