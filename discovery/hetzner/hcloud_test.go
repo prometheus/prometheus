@@ -109,13 +109,10 @@ func TestHCloudSDRefresh(t *testing.T) {
 			"__meta_hetzner_hcloud_label_other_key":                  model.LabelValue("value"),
 		},
 		{
-			"__address__":                                            model.LabelValue("1.2.3.6:80"),
 			"__meta_hetzner_role":                                    model.LabelValue("hcloud"),
 			"__meta_hetzner_server_id":                               model.LabelValue("36"),
 			"__meta_hetzner_server_name":                             model.LabelValue("deleted-image-server"),
 			"__meta_hetzner_server_status":                           model.LabelValue("stopped"),
-			"__meta_hetzner_public_ipv4":                             model.LabelValue("1.2.3.6"),
-			"__meta_hetzner_public_ipv6_network":                     model.LabelValue("2001:db7::/64"),
 			"__meta_hetzner_hcloud_location":                         model.LabelValue("fsn1"),
 			"__meta_hetzner_hcloud_location_network_zone":            model.LabelValue("eu-central"),
 			"__meta_hetzner_hcloud_datacenter_location":              model.LabelValue("fsn1"),

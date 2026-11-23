@@ -279,21 +279,8 @@ func (m *SDMock) HandleHcloudServers() {
       "status": "stopped",
       "created": "2016-01-30T23:50:00+00:00",
       "public_net": {
-        "ipv4": {
-          "ip": "1.2.3.6",
-          "blocked": false,
-          "dns_ptr": "server01.example.org"
-        },
-        "ipv6": {
-          "ip": "2001:db7::/64",
-          "blocked": false,
-          "dns_ptr": [
-            {
-              "ip": "2001:db7::1",
-              "dns_ptr": "server01.example.org"
-            }
-          ]
-        },
+        "ipv4": null,
+        "ipv6": null,
         "floating_ips": []
       },
       "private_net": [],
