@@ -11248,6 +11248,7 @@ func TestScrapeCacheStalenessSliceLifecycle(t *testing.T) {
 		c.iterDone(true)
 	}
 	require.LessOrEqual(t, cap(c.entries), 1024)
+	require.LessOrEqual(t, len(c.buckets), 2048)
 	require.LessOrEqual(t, cap(c.prevBits), 16)
 	require.LessOrEqual(t, cap(c.curBits), 16)
 }
@@ -11454,6 +11455,56 @@ func (c *scrapeCache) lookupEntry(h uint64) (cacheEntry, bool) {
 }
 
 func TestScrapeCacheCompactIndexAndEviction(t *testing.T) {
+	t.Run("wrap_around_cluster_deletion_and_tag_collisions", func(t *testing.T) {
+		c := newScrapeCache(newTestScrapeMetrics(t))
+
+		// Craft hashes landing at bucket 14, 15, 0, 1 in a 16-bucket table with
+		// identical top-8-bit tags to exercise tag collisions and cyclic
+		// backward-shift deletion across the bucket array boundary.
+		const tag = uint64(0xAB) << 56
+		hashes := []uint64{
+			tag | 14,
+			tag | 14 | (1 << 8),
+			tag | 15,
+			tag | 15 | (1 << 8),
+			tag, // Bucket 0.
+			tag | 1,
+			tag | 14 | (2 << 8),
+		}
+		for i, h := range hashes {
+			lset := labels.FromStrings(model.MetricNameLabel, "wrap", "i", strconv.Itoa(i))
+			c.addRef(h, storage.SeriesRef(i+1), lset, nil)
+			c.trackStaleness(h)
+		}
+		require.Len(t, c.buckets, 16)
+		c.iterDone(false)
+
+		// Delete entries from the front and middle of the wrapped probe cluster
+		// and verify all remaining entries remain reachable and stale state stays exact.
+		c.deleteSeries(hashes[0])
+		c.deleteSeries(hashes[2])
+		c.deleteSeries(hashes[4])
+
+		for _, idx := range []int{1, 3, 5, 6} {
+			ce, ok := c.lookupEntry(hashes[idx])
+			require.True(t, ok, "hash index %d missing after wrap-around deletion", idx)
+			require.Equal(t, storage.SeriesRef(idx+1), ce.ref)
+			c.trackStaleness(hashes[idx])
+		}
+		for _, idx := range []int{0, 2, 4} {
+			_, ok := c.lookupEntry(hashes[idx])
+			require.False(t, ok, "deleted hash index %d still reachable", idx)
+		}
+
+		var staleRefs []storage.SeriesRef
+		c.forEachStale(func(ref storage.SeriesRef, _ labels.Labels) bool {
+			staleRefs = append(staleRefs, ref)
+			return true
+		})
+		slices.Sort(staleRefs)
+		require.Equal(t, []storage.SeriesRef{1, 3, 5}, staleRefs)
+	})
+
 	t.Run("compaction_tail_masking_and_full_eviction", func(t *testing.T) {
 		c := newScrapeCache(newTestScrapeMetrics(t))
 
@@ -11492,10 +11543,10 @@ func TestScrapeCacheCompactIndexAndEviction(t *testing.T) {
 			require.Equal(t, storage.SeriesRef(i+1), staleRefs[i])
 		}
 
-		// Full eviction (seenSeries == 0) must release entries, index, and bitsets.
+		// Full eviction (seenSeries == 0) must release entries, buckets, and bitsets.
 		c.iterDone(true)
 		require.Empty(t, c.entries)
-		require.Nil(t, c.index)
+		require.Nil(t, c.buckets)
 		require.Nil(t, c.prevBits)
 		require.Nil(t, c.curBits)
 		require.Nil(t, c.seenBits)
@@ -11531,6 +11582,60 @@ func TestScrapeCacheCompactIndexAndEviction(t *testing.T) {
 			_, ok := c.lookupEntry(xxhash.Sum64(mets[dropped]))
 			require.False(t, ok, "dropped entry %d should have been evicted", dropped)
 		}
+	})
+
+	t.Run("overflow_index_fallback", func(t *testing.T) {
+		orig := scrapeCacheMaxCompactSlots
+		scrapeCacheMaxCompactSlots = 8
+		t.Cleanup(func() { scrapeCacheMaxCompactSlots = orig })
+
+		c := newScrapeCache(newTestScrapeMetrics(t))
+		const n = 16
+		mets := make([][]byte, n)
+		hashes := make([]uint64, n)
+		for i := range n {
+			id := strconv.Itoa(i)
+			mets[i] = []byte("ovf{i=\"" + id + "\"}")
+			hashes[i] = xxhash.Sum64(mets[i])
+			c.addRef(hashes[i], storage.SeriesRef(i+1), labels.FromStrings(model.MetricNameLabel, "ovf", "i", id), nil)
+			c.trackStaleness(hashes[i])
+		}
+		require.Nil(t, c.buckets)
+		require.Len(t, c.overflowIndex, n)
+		c.iterDone(true)
+
+		// Delete one entry while in overflowIndex mode and verify lookup and staleness.
+		c.deleteSeries(hashes[3])
+		for i := range n {
+			if i == 3 {
+				continue
+			}
+			_, slot, ce, ok, _ := c.get(mets[i])
+			require.True(t, ok)
+			require.Equal(t, storage.SeriesRef(i+1), ce.ref)
+			c.trackSlot(slot)
+		}
+		var staleRefs []storage.SeriesRef
+		c.forEachStale(func(ref storage.SeriesRef, _ labels.Labels) bool {
+			staleRefs = append(staleRefs, ref)
+			return true
+		})
+		require.Equal(t, []storage.SeriesRef{4}, staleRefs)
+		c.iterDone(true)
+
+		// Dropping below the compact threshold on compaction returns to buckets.
+		for i := range 4 {
+			if i == 3 {
+				continue
+			}
+			_, slot, _, ok, _ := c.get(mets[i])
+			require.True(t, ok)
+			c.trackSlot(slot)
+		}
+		c.iterDone(true)
+		require.Nil(t, c.overflowIndex)
+		require.NotEmpty(t, c.buckets)
+		require.Len(t, c.entries, 3)
 	})
 }
 

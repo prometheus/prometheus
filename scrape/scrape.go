@@ -1059,10 +1059,14 @@ type scrapeCache struct {
 	// How many series and metadata entries there were at the last success.
 	successfulCount int
 
-	// Dense series arena indexed by slot id (0..len(entries)-1) and hash-to-slot
-	// index. Both shrink on flush after cardinality spikes.
-	entries []cacheEntry
-	index   map[uint64]uint32
+	// Dense series arena indexed by slot id (0..len(entries)-1) and a compact
+	// pointer-free open-addressed index (buckets []uint32, ~6.5 B/series).
+	// Each non-zero bucket packs an 8-bit hash tag in bits 24..31 and (idx+1)
+	// in bits 0..23 (up to maxCompactSlot series per target; overflowIndex
+	// handles larger targets). Both slices shrink on flush after cardinality spikes.
+	entries       []cacheEntry
+	buckets       []uint32
+	overflowIndex map[uint64]uint32
 
 	// Three 1-bit-per-slot bitsets (0.375 B/series total, pointer-free,
 	// L1-resident even at 100k series):
@@ -1165,6 +1169,15 @@ func newScrapeCache(metrics *scrapeMetrics) *scrapeCache {
 	}
 }
 
+const (
+	indexSlotMask  = (1 << 24) - 1
+	maxCompactSlot = indexSlotMask - 1
+)
+
+// scrapeCacheMaxCompactSlots is overridden in tests to exercise overflowIndex
+// without allocating 16M entries.
+var scrapeCacheMaxCompactSlots uint32 = maxCompactSlot
+
 func getBit(bs []uint64, idx uint32) bool {
 	return bs[idx>>6]&(1<<(idx&63)) != 0
 }
@@ -1179,39 +1192,143 @@ func setBit(bs []uint64, idx uint32, val bool) {
 }
 
 func (c *scrapeCache) lookupIndex(h uint64) (uint32, bool) {
-	idx, ok := c.index[h]
-	return idx, ok
+	if c.overflowIndex != nil {
+		idx, ok := c.overflowIndex[h]
+		return idx, ok
+	}
+	if len(c.buckets) == 0 {
+		return 0, false
+	}
+	mask := uint64(len(c.buckets) - 1)
+	wantTag := uint32(h >> 56)
+	for b := h & mask; ; b = (b + 1) & mask {
+		v := c.buckets[b]
+		if v == 0 {
+			return 0, false
+		}
+		if v>>24 == wantTag {
+			idx := (v & indexSlotMask) - 1
+			if c.entries[idx].metHash == h {
+				return idx, true
+			}
+		}
+	}
+}
+
+func (c *scrapeCache) rehashBuckets(newSize int) {
+	buckets := make([]uint32, newSize)
+	mask := uint64(newSize - 1)
+	for i := range c.entries {
+		h := c.entries[i].metHash
+		encoded := (uint32(h>>56) << 24) | uint32(i+1)
+		for b := h & mask; ; b = (b + 1) & mask {
+			if buckets[b] == 0 {
+				buckets[b] = encoded
+				break
+			}
+		}
+	}
+	c.buckets = buckets
 }
 
 func (c *scrapeCache) rebuildIndex() {
 	if len(c.entries) == 0 {
-		c.index = nil
+		c.buckets = nil
+		c.overflowIndex = nil
 		return
 	}
-	m := make(map[uint64]uint32, len(c.entries))
-	for i := range c.entries {
-		m[c.entries[i].metHash] = uint32(i)
+	if uint32(len(c.entries)) > scrapeCacheMaxCompactSlots {
+		m := make(map[uint64]uint32, len(c.entries))
+		for i := range c.entries {
+			m[c.entries[i].metHash] = uint32(i)
+		}
+		c.overflowIndex = m
+		c.buckets = nil
+		return
 	}
-	c.index = m
+	c.overflowIndex = nil
+	newSize := 16
+	for len(c.entries)*4 > newSize*3 {
+		newSize *= 2
+	}
+	c.rehashBuckets(newSize)
 }
 
 // insertIndex indexes c.entries[idx] (where idx == len(c.entries)-1).
 func (c *scrapeCache) insertIndex(h uint64, idx uint32) {
-	if c.index == nil {
-		c.index = make(map[uint64]uint32)
+	if c.overflowIndex != nil {
+		c.overflowIndex[h] = idx
+		return
 	}
-	c.index[h] = idx
+	if idx >= scrapeCacheMaxCompactSlots {
+		c.rebuildIndex()
+		return
+	}
+	if len(c.buckets) == 0 || len(c.entries)*4 > len(c.buckets)*3 {
+		newSize := max(16, len(c.buckets)*2)
+		for len(c.entries)*4 > newSize*3 {
+			newSize *= 2
+		}
+		c.rehashBuckets(newSize)
+		return
+	}
+	mask := uint64(len(c.buckets) - 1)
+	encoded := (uint32(h>>56) << 24) | (idx + 1)
+	for b := h & mask; ; b = (b + 1) & mask {
+		if c.buckets[b] == 0 {
+			c.buckets[b] = encoded
+			return
+		}
+	}
 }
 
-func (c *scrapeCache) updateIndex(h uint64, _, newIdx uint32) {
-	c.index[h] = newIdx
+func (c *scrapeCache) updateIndex(h uint64, oldIdx, newIdx uint32) {
+	if c.overflowIndex != nil {
+		c.overflowIndex[h] = newIdx
+		return
+	}
+	mask := uint64(len(c.buckets) - 1)
+	oldEncoded := (uint32(h>>56) << 24) | (oldIdx + 1)
+	newEncoded := (uint32(h>>56) << 24) | (newIdx + 1)
+	for b := h & mask; ; b = (b + 1) & mask {
+		if c.buckets[b] == oldEncoded {
+			c.buckets[b] = newEncoded
+			return
+		}
+	}
 }
 
-func (c *scrapeCache) deleteIndex(h uint64, _ uint32) {
-	delete(c.index, h)
+// deleteIndex removes (h, idx) using Knuth Algorithm R backward-shift deletion
+// so buckets never accumulate tombstones. Must be called before c.entries[idx]
+// is modified.
+func (c *scrapeCache) deleteIndex(h uint64, idx uint32) {
+	if c.overflowIndex != nil {
+		delete(c.overflowIndex, h)
+		return
+	}
+	mask := uint64(len(c.buckets) - 1)
+	wantEncoded := (uint32(h>>56) << 24) | (idx + 1)
+	b := h & mask
+	for c.buckets[b] != wantEncoded {
+		b = (b + 1) & mask
+	}
+	j := b
+	for {
+		j = (j + 1) & mask
+		v := c.buckets[j]
+		if v == 0 {
+			c.buckets[b] = 0
+			return
+		}
+		home := c.entries[(v&indexSlotMask)-1].metHash & mask
+		if (b-home)&mask < (j-home)&mask {
+			c.buckets[b] = v
+			b = j
+		}
+	}
 }
 
-// removeSlot swap-removes idx from entries, index, and all three bitsets.
+// removeSlot swap-removes idx from entries, buckets, and all three bitsets.
 func (c *scrapeCache) removeSlot(idx uint32) {
 	h := c.entries[idx].metHash
 	c.deleteIndex(h, idx)
@@ -1271,7 +1388,8 @@ func (c *scrapeCache) iterDone(flushCache bool) {
 			case c.seenSeries == 0:
 				clear(c.entries)
 				c.entries = nil
-				c.index = nil
+				c.buckets = nil
+				c.overflowIndex = nil
 				c.seenBits = nil
 				c.prevBits = nil
 				c.curBits = nil
@@ -1279,7 +1397,7 @@ func (c *scrapeCache) iterDone(flushCache bool) {
 				c.stCache = nil
 			case evictCount*4 > len(c.entries):
 				// Order-preserving compaction keeps surviving entries contiguous
-				// and rebuilds the index in one linear pass.
+				// and rebuilds buckets in one linear pass.
 				dst := uint32(0)
 				for src := uint32(0); src < uint32(len(c.entries)); src++ {
 					if !getBit(c.seenBits, src) {
@@ -1348,6 +1466,8 @@ func (c *scrapeCache) iterDone(flushCache bool) {
 			c.prevBits = newPrev
 			c.curBits = make([]uint64, words)
 			c.seenBits = make([]uint64, words)
+		}
+		if len(c.buckets) > 2048 && len(c.entries)*8 < len(c.buckets) {
 			c.rebuildIndex()
 		}
 		for h, iter := range c.droppedSeries {
