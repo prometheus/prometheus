@@ -567,6 +567,60 @@ func TestDB_Snapshot_AppendV2(t *testing.T) {
 	require.Equal(t, 1000.0, sum)
 }
 
+// TestDB_Snapshot_WithOutOfOrder_AppendV2 ensures that a snapshot that includes the head
+// contains the samples that are still in the out-of-order head.
+func TestDB_Snapshot_WithOutOfOrder_AppendV2(t *testing.T) {
+	opts := DefaultOptions()
+	opts.OutOfOrderTimeWindow = 60 * time.Minute.Milliseconds()
+	db := newTestDB(t, withOpts(opts))
+
+	ctx := context.Background()
+	mint := int64(1414141414000)
+
+	// In-order samples.
+	app := db.AppenderV2(ctx)
+	for i := range 10 {
+		_, err := app.Append(0, labels.FromStrings("foo", "bar"), 0, mint+int64(i)*1000, 1.0, nil, nil, storage.AOptions{})
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+
+	// An out-of-order sample, kept in the out-of-order head.
+	app = db.AppenderV2(ctx)
+	_, err := app.Append(0, labels.FromStrings("foo", "bar"), 0, mint+5500, 2.0, nil, nil, storage.AOptions{})
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	snap := t.TempDir()
+	require.NoError(t, db.Snapshot(snap, true))
+	require.NoError(t, db.Close())
+
+	// Reopen DB from the snapshot.
+	db = newTestDB(t, withDir(snap), withOpts(opts))
+
+	querier, err := db.Querier(mint, mint+10000)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, querier.Close()) }()
+
+	seriesSet := querier.Select(ctx, false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+	var series chunkenc.Iterator
+	n := 0
+	sum := 0.0
+	for seriesSet.Next() {
+		series = seriesSet.At().Iterator(series)
+		for series.Next() == chunkenc.ValFloat {
+			_, v := series.At()
+			n++
+			sum += v
+		}
+		require.NoError(t, series.Err())
+	}
+	require.NoError(t, seriesSet.Err())
+	require.Empty(t, seriesSet.Warnings())
+	require.Equal(t, 11, n)
+	require.Equal(t, 12.0, sum)
+}
+
 // TestDB_Snapshot_ChunksOutsideOfCompactedRange_AppendV2 ensures that a snapshot removes chunks samples
 // that are outside the set block time range.
 // See https://github.com/prometheus/prometheus/issues/5105

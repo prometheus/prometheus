@@ -2626,6 +2626,26 @@ func (db *DB) Snapshot(dir string, withHead bool) error {
 	if _, err := db.compactor.Write(dir, head, mint, maxt+1, nil); err != nil {
 		return fmt.Errorf("snapshot head block: %w", err)
 	}
+
+	// The range head used above only covers the samples in the in-order head, so the samples
+	// still in the out-of-order head need their own blocks, the same way compactOOO writes them.
+	if db.oooWasEnabled.Load() {
+		oooHead, err := NewOOOCompactionHead(context.Background(), db.head)
+		if err != nil {
+			return fmt.Errorf("get ooo compaction head for snapshot: %w", err)
+		}
+		if oooMint := oooHead.MinTime(); oooMint != math.MaxInt64 {
+			meta := &BlockMeta{}
+			meta.Compaction.SetOutOfOrder()
+			blockSize := oooHead.ChunkRange()
+			for t := blockSize * (oooMint / blockSize); t <= oooHead.MaxTime(); t += blockSize {
+				blockMint, blockMaxt := t, t+blockSize
+				if _, err := db.compactor.Write(dir, oooHead.CloneForTimeRange(blockMint, blockMaxt-1), blockMint, blockMaxt, meta); err != nil {
+					return fmt.Errorf("snapshot ooo head block: %w", err)
+				}
+			}
+		}
+	}
 	return nil
 }
 
