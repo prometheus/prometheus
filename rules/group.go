@@ -914,7 +914,9 @@ func (g *Group) RestoreForState(ts time.Time) {
 						labels.AlertName, alertRule.Name(), "stage", "Iterator", "err", it.Err())
 					return
 				}
-				if seriesFound && (!found || seriesT > t) {
+				// Prefer a non-stale sample on exact timestamp ties, which happen when an old
+				// series is marked stale on the same eval timestamp a replacement starts.
+				if seriesFound && (!found || seriesT > t || (seriesT == t && value.IsStaleNaN(v) && !value.IsStaleNaN(seriesV))) {
 					t, v = seriesT, seriesV
 					found = true
 				}
