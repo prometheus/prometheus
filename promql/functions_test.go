@@ -742,7 +742,9 @@ func TestRangeSlidingWindowMatchesInstantQueries(t *testing.T) {
 	app := stor.AppenderV2(t.Context())
 
 	for _, seriesID := range []string{"1", "2"} {
-		counter := labels.FromStrings("__name__", "sliding_counter_total", "series", seriesID)
+		// Use distinct metric names so NewStartTimeOverlapWarning (which keys on metric name)
+		// catches any warning leak across series.
+		counter := labels.FromStrings("__name__", "sliding_counter_"+seriesID+"_total", "series", seriesID)
 		gauge := labels.FromStrings("__name__", "sliding_gauge", "series", seriesID)
 
 		// Populate 120 samples with counter resets, start-timestamp resets/overlaps, NaNs, a dense sub-second burst,
@@ -809,10 +811,10 @@ func TestRangeSlidingWindowMatchesInstantQueries(t *testing.T) {
 	})
 
 	queries := []string{
-		"increase(sliding_counter_total[10s])",
-		"rate(sliding_counter_total[25s])",
-		"resets(sliding_counter_total[10s])",
-		"resets(sliding_counter_total[25s])",
+		`increase({__name__=~"sliding_counter_.*_total"}[10s])`,
+		`rate({__name__=~"sliding_counter_.*_total"}[25s])`,
+		`resets({__name__=~"sliding_counter_.*_total"}[10s])`,
+		`resets({__name__=~"sliding_counter_.*_total"}[25s])`,
 		"changes(sliding_gauge[10s])",
 		"changes(sliding_gauge[25s])",
 		"absent_over_time(sliding_gauge[10s])",
@@ -881,6 +883,11 @@ func TestRangeSlidingWindowMatchesInstantQueries(t *testing.T) {
 			gotWarns, gotInfos := rRes.Warnings.AsStrings(expr, 0, 0)
 			require.ElementsMatch(t, wantWarns, gotWarns)
 			require.ElementsMatch(t, wantInfos, gotInfos)
+			if expr == `increase({__name__=~"sliding_counter_.*_total"}[10s])` || expr == `rate({__name__=~"sliding_counter_.*_total"}[25s])` {
+				require.Len(t, gotWarns, 1)
+				require.Contains(t, gotWarns[0], "sliding_counter_1_total")
+				require.NotContains(t, gotWarns[0], "sliding_counter_2_total")
+			}
 		})
 	}
 }
