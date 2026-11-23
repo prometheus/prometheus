@@ -3357,9 +3357,9 @@ func (ev *evaluator) rangeEvalTimestampFunctionOverVectorSelector(ctx context.Co
 	var prevSS *Series
 	it := storage.NewMemoizedEmptyIterator(durationMilliseconds(ev.lookbackDelta) - 1)
 	var chkIter chunkenc.Iterator
-	var guard *queryIterator
+	var budgetedIterator *queryIterator
 	if ev.budget != nil {
-		guard = ev.newQueryIterator(ctx, nil)
+		budgetedIterator = ev.newQueryIterator(ctx, nil)
 	}
 
 	baseOffset := vs.Offset
@@ -3369,9 +3369,9 @@ func (ev *evaluator) rangeEvalTimestampFunctionOverVectorSelector(ctx context.Co
 		}
 
 		chkIter = s.Iterator(chkIter)
-		if guard != nil {
-			guard.Iterator = chkIter
-			it.Reset(guard)
+		if budgetedIterator != nil {
+			budgetedIterator.Iterator = chkIter
+			it.Reset(budgetedIterator)
 		} else {
 			it.Reset(chkIter)
 		}
@@ -3387,10 +3387,10 @@ func (ev *evaluator) rangeEvalTimestampFunctionOverVectorSelector(ctx context.Co
 
 		for ts, step := ev.startTimestamp, -1; ts <= ev.endTimestamp; ts += ev.interval {
 			step++
-			if guard != nil {
-				guard.checkContext()
+			if budgetedIterator != nil {
+				budgetedIterator.checkContext()
 			} else if step&1023 == 0 {
-				// Without a query cost guard, check cancellation periodically so a
+				// Without a budgeted iterator, check cancellation periodically so a
 				// single series over many steps (e.g. disabled start_timestamp) cannot
 				// spin past context cancellation or timeout.
 				if err := contextDone(ctx, "expression evaluation"); err != nil {
