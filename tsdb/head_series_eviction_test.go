@@ -680,6 +680,21 @@ func TestSeriesEviction_PendingExemplarProtectsSeries(t *testing.T) {
 					require.Len(t, res[0].Exemplars, 1)
 					require.Equal(t, expectedTraceID, res[0].Exemplars[0].Labels.Get("trace_id"))
 
+					// The exemplar survives a restart.
+					opts := db.opts
+					require.NoError(t, db.Close())
+					db, err = Open(db.Dir(), nil, nil, opts, nil)
+					require.NoError(t, err)
+					t.Cleanup(func() { require.NoError(t, db.Close()) })
+					head = db.Head()
+					q, err = head.ExemplarQuerier(t.Context())
+					require.NoError(t, err)
+					res, err = q.Select(0, 1000, []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "id", lset.Get("id"))})
+					require.NoError(t, err)
+					require.Len(t, res, 1)
+					require.Len(t, res[0].Exemplars, 1)
+					require.Equal(t, expectedTraceID, res[0].Exemplars[0].Labels.Get("trace_id"))
+
 					// The appender released the series.
 					require.NoError(t, evict(db, testDB.evictedRefs))
 					require.Equal(t, uint64(evictionTestSeries-evictionTestEvictedSeries), head.NumSeries())
