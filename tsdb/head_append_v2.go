@@ -256,6 +256,9 @@ func (a *headAppenderV2) AppendExemplars(ref storage.SeriesRef, ls labels.Labels
 	if s == nil {
 		return 0, fmt.Errorf("unknown HeadSeriesRef when trying to add exemplars: %d: %w", ref, storage.ErrNotFound)
 	}
+	if hook := a.head.testAfterSeriesLookup; hook != nil {
+		hook(s)
+	}
 	if len(exemplars) == 0 || !a.head.opts.EnableExemplarStorage || a.head.opts.MaxExemplars.Load() <= 0 {
 		return storage.SeriesRef(s.ref), nil
 	}

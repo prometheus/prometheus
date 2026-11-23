@@ -907,6 +907,9 @@ func (a *headAppender) AppendExemplar(ref storage.SeriesRef, lset labels.Labels,
 	if s == nil {
 		return 0, fmt.Errorf("unknown HeadSeriesRef when trying to add exemplar: %d", ref)
 	}
+	if hook := a.head.testAfterSeriesLookup; hook != nil {
+		hook(s)
+	}
 
 	// Ensure no empty labels have gotten through.
 	e.Labels = e.Labels.WithoutEmpty()
