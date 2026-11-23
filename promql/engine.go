@@ -1869,6 +1869,9 @@ func (s *floatWinScan) prepare() {
 
 // appendEvent records the logical sequence index of a pair event in the active window.
 func (s *floatWinScan) appendEvent(seq int) {
+	if s.eventSeqs == nil {
+		s.eventSeqs = getWinEventSeqs(16)
+	}
 	if len(s.eventSeqs) == cap(s.eventSeqs) && s.eventOff > 0 {
 		n := len(s.eventSeqs) - s.eventOff
 		if s.eventOff >= n/4 {
@@ -1876,8 +1879,9 @@ func (s *floatWinScan) appendEvent(seq int) {
 			s.eventSeqs = s.eventSeqs[:n]
 			s.eventOff = 0
 		} else {
-			newSeqs := make([]int, n, max(2*(n+1), 16))
+			newSeqs := make([]int, n, n+max(n/2, 16))
 			copy(newSeqs, s.eventSeqs[s.eventOff:])
+			putWinEventSeqs(s.eventSeqs)
 			s.eventSeqs = newSeqs
 			s.eventOff = 0
 		}
@@ -3097,6 +3101,9 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 
 		ev.currentSamples -= len(floats) + totalHPointSize(histograms)
 		putFPointSlice(floatsWin.buf)
+		if enh.floatWinScan != nil {
+			putWinEventSeqs(enh.floatWinScan.eventSeqs)
+		}
 		putMatrixSelectorHPointSlice(histograms)
 
 		// The absent_over_time function returns 0 or 1 series. So far, the matrix
@@ -3551,7 +3558,26 @@ var (
 	// histogram pointer since histogram objects are reused across query evaluation
 	// steps.
 	matrixSelectorHPool zeropool.Pool[[]HPoint]
+
+	// winEventSeqsPool holds reusable event-index slices for floatWinScan.
+	winEventSeqsPool zeropool.Pool[[]int]
 )
+
+const maxWinEventSeqsPoolCap = 1 << 16
+
+func getWinEventSeqs(sz int) []int {
+	if p := winEventSeqsPool.Get(); p != nil {
+		return p
+	}
+	return make([]int, 0, sz)
+}
+
+func putWinEventSeqs(p []int) {
+	// Drop unusually large slices so pathological queries do not pin excess memory in the pool.
+	if p != nil && cap(p) <= maxWinEventSeqsPoolCap {
+		winEventSeqsPool.Put(p[:0])
+	}
+}
 
 func getFPointSlice(sz int) []FPoint {
 	if p := fPointPool.Get(); p != nil {
@@ -3619,10 +3645,10 @@ func (w *floatWindow) append(pt FPoint, st int64, startTimestamps *StartTimestam
 		n := len(w.buf) - w.off
 		newCap := 0
 		if w.off < n/4 {
-			// Grow so subsequent step slides have O(n) tail slack; compact in place
-			// any slice whose capacity already meets newCap (e.g. a large pooled w.buf
-			// paired with a smaller w.stBuf).
-			newCap = max(2*(n+1), 16)
+			// Grow to 1.5x so subsequent step slides have O(n) tail slack without
+			// doubling peak memory; compact in place any slice whose capacity already
+			// meets newCap (e.g. a large pooled w.buf paired with a smaller w.stBuf).
+			newCap = n + max(n/2, 16)
 		}
 		if cap(w.buf) < newCap {
 			newBuf := make([]FPoint, n, newCap)
