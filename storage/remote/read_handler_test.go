@@ -710,6 +710,20 @@ func TestStreamReadEndpoint(t *testing.T) {
 							} else {
 								require.Equal(t, "application/x-streamed-protobuf; proto=prometheus.ChunkedReadResponse", response.Header.Get("Content-Type"))
 								body := &recordingReadBody{ReadCloser: response.Body}
+								if tc.flush {
+									// Let storage fail only once the client has received the preceding frames.
+									// The client returns a series only after reading the frame that follows it,
+									// so this can't wait for the series to be returned.
+									body.onRead = func(received []byte) {
+										frames := NewChunkedReader(bytes.NewReader(received), config.DefaultChunkedReadLimit, nil)
+										for range tc.wantSeries {
+											if _, err := frames.Next(); err != nil {
+												return
+											}
+										}
+										releaseError()
+									}
+								}
 								series := NewChunkedSeriesSet(NewChunkedReader(body, config.DefaultChunkedReadLimit, nil), body, 0, 1, func(error) {})
 								count := 0
 								for series.Next() {
@@ -723,10 +737,6 @@ func TestStreamReadEndpoint(t *testing.T) {
 									require.Equal(t, chunkenc.ValNone, iter.Next())
 									require.NoError(t, iter.Err())
 									count++
-									if tc.flush && count == tc.wantSeries {
-										// Let storage fail only once the client has consumed the preceding frames.
-										releaseError()
-									}
 								}
 								if aborted {
 									require.Error(t, series.Err())
@@ -896,6 +906,8 @@ type recordingReadBody struct {
 	io.ReadCloser
 	bytes bytes.Buffer
 	err   error
+	// onRead, if set, is called with all bytes received so far after each read.
+	onRead func(received []byte)
 }
 
 func (r *recordingReadBody) Read(p []byte) (int, error) {
@@ -903,6 +915,9 @@ func (r *recordingReadBody) Read(p []byte) (int, error) {
 	r.bytes.Write(p[:n])
 	if err != nil {
 		r.err = err
+	}
+	if r.onRead != nil {
+		r.onRead(r.bytes.Bytes())
 	}
 	return n, err
 }
