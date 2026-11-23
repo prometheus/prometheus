@@ -2153,9 +2153,9 @@ func sgn(v float64) float64 {
 	}
 }
 
-// simpleFloatFunc implements FunctionCalls entries for single-argument float
-// functions. Note that ev.eval evaluates functions in inPlaceFloatUnaryFuncs
-// directly on matrices without calling simpleFloatFunc; keep both in sync.
+// simpleFloatFunc applies f to each float sample in vectorVals[0], dropping
+// histograms and stripping metadata labels. It implements funcRound and the
+// FunctionCalls entries populated from inPlaceFloatUnaryFuncs.
 func simpleFloatFunc(vectorVals []Vector, enh *EvalNodeHelper, f func(float64) float64) Vector {
 	for _, el := range vectorVals[0] {
 		if el.H == nil { // Process only float samples.
@@ -2170,31 +2170,6 @@ func simpleFloatFunc(vectorVals []Vector, enh *EvalNodeHelper, f func(float64) f
 		}
 	}
 	return enh.Out
-}
-
-// === abs(Vector parser.ValueTypeVector) (Vector, Annotations) ===
-func funcAbs(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	return simpleFloatFunc(vectorVals, enh, math.Abs), nil
-}
-
-// === ceil(Vector parser.ValueTypeVector) (Vector, Annotations) ===
-func funcCeil(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	return simpleFloatFunc(vectorVals, enh, math.Ceil), nil
-}
-
-// === floor(Vector parser.ValueTypeVector) (Vector, Annotations) ===
-func funcFloor(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	return simpleFloatFunc(vectorVals, enh, math.Floor), nil
-}
-
-// === exp(Vector parser.ValueTypeVector) (Vector, Annotations) ===
-func funcExp(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	return simpleFloatFunc(vectorVals, enh, math.Exp), nil
-}
-
-// === sqrt(Vector VectorNode) (Vector, Annotations) ===
-func funcSqrt(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	return simpleFloatFunc(vectorVals, enh, math.Sqrt), nil
 }
 
 // === max_of(a, b parser.ValueTypeScalar) Scalar ===
@@ -2217,99 +2192,9 @@ func funcMinOf(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNod
 	return append(enh.Out, Sample{F: a}), nil
 }
 
-// === ln(Vector parser.ValueTypeVector) (Vector, Annotations) ===
-func funcLn(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	return simpleFloatFunc(vectorVals, enh, math.Log), nil
-}
-
-// === log2(Vector parser.ValueTypeVector) (Vector, Annotations) ===
-func funcLog2(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	return simpleFloatFunc(vectorVals, enh, math.Log2), nil
-}
-
-// === log10(Vector parser.ValueTypeVector) (Vector, Annotations) ===
-func funcLog10(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	return simpleFloatFunc(vectorVals, enh, math.Log10), nil
-}
-
-// === sin(Vector parser.ValueTypeVector) (Vector, Annotations) ===
-func funcSin(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	return simpleFloatFunc(vectorVals, enh, math.Sin), nil
-}
-
-// === cos(Vector parser.ValueTypeVector) (Vector, Annotations) ===
-func funcCos(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	return simpleFloatFunc(vectorVals, enh, math.Cos), nil
-}
-
-// === tan(Vector parser.ValueTypeVector) (Vector, Annotations) ===
-func funcTan(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	return simpleFloatFunc(vectorVals, enh, math.Tan), nil
-}
-
-// === asin(Vector parser.ValueTypeVector) (Vector, Annotations) ===
-func funcAsin(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	return simpleFloatFunc(vectorVals, enh, math.Asin), nil
-}
-
-// === acos(Vector parser.ValueTypeVector) (Vector, Annotations) ===
-func funcAcos(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	return simpleFloatFunc(vectorVals, enh, math.Acos), nil
-}
-
-// === atan(Vector parser.ValueTypeVector) (Vector, Annotations) ===
-func funcAtan(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	return simpleFloatFunc(vectorVals, enh, math.Atan), nil
-}
-
-// === sinh(Vector parser.ValueTypeVector) (Vector, Annotations) ===
-func funcSinh(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	return simpleFloatFunc(vectorVals, enh, math.Sinh), nil
-}
-
-// === cosh(Vector parser.ValueTypeVector) (Vector, Annotations) ===
-func funcCosh(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	return simpleFloatFunc(vectorVals, enh, math.Cosh), nil
-}
-
-// === tanh(Vector parser.ValueTypeVector) (Vector, Annotations) ===
-func funcTanh(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	return simpleFloatFunc(vectorVals, enh, math.Tanh), nil
-}
-
-// === asinh(Vector parser.ValueTypeVector) (Vector, Annotations) ===
-func funcAsinh(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	return simpleFloatFunc(vectorVals, enh, math.Asinh), nil
-}
-
-// === acosh(Vector parser.ValueTypeVector) (Vector, Annotations) ===
-func funcAcosh(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	return simpleFloatFunc(vectorVals, enh, math.Acosh), nil
-}
-
-// === atanh(Vector parser.ValueTypeVector) (Vector, Annotations) ===
-func funcAtanh(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	return simpleFloatFunc(vectorVals, enh, math.Atanh), nil
-}
-
-// === rad(Vector parser.ValueTypeVector) (Vector, Annotations) ===
-func funcRad(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	return simpleFloatFunc(vectorVals, enh, rad), nil
-}
-
-// === deg(Vector parser.ValueTypeVector) (Vector, Annotations) ===
-func funcDeg(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	return simpleFloatFunc(vectorVals, enh, deg), nil
-}
-
 // === pi() Scalar ===
 func funcPi([]Vector, Matrix, parser.Expressions, *EvalNodeHelper) (Vector, annotations.Annotations) {
 	return Vector{Sample{F: math.Pi}}, nil
-}
-
-// === sgn(Vector parser.ValueTypeVector) (Vector, Annotations) ===
-func funcSgn(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	return simpleFloatFunc(vectorVals, enh, sgn), nil
 }
 
 // === timestamp(Vector parser.ValueTypeVector) (Vector, Annotations) ===
@@ -3071,35 +2956,22 @@ func funcYear(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNode
 // timestamp and start_timestamp via matrix fast paths instead of invoking these entries;
 // those entries remain populated for callers dispatching through FunctionCalls directly.
 var FunctionCalls = map[string]FunctionCall{
-	"abs":                          funcAbs,
 	"absent":                       funcAbsent,
 	"absent_over_time":             funcAbsentOverTime,
-	"acos":                         funcAcos,
-	"acosh":                        funcAcosh,
-	"asin":                         funcAsin,
-	"asinh":                        funcAsinh,
-	"atan":                         funcAtan,
-	"atanh":                        funcAtanh,
 	"avg_over_time":                funcAvgOverTime,
-	"ceil":                         funcCeil,
 	"changes":                      funcChanges,
 	"clamp":                        funcClamp,
 	"clamp_max":                    funcClampMax,
 	"clamp_min":                    funcClampMin,
-	"cos":                          funcCos,
-	"cosh":                         funcCosh,
 	"count_over_time":              funcCountOverTime,
 	"days_in_month":                funcDaysInMonth,
 	"day_of_month":                 funcDayOfMonth,
 	"day_of_week":                  funcDayOfWeek,
 	"day_of_year":                  funcDayOfYear,
-	"deg":                          funcDeg,
 	"end":                          nil, // Folded into NumberLiteral by foldQueryContextFunctions.
 	"delta":                        funcDelta,
 	"deriv":                        funcDeriv,
-	"exp":                          funcExp,
 	"first_over_time":              funcFirstOverTime,
-	"floor":                        funcFloor,
 	"histogram_avg":                funcHistogramAvg,
 	"histogram_count":              funcHistogramCount,
 	"histogram_fraction":           funcHistogramFraction,
@@ -3119,9 +2991,6 @@ var FunctionCalls = map[string]FunctionCall{
 	"label_replace":                nil, // evalLabelReplace not called via this map.
 	"label_join":                   nil, // evalLabelJoin not called via this map.
 	"min_of":                       funcMinOf,
-	"ln":                           funcLn,
-	"log10":                        funcLog10,
-	"log2":                         funcLog2,
 	"last_over_time":               funcLastOverTime,
 	"mad_over_time":                funcMadOverTime,
 	"max_over_time":                funcMaxOverTime,
@@ -3136,15 +3005,11 @@ var FunctionCalls = map[string]FunctionCall{
 	"predict_linear":               funcPredictLinear,
 	"present_over_time":            funcPresentOverTime,
 	"quantile_over_time":           funcQuantileOverTime,
-	"rad":                          funcRad,
 	"range":                        nil, // Folded into NumberLiteral by foldQueryContextFunctions.
 	"rate":                         funcRate,
 	"resets":                       funcResets,
 	"round":                        funcRound,
 	"scalar":                       funcScalar,
-	"sgn":                          funcSgn,
-	"sin":                          funcSin,
-	"sinh":                         funcSinh,
 	"sort":                         funcSort,
 	"sort_desc":                    funcSortDesc,
 	"sort_by_label":                funcSortByLabel,
@@ -3152,16 +3017,21 @@ var FunctionCalls = map[string]FunctionCall{
 	"start":                        nil, // Folded into NumberLiteral by foldQueryContextFunctions.
 	"start_timestamp":              funcStartTimestamp,
 	"step":                         nil, // Folded into NumberLiteral by foldQueryContextFunctions.
-	"sqrt":                         funcSqrt,
 	"stddev_over_time":             funcStddevOverTime,
 	"stdvar_over_time":             funcStdvarOverTime,
 	"sum_over_time":                funcSumOverTime,
-	"tan":                          funcTan,
-	"tanh":                         funcTanh,
 	"time":                         funcTime,
 	"timestamp":                    funcTimestamp,
 	"vector":                       funcVector,
 	"year":                         funcYear,
+}
+
+func init() {
+	for name, fn := range inPlaceFloatUnaryFuncs {
+		FunctionCalls[name] = func(vectorVals []Vector, _ Matrix, _ parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+			return simpleFloatFunc(vectorVals, enh, fn), nil
+		}
+	}
 }
 
 // AtModifierUnsafeFunctions are the functions whose result
