@@ -1790,6 +1790,7 @@ func TestSeriesCompactionWithExemplarsPreservesWALSampleReferences(t *testing.T)
 				// The exemplar is replayed from the checkpoint or from a later segment.
 				unknownExemplars := prom_testutil.ToFloat64(reopened.head.metrics.walReplayUnknownRefsTotal.WithLabelValues("exemplars"))
 				require.Zero(t, unknownExemplars, "WAL replay must not report unknown series references for sel's exemplar")
+				require.Equal(t, keepUntil, walExpiry(reopened), "WAL expiry set when replaying the eviction tombstone after the checkpoint")
 			})
 		}
 	}
