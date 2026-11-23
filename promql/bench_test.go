@@ -17,7 +17,6 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
-	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -367,67 +366,20 @@ func BenchmarkRangeQuery(b *testing.B) {
 			ctx := context.Background()
 			b.ReportAllocs()
 			for b.Loop() {
-				qry, err := engine.NewRangeQuery(
-					ctx, stor, nil, c.expr,
-					time.Unix(int64((numIntervals-c.steps)*10), 0),
-					time.Unix(int64(numIntervals*10), 0), time.Second*10,
-				)
-				if err != nil {
-					b.Fatal(err)
+				var qry promql.Query
+				var err error
+				if c.steps == 1 {
+					qry, err = engine.NewInstantQuery(
+						ctx, stor, nil, c.expr,
+						time.Unix(int64(numIntervals*10), 0),
+					)
+				} else {
+					qry, err = engine.NewRangeQuery(
+						ctx, stor, nil, c.expr,
+						time.Unix(int64((numIntervals-c.steps)*10), 0),
+						time.Unix(int64(numIntervals*10), 0), time.Second*10,
+					)
 				}
-				res := qry.Exec(ctx)
-				if res.Err != nil {
-					b.Fatal(res.Err)
-				}
-				qry.Close()
-			}
-		})
-	}
-}
-
-func instantQueryCases() []string {
-	exprs := make([]string, 0, 100)
-	for _, bc := range rangeQueryCases() {
-		if !slices.Contains(exprs, bc.expr) {
-			exprs = append(exprs, bc.expr)
-		}
-	}
-	return exprs
-}
-
-func BenchmarkInstantQuery(b *testing.B) {
-	stor := teststorage.New(b)
-	stor.DisableCompactions() // Don't want auto-compaction disrupting timings.
-
-	opts := promql.EngineOpts{
-		Logger:     nil,
-		Reg:        nil,
-		MaxSamples: 50000000,
-		Timeout:    100 * time.Second,
-		Parser:     parser.NewParser(parser.Options{EnableExtendedRangeSelectors: true, EnableExperimentalFunctions: true}),
-	}
-	engine := promqltest.NewTestEngineWithOpts(b, opts)
-
-	const interval = 10000 // 10s interval.
-	// A day of data plus 10k steps.
-	numIntervals := 8640 + 10000
-	ts := timestamp.Time(int64(numIntervals * interval))
-
-	err := setupRangeQueryTestData(stor, engine, interval, numIntervals)
-	if err != nil {
-		b.Fatal(err)
-	}
-	cases := instantQueryCases()
-
-	for _, expr := range cases {
-		name := fmt.Sprintf("expr=%s", expr)
-		b.Run(name, func(b *testing.B) {
-			ctx := context.Background()
-			b.ReportAllocs()
-			for b.Loop() {
-				qry, err := engine.NewInstantQuery(
-					ctx, stor, nil, expr, ts,
-				)
 				if err != nil {
 					b.Fatal(err)
 				}
