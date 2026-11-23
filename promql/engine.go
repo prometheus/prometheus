@@ -3353,7 +3353,10 @@ func (ev *evaluator) rangeEvalTimestampFunctionOverVectorSelector(ctx context.Co
 	needST := isStartTS && ev.useStartTimestamps
 	numSteps := int((ev.endTimestamp-ev.startTimestamp)/ev.interval) + 1
 
-	mat := make(Matrix, 0, len(vs.Series))
+	mat := Matrix{}
+	if emitSamples {
+		mat = make(Matrix, 0, len(vs.Series))
+	}
 	var prevSS *Series
 	it := storage.NewMemoizedEmptyIterator(durationMilliseconds(ev.lookbackDelta) - 1)
 	var chkIter chunkenc.Iterator
@@ -3376,15 +3379,7 @@ func (ev *evaluator) rangeEvalTimestampFunctionOverVectorSelector(ctx context.Co
 			it.Reset(chkIter)
 		}
 
-		metric := s.Labels()
-		if emitSamples && !ev.enableDelayedNameRemoval {
-			metric = metric.DropReserved(schema.IsMetadataLabel)
-		}
-		ss := Series{
-			Metric:   metric,
-			DropName: true,
-		}
-
+		var floats []FPoint
 		for ts, step := ev.startTimestamp, -1; ts <= ev.endTimestamp; ts += ev.interval {
 			step++
 			if budgetedIterator != nil {
@@ -3420,18 +3415,26 @@ func (ev *evaluator) rangeEvalTimestampFunctionOverVectorSelector(ctx context.Co
 			if ev.currentSamples > ev.maxSamples {
 				ev.error(ErrTooManySamples(env))
 			}
-			if ss.Floats == nil {
-				ss.Floats = reuseOrGetFPointSlices(prevSS, numSteps)
+			if floats == nil {
+				floats = reuseOrGetFPointSlices(prevSS, numSteps)
 			}
 			outT := t
 			if isStartTS {
 				outT = st
 			}
-			ss.Floats = append(ss.Floats, FPoint{F: float64(outT) / 1000, T: ts})
+			floats = append(floats, FPoint{F: float64(outT) / 1000, T: ts})
 		}
 
-		if len(ss.Floats) > 0 {
-			mat = append(mat, ss)
+		if len(floats) > 0 {
+			metric := s.Labels()
+			if !ev.enableDelayedNameRemoval {
+				metric = metric.DropReserved(schema.IsMetadataLabel)
+			}
+			mat = append(mat, Series{
+				Metric:   metric,
+				Floats:   floats,
+				DropName: true,
+			})
 			prevSS = &mat[len(mat)-1]
 		}
 	}
