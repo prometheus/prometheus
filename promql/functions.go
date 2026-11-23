@@ -696,26 +696,27 @@ func extrapolatedRate(vals Matrix, args parser.Expressions, enh *EvalNodeHelper,
 		if enh.StartTimestamps != nil {
 			startTimestamps = enh.StartTimestamps.Floats
 		}
-		if w := enh.floatWin; w != nil {
+		if s := enh.floatWinScan; s != nil {
 			// Scan only newly appended adjacent pairs and evict reset indices that slid out of the window.
-			enh.prepareFloatWinScan(w)
-			for seq := enh.winNextPairSeq; seq+1 < w.endSeq; seq++ {
+			s.prepare()
+			w := &s.win
+			for seq := s.nextPairSeq; seq+1 < w.endSeq; seq++ {
 				i := seq - w.startSeq
 				prevPoint, currPoint := samples.Floats[i], samples.Floats[i+1]
 				if i+1 < len(startTimestamps) && checkStartTimeOverlap(startTimestamps[i], prevPoint.T, startTimestamps[i+1]) {
-					enh.winLastOverlapSeq = seq
+					s.lastOverlapCurrSeq = seq + 1
 				}
 				if currPoint.F < prevPoint.F || (i+1 < len(startTimestamps) && isStartTimestampReset(startTimestamps[i], prevPoint.T, startTimestamps[i+1], currPoint.T)) {
-					enh.appendWinEvent(seq)
+					s.appendEvent(seq)
 				}
 			}
 			if w.endSeq > w.startSeq {
-				enh.winNextPairSeq = max(enh.winNextPairSeq, w.endSeq-1)
+				s.nextPairSeq = max(s.nextPairSeq, w.endSeq-1)
 			}
-			if enh.winLastOverlapSeq >= w.startSeq && enh.winLastOverlapSeq+1 < w.endSeq {
+			if s.lastOverlapCurrSeq > w.startSeq && s.lastOverlapCurrSeq < w.endSeq {
 				annos.Add(annotations.NewStartTimeOverlapWarning(getMetricName(samples.Metric), args[0].PositionRange()))
 			}
-			for _, rSeq := range enh.winEventSeqs[enh.winEventOff:] {
+			for _, rSeq := range s.eventSeqs[s.eventOff:] {
 				resultFloat += samples.Floats[rSeq-w.startSeq].F
 			}
 			break
@@ -2709,10 +2710,11 @@ func funcResets(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *Eval
 		floatSTs = sts.Floats
 		histogramSTs = sts.Histograms
 	}
-	if len(histograms) == 0 && !isAnchoredSelector(args) && enh.floatWin != nil {
-		w := enh.floatWin
-		enh.prepareFloatWinScan(w)
-		for seq := enh.winNextPairSeq; seq+1 < w.endSeq; seq++ {
+	if len(histograms) == 0 && !isAnchoredSelector(args) && enh.floatWinScan != nil {
+		s := enh.floatWinScan
+		s.prepare()
+		w := &s.win
+		for seq := s.nextPairSeq; seq+1 < w.endSeq; seq++ {
 			i := seq - w.startSeq
 			prevPoint, curPoint := floats[i], floats[i+1]
 			var pST, cST int64
@@ -2723,13 +2725,13 @@ func funcResets(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *Eval
 				cST = floatSTs[i+1]
 			}
 			if curPoint.F < prevPoint.F || isStartTimestampReset(pST, prevPoint.T, cST, curPoint.T) {
-				enh.appendWinEvent(seq)
+				s.appendEvent(seq)
 			}
 		}
 		if w.endSeq > w.startSeq {
-			enh.winNextPairSeq = max(enh.winNextPairSeq, w.endSeq-1)
+			s.nextPairSeq = max(s.nextPairSeq, w.endSeq-1)
 		}
-		return append(enh.Out, Sample{F: float64(len(enh.winEventSeqs) - enh.winEventOff)}), nil
+		return append(enh.Out, Sample{F: float64(len(s.eventSeqs) - s.eventOff)}), nil
 	}
 	firstFloat, firstHistogram, found := pickFirstSampleIndices(floats, histograms, args, enh)
 	if !found {
@@ -2793,20 +2795,21 @@ func funcChanges(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *Eva
 	if len(floats) == 0 && len(histograms) == 0 {
 		return enh.Out, nil
 	}
-	if len(histograms) == 0 && !isAnchoredSelector(args) && enh.floatWin != nil {
-		w := enh.floatWin
-		enh.prepareFloatWinScan(w)
-		for seq := enh.winNextPairSeq; seq+1 < w.endSeq; seq++ {
+	if len(histograms) == 0 && !isAnchoredSelector(args) && enh.floatWinScan != nil {
+		s := enh.floatWinScan
+		s.prepare()
+		w := &s.win
+		for seq := s.nextPairSeq; seq+1 < w.endSeq; seq++ {
 			i := seq - w.startSeq
 			prevF, curF := floats[i].F, floats[i+1].F
 			if curF != prevF && !(math.IsNaN(curF) && math.IsNaN(prevF)) {
-				enh.appendWinEvent(seq)
+				s.appendEvent(seq)
 			}
 		}
 		if w.endSeq > w.startSeq {
-			enh.winNextPairSeq = max(enh.winNextPairSeq, w.endSeq-1)
+			s.nextPairSeq = max(s.nextPairSeq, w.endSeq-1)
 		}
-		return append(enh.Out, Sample{F: float64(len(enh.winEventSeqs) - enh.winEventOff)}), nil
+		return append(enh.Out, Sample{F: float64(len(s.eventSeqs) - s.eventOff)}), nil
 	}
 
 	var prevSample, curSample Sample

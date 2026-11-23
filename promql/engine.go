@@ -1835,47 +1835,54 @@ type EvalNodeHelper struct {
 	// StartTimestamps optionally provides sample start timestamps aligned with matrix samples.
 	StartTimestamps *StartTimestamps
 
-	// Sliding window state for range-vector functions over float samples.
-	floatWin          *floatWindow
-	winSeriesID       uint64
-	winNextPairSeq    int
-	winEventSeqs      []int
-	winEventOff       int
-	winLastOverlapSeq int
+	// floatWinScan optionally caches incremental pair scans over a sliding float window.
+	floatWinScan *floatWinScan
 }
 
-// prepareFloatWinScan synchronizes cached pair-scan state with the current floatWindow
+// floatWinScan tracks incremental pair-scan state over a sliding floatWindow so
+// range-vector functions only scan newly appended adjacent float pairs.
+type floatWinScan struct {
+	win                floatWindow
+	seriesID           uint64
+	nextPairSeq        int
+	eventSeqs          []int
+	eventOff           int
+	lastOverlapCurrSeq int // 1-based pair end seq (seq+1); 0 means no overlap recorded.
+}
+
+// prepare synchronizes cached pair-scan state with the current floatWindow
 // and drops event indices that slid out of the left side of the window.
-func (enh *EvalNodeHelper) prepareFloatWinScan(w *floatWindow) {
-	if w.seriesID != enh.winSeriesID || enh.winNextPairSeq < w.startSeq || enh.winNextPairSeq > w.endSeq {
-		enh.winSeriesID = w.seriesID
-		enh.winNextPairSeq = w.startSeq
-		enh.winEventSeqs = enh.winEventSeqs[:0]
-		enh.winEventOff = 0
-		enh.winLastOverlapSeq = -1
+func (s *floatWinScan) prepare() {
+	w := &s.win
+	if w.seriesID != s.seriesID || s.nextPairSeq < w.startSeq || s.nextPairSeq > w.endSeq {
+		s.seriesID = w.seriesID
+		s.nextPairSeq = w.startSeq
+		s.eventSeqs = s.eventSeqs[:0]
+		s.eventOff = 0
+		s.lastOverlapCurrSeq = 0
 		return
 	}
-	for enh.winEventOff < len(enh.winEventSeqs) && enh.winEventSeqs[enh.winEventOff] < w.startSeq {
-		enh.winEventOff++
+	for s.eventOff < len(s.eventSeqs) && s.eventSeqs[s.eventOff] < w.startSeq {
+		s.eventOff++
 	}
 }
 
-// appendWinEvent records the logical sequence index of a pair event in the active window.
-func (enh *EvalNodeHelper) appendWinEvent(seq int) {
-	if len(enh.winEventSeqs) == cap(enh.winEventSeqs) && enh.winEventOff > 0 {
-		n := len(enh.winEventSeqs) - enh.winEventOff
-		if enh.winEventOff >= n/4 {
-			copy(enh.winEventSeqs, enh.winEventSeqs[enh.winEventOff:])
-			enh.winEventSeqs = enh.winEventSeqs[:n]
-			enh.winEventOff = 0
+// appendEvent records the logical sequence index of a pair event in the active window.
+func (s *floatWinScan) appendEvent(seq int) {
+	if len(s.eventSeqs) == cap(s.eventSeqs) && s.eventOff > 0 {
+		n := len(s.eventSeqs) - s.eventOff
+		if s.eventOff >= n/4 {
+			copy(s.eventSeqs, s.eventSeqs[s.eventOff:])
+			s.eventSeqs = s.eventSeqs[:n]
+			s.eventOff = 0
 		} else {
 			newSeqs := make([]int, n, max(2*(n+1), 16))
-			copy(newSeqs, enh.winEventSeqs[enh.winEventOff:])
-			enh.winEventSeqs = newSeqs
-			enh.winEventOff = 0
+			copy(newSeqs, s.eventSeqs[s.eventOff:])
+			s.eventSeqs = newSeqs
+			s.eventOff = 0
 		}
 	}
-	enh.winEventSeqs = append(enh.winEventSeqs, seq)
+	s.eventSeqs = append(s.eventSeqs, seq)
 }
 
 func (enh *EvalNodeHelper) resetSigsPresent() []bool {
@@ -2892,12 +2899,13 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		}
 
 		// Reuse objects across steps to save memory allocations.
-		floatsWin := floatWindow{seriesID: 1}
+		scan := &floatWinScan{}
+		floatsWin := &scan.win
 		var floats []FPoint
 		var histograms []HPoint
 		var prevSS *Series
 		inMatrix := make(Matrix, 1)
-		enh := &EvalNodeHelper{Out: make(Vector, 0, 1), LookbackDelta: ev.lookbackDelta, enableDelayedNameRemoval: ev.enableDelayedNameRemoval, floatWin: &floatsWin}
+		enh := &EvalNodeHelper{Out: make(Vector, 0, 1), LookbackDelta: ev.lookbackDelta, enableDelayedNameRemoval: ev.enableDelayedNameRemoval, floatWinScan: scan}
 		// Process all the calls for one time series at a time.
 		// For anchored and smoothed selectors, we need to iterate over a
 		// larger range than the query range to account for the lookback delta.
@@ -2995,7 +3003,7 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 					if matrixFromSubquery {
 						readStep = -1
 					}
-					floats, histograms, startTimestamps = ev.matrixIterSlice(ctx, it, mint, maxt, &floatsWin, histograms, startTimestamps, readStep)
+					floats, histograms, startTimestamps = ev.matrixIterSlice(ctx, it, mint, maxt, floatsWin, histograms, startTimestamps, readStep)
 				}
 				if len(floats)+len(histograms) == 0 {
 					continue
@@ -3737,7 +3745,7 @@ func (ev *evaluator) matrixSelector(ctx context.Context, node *parser.MatrixSele
 		if ev.useStartTimestamps && retrieveStartTimestamps {
 			startTimestamps = &StartTimestamps{}
 		}
-		floatsWin := floatWindow{seriesID: 1}
+		var floatsWin floatWindow
 		ss.Floats, ss.Histograms, startTimestamps = ev.matrixIterSlice(ctx, it, mint, maxt, &floatsWin, nil, startTimestamps, 0)
 		switch {
 		case vs.Anchored:
