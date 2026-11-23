@@ -345,7 +345,9 @@ Outer:
 					continue
 				}
 				for _, itv := range s.Intervals {
-					if itv.Maxt < h.minValidTime.Load() {
+					// Out-of-order samples older than minValidTime are replayed
+					// from the WBL, so their tombstones must be kept.
+					if itv.Maxt < h.minValidTime.Load() && h.wbl == nil {
 						continue
 					}
 					if r, ok := multiRef[chunks.HeadSeriesRef(s.Ref)]; ok {
