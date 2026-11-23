@@ -477,14 +477,22 @@ func TestShutdown(t *testing.T) {
 		t.Run(fmt.Sprint(protoMsg), func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				deadline := 15 * time.Second
-				c := NewTestBlockedWriteClient()
+				c := &MockWriteClient{
+					StoreFunc: func(ctx context.Context, _ []byte, _ int) (WriteResponseStats, error) {
+						<-ctx.Done()
+						return WriteResponseStats{}, ctx.Err()
+					},
+					NameFunc:     func() string { return "mock" },
+					EndpointFunc: func() string { return "http://fake:9090/api/v1/write" },
+				}
 
 				cfg := config.DefaultQueueConfig
+				cfg.MinShards = 2
 				mcfg := config.DefaultMetadataConfig
 
 				m := newTestQueueManager(t, cfg, mcfg, deadline, c, protoMsg)
-				// Send 2x batch size, so we know it will need at least two sends.
-				n := 2 * config.DefaultQueueConfig.MaxSamplesPerSend
+				// Each shard gets two full batches.
+				n := 2 * cfg.MinShards * cfg.MaxSamplesPerSend
 				recs := testwal.GenerateRecords(recCase{
 					NoST:   protoMsg == remoteapi.WriteV1MessageType, // RW1 does not support ST.
 					Series: n / 1000, SamplesPerSeries: 1000,
@@ -505,6 +513,9 @@ func TestShutdown(t *testing.T) {
 				// be at least equal to deadline, otherwise the flush deadline
 				// was not respected.
 				require.Equal(t, time.Since(start), deadline)
+				require.Zero(t, client_testutil.ToFloat64(m.metrics.pendingSamples))
+				require.Equal(t, float64(n), client_testutil.ToFloat64(m.metrics.failedSamplesTotal))
+				require.Equal(t, uint32(n), m.shards.samplesDroppedOnHardShutdown.Load())
 			})
 		})
 	}
@@ -916,34 +927,36 @@ func TestDisableReshardOnRetry(t *testing.T) {
 func TestLastSendTimestampNotUpdatedOnContextCancellation(t *testing.T) {
 	t.Parallel()
 
-	var storeCalled atomic.Bool
-	client := &MockWriteClient{
-		StoreFunc: func(ctx context.Context, _ []byte, _ int) (WriteResponseStats, error) {
-			storeCalled.Store(true)
-			// Block until shards.stop() cancels the context after flushDeadline.
-			<-ctx.Done()
-			return WriteResponseStats{}, ctx.Err()
-		},
-		NameFunc:     func() string { return "mock" },
-		EndpointFunc: func() string { return "http://fake:9090/api/v1/write" },
+	for _, protoMsg := range []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType, remoteapi.WriteV2MessageType} {
+		t.Run(fmt.Sprint(protoMsg), func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				storeCalled := make(chan struct{})
+				client := &MockWriteClient{
+					StoreFunc: func(ctx context.Context, _ []byte, _ int) (WriteResponseStats, error) {
+						close(storeCalled)
+						<-ctx.Done()
+						return WriteResponseStats{}, ctx.Err()
+					},
+					NameFunc:     func() string { return "mock" },
+					EndpointFunc: func() string { return "http://fake:9090/api/v1/write" },
+				}
+				cfg := testDefaultQueueConfig()
+				cfg.MaxSamplesPerSend = 1
+				m := newTestQueueManager(t, cfg, config.DefaultMetadataConfig, time.Second, client, protoMsg)
+				recs := testwal.GenerateRecords(recCase{Series: 1, SamplesPerSeries: 1, NoST: protoMsg == remoteapi.WriteV1MessageType})
+				m.StoreSeries(recs.Series, 0)
+				m.shards.start(1)
+				m.Append(recs.Samples)
+				<-storeCalled
+				m.shards.stop()
+
+				require.Zero(t, client_testutil.ToFloat64(m.metrics.pendingSamples))
+				require.Equal(t, 1.0, client_testutil.ToFloat64(m.metrics.failedSamplesTotal))
+				require.Zero(t, m.dataOut.newEvents.Load())
+				require.Zero(t, m.lastSendTimestamp.Load())
+			})
+		})
 	}
-
-	cfg := testDefaultQueueConfig()
-	cfg.MaxShards = 1
-
-	// flushDeadline long enough for the shard to dequeue and call Store,
-	// short enough to not slow CI.
-	m := newTestQueueManager(t, cfg, config.DefaultMetadataConfig, 100*time.Millisecond, client, remoteapi.WriteV1MessageType)
-
-	recs := testwal.GenerateRecords(recCase{Series: 1, SamplesPerSeries: 1})
-	m.StoreSeries(recs.Series, 0)
-	m.numShards = 1
-	m.shards.start(1)
-	m.Append(recs.Samples)
-	m.shards.stop()
-
-	require.True(t, storeCalled.Load())
-	require.Equal(t, int64(0), m.lastSendTimestamp.Load())
 }
 
 func createProtoTimeseriesWithOld(numSamples, baseTs int64) []prompb.TimeSeries {
