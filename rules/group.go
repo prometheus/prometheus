@@ -880,6 +880,16 @@ func (g *Group) RestoreForState(ts time.Time) {
 			key := sset.At().Labels().DropReserved(schema.IsMetadataLabel).String()
 			seriesByLabels[key] = append(seriesByLabels[key], sset.At())
 		}
+		if err := sset.Err(); err != nil {
+			g.logger.Error(
+				"Failed to restore 'for' state",
+				labels.AlertName, alertRule.Name(),
+				"stage", "SeriesSet",
+				"err", err,
+			)
+			alertRule.SetRestored(true)
+			continue
+		}
 
 		// No results for this alert rule.
 		if len(seriesByLabels) == 0 {

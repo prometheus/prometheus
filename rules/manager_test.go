@@ -15,6 +15,7 @@ package rules
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"maps"
@@ -3727,4 +3728,112 @@ func TestAlertingRuleSchemaLabelsAndRestoreForState(t *testing.T) {
 			})
 		}
 	})
+
+	t.Run("skips_restore_on_series_set_iteration_error", func(t *testing.T) {
+		st := teststorage.New(t)
+		seedInputCounter(t, st)
+
+		restoreTime := baseTime.Add(2 * time.Minute)
+		seedApp := st.AppenderV2(t.Context())
+		_, err := seedApp.Append(
+			0,
+			labels.FromStrings(
+				model.MetricNameLabel, alertForStateMetricName,
+				labels.AlertName, "HighRequests",
+				"job", "api",
+			),
+			0,
+			timestamp.FromTime(baseTime),
+			float64(baseTime.Add(-20*time.Minute).Unix()),
+			nil,
+			nil,
+			storage.AOptions{},
+		)
+		require.NoError(t, err)
+		require.NoError(t, seedApp.Commit())
+
+		// Wrap the Queryable so Select returns a SeriesSet with Err()==nil initially,
+		// yields the older active series, and then fails during iteration before a
+		// newer series could be read.
+		errQueryable := storage.QueryableFunc(func(mint, maxt int64) (storage.Querier, error) {
+			q, err := st.Querier(mint, maxt)
+			if err != nil {
+				return nil, err
+			}
+			t.Cleanup(func() { require.NoError(t, q.Close()) })
+			return &storage.MockQuerier{
+				SelectMockFunction: func(sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+					return &errAfterFirstSeriesSet{
+						SeriesSet: q.Select(t.Context(), sortSeries, hints, matchers...),
+						err:       errors.New("series set iteration failed"),
+					}
+				},
+			}, nil
+		})
+
+		restoredRule := NewAlertingRule(
+			"HighRequests",
+			expr,
+			15*time.Minute,
+			0,
+			labels.EmptyLabels(),
+			labels.EmptyLabels(),
+			labels.EmptyLabels(),
+			"",
+			false,
+			promslog.NewNopLogger(),
+		)
+		restoredGroup := NewGroup(GroupOptions{
+			Name:          "alert_schema",
+			Interval:      time.Minute,
+			Rules:         []Rule{restoredRule},
+			ShouldRestore: true,
+			Opts: &ManagerOptions{
+				Context:                 t.Context(),
+				AppendableV2:            st,
+				Queryable:               errQueryable,
+				QueryFunc:               EngineQueryFunc(engine, st),
+				NotifyFunc:              func(context.Context, string, ...*Alert) {},
+				Logger:                  promslog.NewNopLogger(),
+				EnableTypeAndUnitLabels: true,
+				OutageTolerance:         30 * time.Minute,
+				ForGracePeriod:          10 * time.Minute,
+			},
+		})
+
+		restoredGroup.Eval(t.Context(), restoreTime)
+		restoredGroup.RestoreForState(restoreTime)
+		require.True(t, restoredRule.Restored())
+
+		// Restore must be skipped on iteration error rather than applying partial state.
+		alerts := restoredRule.ActiveAlerts()
+		require.Len(t, alerts, 1)
+		require.Equal(t, restoreTime, alerts[0].ActiveAt)
+	})
+}
+
+type errAfterFirstSeriesSet struct {
+	storage.SeriesSet
+	yielded bool
+	failed  bool
+	err     error
+}
+
+func (s *errAfterFirstSeriesSet) Next() bool {
+	if s.yielded {
+		s.failed = true
+		return false
+	}
+	if s.SeriesSet.Next() {
+		s.yielded = true
+		return true
+	}
+	return false
+}
+
+func (s *errAfterFirstSeriesSet) Err() error {
+	if s.failed {
+		return s.err
+	}
+	return s.SeriesSet.Err()
 }
