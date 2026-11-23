@@ -273,3 +273,14 @@ eval instant at 10s count_over_time(duration_metric[max_of(5s, (-1)^0.5)])
 
 # Two NaNs still produce an invalid duration.
 eval_fail instant at 10s count_over_time(duration_metric[max_of((-1)^0.5, (-1)^0.5)])
+
+# Subquery ranges and explicit steps that truncate to zero milliseconds must fail.
+eval_fail instant at 10s count_over_time(duration_metric[(1ms/4)])
+
+eval_fail instant at 10s count_over_time(duration_metric[1m:(1ms/4)])
+
+eval_fail instant at 10s count_over_time(duration_metric[(1ms/4):1m])
+
+# Offsets still evaluate to zero.
+eval instant at 10s duration_metric offset (1ms/4)
+  duration_metric 10
