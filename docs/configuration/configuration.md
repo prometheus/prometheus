@@ -3849,10 +3849,8 @@ anchored on both ends. To un-anchor the regex, use `.*<regex>.*`.
 * `keepequal`: Drop targets for which the concatenated `source_labels` do not match `target_label`.
 * `dropequal`: Drop targets for which the concatenated `source_labels` do match `target_label`.
 * `hashmod`: Set `target_label` to the `modulus` of a hash of the concatenated `source_labels`.
-   When sharding with `hashmod`, rewrite `__address__` before hashing it. Service discovery
-   that emits several targets per object (for example Kubernetes `role: pod`, one per
-   container port) can otherwise put one object's targets on different shards; if the
-   rewrite then gives them the same address, each of those shards scrapes it.
+   The hash uses the label values at that point in the relabel list, so put `hashmod`
+   after any rule that rewrites its source labels.
 * `labelmap`: Match `regex` against all source label names, not just those specified in `source_labels`. Then
    copy the values of the matching labels  to label names given by `replacement` with match
    group references (`${1}`, `${2}`, ...) in `replacement` substituted by their value.
