@@ -101,11 +101,7 @@ annotations. It returns a list of samples, which you can feed through `first`,
 `value`, `label` and the humanizing functions described in the [template
 reference](template_reference.md).
 
-Wrap the query in `with` so nothing is rendered when it returns no results,
-since `first` fails on an empty result. To reuse labels of the firing alert in
-the query, build the query string with `printf`. Use single quotes for label
-matchers inside the query so they don't clash with the YAML and template
-quoting.
+A basic use is to run a fixed query and print its first result:
 
 ```yaml
 groups:
@@ -113,7 +109,7 @@ groups:
   rules:
 
   # Alert when more than 5% of requests of a job fail, and show the
-  # job's total request rate next to the error ratio.
+  # total request rate of all jobs next to the error ratio.
   - alert: HighErrorRatio
     expr: |
       sum by (job) (rate(http_requests_total{code=~"5.."}[5m]))
@@ -127,9 +123,20 @@ groups:
       summary: "High error ratio for {{ $labels.job }}"
       description: |
         {{ $labels.job }} is failing {{ $value | humanizePercentage }} of its requests.
-        {{ with printf "sum(rate(http_requests_total{job='%s'}[5m]))" $labels.job | query }}
-        Total request rate is {{ . | first | value | humanize }} requests per second.
-        {{ end }}
+        Total request rate is {{ query "sum(rate(http_requests_total[5m]))" | first | value | humanize }} requests per second.
+```
+
+`first` fails when the query returns no results, so the annotation would not be
+rendered. To handle that, wrap the query in `with`, which renders nothing for
+an empty result. To use labels of the firing alert in the query, build the
+query string with `printf`. Use single quotes for label matchers inside the
+query so they don't clash with the YAML and template quoting. The following
+example uses both:
+
+```yaml
+groups:
+- name: example
+  rules:
 
   # Alert when a filesystem is almost full, and include its total size,
   # which isn't part of the alert expression.
