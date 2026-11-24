@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -409,6 +410,7 @@ func TestAPI_SearchEndpoints_SecondaryWarnings(t *testing.T) {
 								expected = expected[:limit]
 							}
 							require.Equal(t, expected, results)
+							require.JSONEq(t, fmt.Sprintf(`{"status":"success","has_more":%t,"returned":%d}`, trailer.HasMore, len(results)), string(lines[len(lines)-1]))
 							if tc.noopSecondary || tc.emptyRange {
 								require.Empty(t, warnings)
 							} else {
@@ -1549,41 +1551,52 @@ func TestSearchStreamFirstBatchError(t *testing.T) {
 // that the trailer's order-independent dedup correctly omits them when the
 // warning set is unchanged at iteration end.
 func TestStreamSearchResultsWarningsSorted(t *testing.T) {
-	var warns annotations.Annotations
-	// Add in non-alphabetical order to stress the map-iteration behaviour.
-	warns.Add(errors.New("c-warn"))
-	warns.Add(errors.New("a-warn"))
-	warns.Add(errors.New("b-warn"))
+	for _, tc := range []struct {
+		name         string
+		rangeWarning error
+		want         []string
+	}{
+		{name: "storage warnings only", want: []string{"a-warn", "b-warn", "c-warn"}},
+		{name: "with range warning", rangeWarning: errors.New("b-range-warn"), want: []string{"a-warn", "b-range-warn", "b-warn", "c-warn"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var warns annotations.Annotations
+			// Add in non-alphabetical order to stress the map-iteration behaviour.
+			warns.Add(errors.New("c-warn"))
+			warns.Add(errors.New("a-warn"))
+			warns.Add(errors.New("b-warn"))
 
-	results := []storage.SearchResult{
-		{Value: "alpha", Score: 1.0},
-		{Value: "beta", Score: 0.9},
+			results := []storage.SearchResult{
+				{Value: "alpha", Score: 1.0},
+				{Value: "beta", Score: 0.9},
+			}
+			rs := storage.NewSearchResultSetFromSlice(results, warns)
+
+			api := newSearchTestAPI(t)
+			rec := httptest.NewRecorder()
+			// httptest.NewRecorder implements http.Flusher; streamSearchResults
+			// requires that.
+			sp := searchParams{limit: 100, batchSize: 100, rangeWarning: tc.rangeWarning}
+
+			streamSearchResults(t.Context(), api, rec, rs, sp, func(sr storage.SearchResult) string {
+				return sr.Value
+			})
+
+			lines := parseNDJSON(t, rec.Body.String())
+			require.GreaterOrEqual(t, len(lines), 2, "expected at least a batch and a trailer line")
+
+			var batch searchBatch[string]
+			require.NoError(t, json.Unmarshal(lines[0], &batch))
+			require.Equal(t, tc.want, batch.Warnings,
+				"first batch must carry warnings in sorted order so the on-wire format is deterministic")
+
+			var trailer searchTrailer
+			require.NoError(t, json.Unmarshal(lines[len(lines)-1], &trailer))
+			require.Equal(t, "success", trailer.Status)
+			require.Empty(t, trailer.Warnings,
+				"trailer must not re-emit warnings already carried by the first batch")
+		})
 	}
-	rs := storage.NewSearchResultSetFromSlice(results, warns)
-
-	api := newSearchTestAPI(t)
-	rec := httptest.NewRecorder()
-	// httptest.NewRecorder implements http.Flusher; streamSearchResults
-	// requires that.
-	sp := searchParams{limit: 100, batchSize: 100}
-
-	streamSearchResults(t.Context(), api, rec, rs, sp, func(sr storage.SearchResult) string {
-		return sr.Value
-	})
-
-	lines := parseNDJSON(t, rec.Body.String())
-	require.GreaterOrEqual(t, len(lines), 2, "expected at least a batch and a trailer line")
-
-	var batch searchBatch[string]
-	require.NoError(t, json.Unmarshal(lines[0], &batch))
-	require.Equal(t, []string{"a-warn", "b-warn", "c-warn"}, batch.Warnings,
-		"first batch must carry warnings in sorted order so the on-wire format is deterministic")
-
-	var trailer searchTrailer
-	require.NoError(t, json.Unmarshal(lines[len(lines)-1], &trailer))
-	require.Equal(t, "success", trailer.Status)
-	require.Empty(t, trailer.Warnings,
-		"trailer must not re-emit warnings already carried by the first batch")
 }
 
 // warningsOnExhaustResultSet is a SearchResultSet that returns base warnings
@@ -1701,6 +1714,274 @@ func TestSearchParamsRejectsExcessSearchTerms(t *testing.T) {
 		"a request with exactly maxSearchTermsPerRequest terms must be accepted")
 }
 
+func TestSearchExpr(t *testing.T) {
+	api := minimalSearchAPI()
+	// Go_Threads is the only mixed-case value, so it shows whether values are case folded.
+	api.Queryable = promqltest.LoadedStorage(t, `
+		load 1m
+			go_gc_duration_seconds{instance="localhost:9090", job="prometheus"} 0+1x100
+			go_gc_heap_goal_bytes{instance="localhost:9090", job="prometheus"} 0+1x100
+			go_goroutines{instance="localhost:9090", job="prometheus"} 0+1x100
+			up{instance="localhost:9090", job="prometheus"} 1+0x100
+			up{instance="localhost:9091", job="node"} 1+0x100
+			process_cpu_seconds_total{instance="localhost:9090", job="prometheus"} 0+1x100
+			Go_Threads{job="test"} 0+1x100
+	`)
+	r := route.New()
+	api.Register(r)
+	type result struct {
+		Name, Value string
+		Score       *float64
+	}
+	search := func(t *testing.T, method, path string, params url.Values) *httptest.ResponseRecorder {
+		var req *http.Request
+		if method == http.MethodPost {
+			req = httptest.NewRequest(method, path, strings.NewReader(params.Encode()))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		} else {
+			req = httptest.NewRequest(method, path+"?"+params.Encode(), http.NoBody)
+		}
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req.WithContext(t.Context()))
+		return rec
+	}
+	results := func(t *testing.T, rec *httptest.ResponseRecorder) []result {
+		require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+		lines := parseNDJSON(t, rec.Body.String())
+		var trailer searchTrailer
+		require.NoError(t, json.Unmarshal(lines[len(lines)-1], &trailer))
+		require.Equal(t, "success", trailer.Status)
+		got := []result{}
+		for _, line := range lines[:len(lines)-1] {
+			var batch searchBatch[result]
+			require.NoError(t, json.Unmarshal(line, &batch))
+			got = append(got, batch.Results...)
+		}
+		return got
+	}
+	goMetrics := []string{"go_gc_duration_seconds", "go_gc_heap_goal_bytes", "go_goroutines"}
+
+	for _, tc := range []struct {
+		name   string
+		path   string
+		params url.Values
+		want   []string
+		// ordered makes the order of want significant.
+		ordered bool
+		// wantScores is checked when it is set. It needs include_score.
+		wantScores []float64
+		// wantErr is a substring of the 400 error. want is ignored when it is set.
+		wantErr string
+	}{
+		{
+			name:   "AND",
+			path:   "/search/metric_names",
+			params: url.Values{"search_expr": {"go AND gc"}, "fuzz_alg": {"jarowinkler"}},
+			want:   []string{"go_gc_duration_seconds", "go_gc_heap_goal_bytes"},
+		},
+		{
+			name:   "OR",
+			path:   "/search/metric_names",
+			params: url.Values{"search_expr": {"up OR goroutines"}, "fuzz_alg": {"jarowinkler"}},
+			want:   []string{"go_goroutines", "up"},
+		},
+		{
+			name:   "AND NOT",
+			path:   "/search/metric_names",
+			params: url.Values{"search_expr": {"go AND NOT gc"}, "fuzz_alg": {"jarowinkler"}},
+			want:   []string{"go_goroutines"},
+		},
+		{
+			name:   "grouped OR AND NOT",
+			path:   "/search/metric_names",
+			params: url.Values{"search_expr": {"(gc OR cpu) AND NOT heap"}, "fuzz_alg": {"jarowinkler"}},
+			want:   []string{"go_gc_duration_seconds", "process_cpu_seconds_total"},
+		},
+		{
+			name:   "double NOT is positive",
+			path:   "/search/metric_names",
+			params: url.Values{"search_expr": {"NOT NOT goroutines"}, "fuzz_alg": {"jarowinkler"}},
+			want:   []string{"go_goroutines"},
+		},
+		{
+			name:   "case insensitive",
+			path:   "/search/metric_names",
+			params: url.Values{"search_expr": {"GO AND NOT GC"}, "fuzz_alg": {"jarowinkler"}, "case_sensitive": {"false"}},
+			want:   []string{"go_goroutines", "Go_Threads"},
+		},
+		{
+			name:   "case insensitive negated term",
+			path:   "/search/metric_names",
+			params: url.Values{"search_expr": {"go AND NOT THREADS"}, "fuzz_alg": {"jarowinkler"}, "case_sensitive": {"false"}},
+			want:   goMetrics,
+		},
+		{
+			name:   "case sensitive positive term",
+			path:   "/search/metric_names",
+			params: url.Values{"search_expr": {"GO"}, "fuzz_alg": {"jarowinkler"}},
+			want:   []string{},
+		},
+		{
+			name:   "case sensitive negated term",
+			path:   "/search/metric_names",
+			params: url.Values{"search_expr": {"go AND NOT GC"}, "fuzz_alg": {"jarowinkler"}},
+			want:   goMetrics,
+		},
+		{
+			// "grtn" is a subsequence of go_goroutines and go_gc_duration_seconds but a substring of neither.
+			name:   "positive term is fuzzy",
+			path:   "/search/metric_names",
+			params: url.Values{"search_expr": {"grtn AND NOT gc"}},
+			want:   []string{"go_goroutines"},
+		},
+		{
+			// "gs" is a subsequence of every go_ metric but a substring of none.
+			name:   "negated term is not fuzzy",
+			path:   "/search/metric_names",
+			params: url.Values{"search_expr": {"go AND NOT gs"}},
+			want:   goMetrics,
+		},
+		{
+			name:   "label_values",
+			path:   "/search/label_values",
+			params: url.Values{"label": {"job"}, "search_expr": {"NOT prom AND o"}, "fuzz_alg": {"jarowinkler"}},
+			want:   []string{"node"},
+		},
+		{
+			name:   "label_names",
+			path:   "/search/label_names",
+			params: url.Values{"search_expr": {"NOT job AND n"}, "fuzz_alg": {"jarowinkler"}},
+			want:   []string{"__name__", "instance"},
+		},
+		{
+			// Substring scores are 1 - 0.9*position/(len(value)-len(term)).
+			// go_gc_duration_seconds scores the mean of "go" at 0 and "duration" at 6 of 14.
+			// go_goroutines scores "goroutines" at 3 of 3.
+			name:       "sort_by score orders by mean term score",
+			path:       "/search/metric_names",
+			params:     url.Values{"search_expr": {"(go AND duration) OR goroutines"}, "fuzz_alg": {"jarowinkler"}, "sort_by": {"score"}, "include_score": {"true"}},
+			want:       []string{"go_gc_duration_seconds", "go_goroutines"},
+			ordered:    true,
+			wantScores: []float64{(1 + (1 - 0.9*6.0/14.0)) / 2, 1 - 0.9*3.0/3.0},
+		},
+		{
+			name:   "empty search_expr is absent",
+			path:   "/search/metric_names",
+			params: url.Values{"search_expr": {""}},
+			want:   []string{"go_gc_duration_seconds", "go_gc_heap_goal_bytes", "go_goroutines", "process_cpu_seconds_total", "up", "Go_Threads"},
+		},
+		{
+			name:   "empty search_expr with search[]",
+			path:   "/search/metric_names",
+			params: url.Values{"search_expr": {""}, "search[]": {"goroutines"}, "fuzz_alg": {"jarowinkler"}},
+			want:   []string{"go_goroutines"},
+		},
+		{
+			name:   "empty search[] with search_expr",
+			path:   "/search/metric_names",
+			params: url.Values{"search_expr": {"goroutines"}, "search[]": {""}, "fuzz_alg": {"jarowinkler"}},
+			want:   []string{"go_goroutines"},
+		},
+		{
+			name:   "repeated search_expr uses the first value",
+			path:   "/search/metric_names",
+			params: url.Values{"search_expr": {"goroutines", "up"}, "fuzz_alg": {"jarowinkler"}},
+			want:   []string{"go_goroutines"},
+		},
+		{
+			name:    "parse error",
+			path:    "/search/metric_names",
+			params:  url.Values{"search_expr": {"go AND"}},
+			wantErr: "invalid search_expr: search expression: ",
+		},
+		{
+			name:    "spaces only",
+			path:    "/search/metric_names",
+			params:  url.Values{"search_expr": {"   "}},
+			wantErr: "invalid search_expr: search expression: expected term or (",
+		},
+		{
+			name:    "compile error",
+			path:    "/search/metric_names",
+			params:  url.Values{"search_expr": {"NOT go"}},
+			wantErr: "invalid search_expr: search expression: every accepting path must require a positive term",
+		},
+		{
+			name:    "mutually exclusive with search[]",
+			path:    "/search/metric_names",
+			params:  url.Values{"search_expr": {"go"}, "search[]": {"", "go"}},
+			wantErr: "search[] and search_expr are mutually exclusive",
+		},
+		{
+			name:    "sort_by score without search",
+			path:    "/search/metric_names",
+			params:  url.Values{"sort_by": {"score"}},
+			wantErr: "sort_by=score requires search[] or search_expr to be set",
+		},
+		{
+			name:    "sort_by score with empty search_expr",
+			path:    "/search/metric_names",
+			params:  url.Values{"sort_by": {"score"}, "search_expr": {""}},
+			wantErr: "sort_by=score requires search[] or search_expr to be set",
+		},
+	} {
+		for _, method := range []string{http.MethodGet, http.MethodPost} {
+			t.Run(method+" "+tc.name, func(t *testing.T) {
+				rec := search(t, method, tc.path, tc.params)
+				if tc.wantErr != "" {
+					require.Equal(t, http.StatusBadRequest, rec.Code)
+					var response Response
+					require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &response))
+					require.Equal(t, errorBadData.str, response.ErrorType)
+					require.Contains(t, response.Error, tc.wantErr)
+					return
+				}
+				got := results(t, rec)
+				values := make([]string, 0, len(got))
+				for _, r := range got {
+					values = append(values, r.Name+r.Value)
+				}
+				if tc.ordered {
+					require.Equal(t, tc.want, values)
+				} else {
+					require.ElementsMatch(t, tc.want, values)
+				}
+				if tc.wantScores != nil {
+					require.Len(t, got, len(tc.wantScores))
+					for i, r := range got {
+						require.NotNil(t, r.Score, values[i])
+						require.InDelta(t, tc.wantScores[i], *r.Score, 1e-9, values[i])
+					}
+				}
+			})
+		}
+	}
+
+	t.Run("single term matches search[]", func(t *testing.T) {
+		for _, params := range []url.Values{
+			{"fuzz_alg": {"subsequence"}},
+			{"fuzz_alg": {"subsequence"}, "fuzz_threshold": {"50"}},
+			{"fuzz_alg": {"jarowinkler"}},
+			{"fuzz_alg": {"jarowinkler"}, "fuzz_threshold": {"80"}},
+			{"fuzz_alg": {"subsequence"}, "case_sensitive": {"false"}},
+			{"fuzz_alg": {"jarowinkler"}, "fuzz_threshold": {"80"}, "case_sensitive": {"false"}},
+		} {
+			for _, term := range []string{"go", "gorutines", "GO_Thr"} {
+				t.Run(params.Encode()+" "+term, func(t *testing.T) {
+					params := maps.Clone(params)
+					params.Set("sort_by", "score")
+					params.Set("include_score", "true")
+					params.Set("search[]", term)
+					want := results(t, search(t, http.MethodGet, "/search/metric_names", params))
+					params.Del("search[]")
+					params.Set("search_expr", term)
+					require.Equal(t, want, results(t, search(t, http.MethodGet, "/search/metric_names", params)))
+				})
+			}
+		}
+	})
+}
+
 func TestSearchBatchSize(t *testing.T) {
 	api := newSearchTestAPI(t)
 	t.Run("oversized batch on all endpoints", func(t *testing.T) {
@@ -1749,6 +2030,100 @@ func TestSearchBatchSize(t *testing.T) {
 			sp, err := api.parseSearchParams(req)
 			require.Nil(t, err)
 			require.Equal(t, tc.want, sp.batchSize)
+		})
+	}
+}
+
+func TestSearchParamsDefaultTimeRange(t *testing.T) {
+	// newSearchTestAPI fixes now at t=7200s.
+	now := time.Unix(7200, 0)
+	for _, tc := range []struct {
+		name        string
+		defaultTR   time.Duration
+		params      url.Values
+		wantStart   time.Time
+		wantEnd     time.Time
+		wantWarning string
+	}{
+		{
+			name:      "disabled, no start or end keeps the 1h search default",
+			params:    url.Values{},
+			wantStart: now.Add(-time.Hour),
+			wantEnd:   now,
+		},
+		{
+			name:        "enabled, no start or end",
+			defaultTR:   2 * time.Hour,
+			params:      url.Values{},
+			wantStart:   time.Unix(0, 0),
+			wantEnd:     now,
+			wantWarning: "start or end not given, applied a default: start=1970-01-01T00:00:00Z, end=1970-01-01T02:00:00Z",
+		},
+		{
+			name:        "enabled, end only",
+			defaultTR:   2 * time.Hour,
+			params:      url.Values{"end": {"9000"}},
+			wantStart:   time.Unix(1800, 0),
+			wantEnd:     time.Unix(9000, 0),
+			wantWarning: "start or end not given, applied a default: start=1970-01-01T00:30:00Z, end=1970-01-01T02:30:00Z",
+		},
+		{
+			name:        "enabled, start only",
+			defaultTR:   2 * time.Hour,
+			params:      url.Values{"start": {"3600"}},
+			wantStart:   time.Unix(3600, 0),
+			wantEnd:     now,
+			wantWarning: "start or end not given, applied a default: start=1970-01-01T01:00:00Z, end=1970-01-01T02:00:00Z",
+		},
+		{
+			name:      "enabled, start and end",
+			defaultTR: 2 * time.Hour,
+			params:    url.Values{"start": {"100"}, "end": {"200"}},
+			wantStart: time.Unix(100, 0),
+			wantEnd:   time.Unix(200, 0),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			api := newSearchTestAPI(t)
+			api.metadataDefaultTimeRange = tc.defaultTR
+			req := httptest.NewRequest(http.MethodGet, "/search/metric_names?"+tc.params.Encode(), http.NoBody)
+			sp, apiErr := api.parseSearchParams(req)
+			require.Nil(t, apiErr)
+			require.True(t, tc.wantStart.Equal(sp.start), "start: want %s, got %s", tc.wantStart, sp.start)
+			require.True(t, tc.wantEnd.Equal(sp.end), "end: want %s, got %s", tc.wantEnd, sp.end)
+			if tc.wantWarning == "" {
+				require.NoError(t, sp.rangeWarning)
+			} else {
+				require.EqualError(t, sp.rangeWarning, tc.wantWarning)
+			}
+		})
+	}
+
+	for _, endpoint := range []struct {
+		path   string
+		params url.Values
+	}{
+		{"/search/metric_names", url.Values{}},
+		{"/search/label_names", url.Values{}},
+		{"/search/label_values", url.Values{"label": {"job"}}},
+	} {
+		t.Run("over HTTP"+endpoint.path, func(t *testing.T) {
+			api := newSearchTestAPI(t)
+			api.metadataDefaultTimeRange = 2 * time.Hour
+			rec := doSearchRequest(t, api, endpoint.path, endpoint.params)
+			require.Equal(t, http.StatusOK, rec.Code)
+
+			lines := parseNDJSON(t, rec.Body.String())
+			require.GreaterOrEqual(t, len(lines), 2, "expected at least a batch and a trailer line")
+			var batch searchBatch[map[string]any]
+			require.NoError(t, json.Unmarshal(lines[0], &batch))
+			require.NotEmpty(t, batch.Results)
+			require.Equal(t, []string{"start or end not given, applied a default: start=1970-01-01T00:00:00Z, end=1970-01-01T02:00:00Z"}, batch.Warnings)
+
+			var trailer searchTrailer
+			require.NoError(t, json.Unmarshal(lines[len(lines)-1], &trailer))
+			require.Equal(t, "success", trailer.Status)
+			require.Empty(t, trailer.Warnings)
 		})
 	}
 }

@@ -218,7 +218,7 @@ const promqlFunctions: { [key: number]: PromQLFunction } = {
     returnType: ValueType.vector,
   },
   [Cosh]: {
-    name: 'Cosh',
+    name: 'cosh',
     argTypes: [ValueType.vector],
     variadic: 0,
     returnType: ValueType.vector,
@@ -322,7 +322,7 @@ const promqlFunctions: { [key: number]: PromQLFunction } = {
   [HistogramQuantiles]: {
     name: 'histogram_quantiles',
     argTypes: [ValueType.vector, ValueType.string, ValueType.scalar, ValueType.scalar],
-    variadic: 10,
+    variadic: 9,
     returnType: ValueType.vector,
   },
   [HistogramStdDev]: {
@@ -479,7 +479,7 @@ const promqlFunctions: { [key: number]: PromQLFunction } = {
     name: 'pi',
     argTypes: [],
     variadic: 0,
-    returnType: ValueType.vector,
+    returnType: ValueType.scalar,
   },
   [PredictLinear]: {
     name: 'predict_linear',
@@ -548,7 +548,7 @@ const promqlFunctions: { [key: number]: PromQLFunction } = {
     returnType: ValueType.vector,
   },
   [Sinh]: {
-    name: 'Sinh',
+    name: 'sinh',
     argTypes: [ValueType.vector],
     variadic: 0,
     returnType: ValueType.vector,

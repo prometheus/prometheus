@@ -23,6 +23,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/searchexpr"
 )
 
 func TestSubstringFilter(t *testing.T) {
@@ -438,21 +439,66 @@ func TestMemoizingFilter_ByteCap(t *testing.T) {
 }
 
 func TestBuildSearchFilter_MemoOnlyForExpensiveChain(t *testing.T) {
-	// Substring-only chain: jaro-winkler with no fuzz threshold. Memo is
-	// not added because substring scoring is already O(L).
-	got := buildSearchFilter([]string{"prom"}, 0, "jarowinkler", true)
-	_, isMemo := got.(*memoizingFilter)
-	require.False(t, isMemo, "substring-only chain should not be wrapped with memoizingFilter")
+	expr, err := searchexpr.Parse("prom AND NOT node")
+	require.NoError(t, err)
+	for _, tc := range []struct {
+		name          string
+		fuzzThreshold int
+		fuzzAlg       string
+		wantMemo      bool
+	}{
+		{
+			// Substring-only chain: jaro-winkler with no fuzz threshold. Memo is
+			// not added because substring scoring is already O(L).
+			name:     "jarowinkler without threshold",
+			fuzzAlg:  "jarowinkler",
+			wantMemo: false,
+		},
+		{
+			// Subsequence: always memoized.
+			name:     "subsequence",
+			fuzzAlg:  "subsequence",
+			wantMemo: true,
+		},
+		{
+			// Jaro-Winkler with a non-zero fuzz threshold: memoized.
+			name:          "jarowinkler with threshold",
+			fuzzThreshold: 80,
+			fuzzAlg:       "jarowinkler",
+			wantMemo:      true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := buildSearchFilter([]string{"prom"}, tc.fuzzThreshold, tc.fuzzAlg, true)
+			_, isMemo := got.(*memoizingFilter)
+			require.Equal(t, tc.wantMemo, isMemo, "search[]")
 
-	// Subsequence: always memoized.
-	got = buildSearchFilter([]string{"prm"}, 0, "subsequence", true)
-	_, isMemo = got.(*memoizingFilter)
-	require.True(t, isMemo, "subsequence chain must be memoized")
+			got, err := buildSearchExprFilter(expr, tc.fuzzThreshold, tc.fuzzAlg, true)
+			require.NoError(t, err)
+			_, isMemo = got.(*memoizingFilter)
+			require.Equal(t, tc.wantMemo, isMemo, "search_expr")
+		})
+	}
+}
 
-	// Jaro-Winkler with a non-zero fuzz threshold: memoized.
-	got = buildSearchFilter([]string{"prom"}, 80, "jarowinkler", true)
-	_, isMemo = got.(*memoizingFilter)
-	require.True(t, isMemo, "jaro-winkler with fuzz threshold must be memoized")
+func TestContainsFilter(t *testing.T) {
+	for _, tc := range []struct {
+		query, value string
+		accepted     bool
+		score        float64
+	}{
+		{query: "node", value: "node", accepted: true, score: 1.0},
+		{query: "node", value: "node_exporter", accepted: true, score: 1.0},
+		{query: "node", value: "my_node_exporter", accepted: true, score: 1.0},
+		{query: "node", value: "nod", accepted: false, score: 0.0},
+		{query: "node", value: "Node", accepted: false, score: 0.0},
+		{query: "nde", value: "node", accepted: false, score: 0.0},
+		{query: "é", value: "café", accepted: true, score: 1.0},
+	} {
+		accepted, score := (&containsFilter{query: tc.query}).Accept(tc.value)
+		require.Equal(t, tc.accepted, accepted, "%q in %q", tc.query, tc.value)
+		require.Equal(t, tc.score, score, "%q in %q", tc.query, tc.value)
+	}
 }
 
 func TestCaseFoldingFilter(t *testing.T) {

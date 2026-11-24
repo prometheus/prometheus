@@ -7,6 +7,7 @@ import uPlot from "uplot";
 import { computePosition } from "@floating-ui/dom";
 import UPlotChart, { UPlotChartProps } from "./UPlotChart";
 import { getUPlotOptions } from "./uPlotChartHelpers";
+import { setStackedOpts } from "./uPlotStackHelpers";
 import { GraphDisplayMode } from "../../state/queryPageSlice";
 
 const { charts, settings } = vi.hoisted(() => ({
@@ -74,6 +75,75 @@ function runHook<A extends unknown[]>(
 }
 
 describe("uPlot lifecycle", () => {
+  it.each([GraphDisplayMode.Lines, GraphDisplayMode.Stacked])(
+    "emphasizes only the focused series and restores widths in %s mode",
+    (displayMode) => {
+      const data: uPlot.AlignedData = [
+        [0, 10],
+        [1, 2],
+        [3, 4],
+      ];
+      const options = getUPlotOptions(
+        data,
+        800,
+        [
+          ...props.data,
+          {
+            metric: { job: "second" },
+            values: [
+              [0, "3"],
+              [10, "4"],
+            ],
+          },
+        ],
+        false,
+        null,
+        true,
+        vi.fn(),
+      );
+      if (displayMode === GraphDisplayMode.Stacked) {
+        setStackedOpts(options, data);
+      }
+      const chart = {
+        series: options.series.map((series) => ({ ...series, show: true })),
+        redraw: vi.fn(),
+        delBand: vi.fn(),
+        addBand: vi.fn(),
+        setData: vi.fn(),
+      };
+      const focusOptions: Parameters<uPlot["setSeries"]>[1] = { focus: true };
+      const focus = (seriesIdx: number | null) =>
+        runHook(
+          options.hooks!.setSeries,
+          chart as unknown as uPlot,
+          seriesIdx,
+          focusOptions,
+        );
+      const widths = () => chart.series.map((series) => series.width);
+
+      expect(widths()).toEqual([undefined, 1.5, 1.5]);
+      focus(1);
+      expect(widths()).toEqual([undefined, 3, 1.5]);
+      expect(chart.redraw).toHaveBeenLastCalledWith(false, false);
+      focus(1);
+      expect(chart.redraw).toHaveBeenCalledTimes(1);
+      focus(2);
+      expect(widths()).toEqual([undefined, 1.5, 3]);
+      expect(chart.setData).not.toHaveBeenCalled();
+      expect(chart.delBand).not.toHaveBeenCalled();
+      focus(null);
+      expect(widths()).toEqual([undefined, 1.5, 1.5]);
+      expect(chart.redraw).toHaveBeenCalledTimes(3);
+
+      chart.redraw.mockClear();
+      runHook(options.hooks!.setSeries, chart as unknown as uPlot, 1, {
+        show: false,
+      });
+      expect(widths()).toEqual([undefined, 1.5, 1.5]);
+      expect(chart.redraw).not.toHaveBeenCalled();
+    },
+  );
+
   it("constructs matching data and options through series, range, width, and theme changes", () => {
     const { rerender, unmount } = render(
       <StrictMode>

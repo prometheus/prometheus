@@ -14,20 +14,28 @@
 package tsdb
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"os"
+	"strconv"
+	"sync"
 	"testing"
 	"time"
 
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
 
+	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/tsdb/record"
+	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/tsdb/wlog"
+	"github.com/prometheus/prometheus/util/compression"
 )
 
 func TestWALReplayPreservesMappedChunksAcrossSeriesRefs(t *testing.T) {
@@ -205,5 +213,83 @@ func TestMergeReplayMmappedChunks(t *testing.T) {
 			require.Equal(t, existing, tc.existing, "do not modify the attached chunk list")
 			require.Equal(t, incoming, tc.incoming, "do not modify the replay inventory")
 		})
+	}
+}
+
+// recordingExemplarStorage records the series of the exemplars added to it.
+type recordingExemplarStorage struct {
+	ExemplarStorage
+	added sync.Map
+}
+
+func (s *recordingExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemplar) error {
+	err := s.ExemplarStorage.AddExemplar(l, e)
+	if err == nil {
+		s.added.Store(l.String(), struct{}{})
+	}
+	return err
+}
+
+// exemplarCheckingSeriesCallback counts the deleted series whose exemplar has not been added yet.
+type exemplarCheckingSeriesCallback struct {
+	// Keep missing first so that it is 64-bit aligned on 32-bit platforms.
+	missing atomic.Int64
+	noopSeriesLifecycleCallback
+	exemplars *recordingExemplarStorage
+}
+
+func (c *exemplarCheckingSeriesCallback) PostDeletion(deleted map[chunks.HeadSeriesRef]labels.Labels) {
+	for _, l := range deleted {
+		if _, ok := c.exemplars.added.Load(l.String()); !ok {
+			c.missing.Inc()
+		}
+	}
+}
+
+// TestHead_WALReplay_ExemplarsBeforeFullRangeTombstone verifies that a series deleted by
+// a full-range tombstone during WAL replay is only deleted after the exemplars preceding
+// the tombstone have been replayed, so that they are not counted as unknown references.
+func TestHead_WALReplay_ExemplarsBeforeFullRangeTombstone(t *testing.T) {
+	// The exemplar of the last series is queued behind the others when its tombstone
+	// is replayed.
+	const numSeries = 1000
+	series := make([]record.RefSeries, 0, numSeries)
+	samples := make([]record.RefSample, 0, numSeries)
+	exemplars := make([]record.RefExemplar, 0, numSeries)
+	for i := range numSeries {
+		ref := chunks.HeadSeriesRef(i + 1)
+		series = append(series, record.RefSeries{Ref: ref, Labels: labels.FromStrings("a", strconv.Itoa(i))})
+		samples = append(samples, record.RefSample{Ref: ref, T: 100, V: 1})
+		exemplars = append(exemplars, record.RefExemplar{Ref: ref, T: 100, V: 1, Labels: labels.FromStrings("trace_id", strconv.Itoa(i))})
+	}
+	stones := []tombstones.Stone{{Ref: numSeries, Intervals: tombstones.Intervals{{Mint: math.MinInt64, Maxt: math.MaxInt64}}}}
+	entries := []any{series, samples, exemplars, stones}
+
+	cb := &exemplarCheckingSeriesCallback{}
+	opts := newTestHeadDefaultOptions(1000, false)
+	opts.SeriesCallback = cb
+	head, w := newTestHeadWithOptions(t, compression.None, opts)
+	defer func() {
+		require.NoError(t, head.Close())
+	}()
+	populateTestWL(t, w, entries, nil, false)
+
+	cb.exemplars = &recordingExemplarStorage{ExemplarStorage: head.exemplars}
+	head.exemplars = cb.exemplars
+
+	require.NoError(t, head.Init(math.MinInt64))
+
+	require.Equal(t, uint64(numSeries-1), head.NumSeries())
+	require.Zero(t, cb.missing.Load(), "series must not be deleted before their exemplars are replayed")
+	require.Zero(t, prom_testutil.ToFloat64(head.metrics.walReplayUnknownRefsTotal.WithLabelValues("exemplars")))
+
+	q, err := head.ExemplarQuerier(context.Background())
+	require.NoError(t, err)
+	res, err := q.Select(0, 100, []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "a", ".+")})
+	require.NoError(t, err)
+	require.Len(t, res, numSeries)
+	for _, r := range res {
+		require.Len(t, r.Exemplars, 1)
+		require.Equal(t, r.SeriesLabels.Get("a"), r.Exemplars[0].Labels.Get("trace_id"))
 	}
 }
