@@ -32,7 +32,6 @@ import (
 	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/otlptranslator"
 	"github.com/stretchr/testify/require"
-	"go.yaml.in/yaml/v2"
 
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/aws"
@@ -66,6 +65,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/prometheus/prometheus/util/yamlutil"
 )
 
 func mustParseURL(u string) *config.URL {
@@ -1860,7 +1860,7 @@ func TestYAMLRoundtrip(t *testing.T) {
 	want, err := LoadFile("testdata/roundtrip.good.yml", false, promslog.NewNopLogger())
 	require.NoError(t, err)
 
-	out, err := yaml.Marshal(want)
+	out, err := yamlutil.Marshal(want)
 	require.NoError(t, err)
 
 	got, err := Load(string(out), promslog.NewNopLogger())
@@ -1902,7 +1902,7 @@ func TestQueryCostLimits(t *testing.T) {
 		want, err := LoadFile("testdata/query_cost_limits.good.yml", false, promslog.NewNopLogger())
 		require.NoError(t, err)
 
-		out, err := yaml.Marshal(want)
+		out, err := yamlutil.Marshal(want)
 		require.NoError(t, err)
 		require.Contains(t, string(out), "query_max_series: 1000000")
 		require.Contains(t, string(out), "query_max_samples_read: 50000000")
@@ -1920,11 +1920,11 @@ func TestQueryCostLimits(t *testing.T) {
 		}{
 			{
 				in:     "global:\n  query_max_series: -1\n",
-				errMsg: "cannot unmarshal !!int `-1` into uint64",
+				errMsg: "!!int `-1` into uint64",
 			},
 			{
 				in:     "global:\n  query_max_samples_read: -1\n",
-				errMsg: "cannot unmarshal !!int `-1` into uint64",
+				errMsg: "!!int `-1` into uint64",
 			},
 			{
 				in:     "global:\n  query_max_duration: -1s\n",
@@ -1932,7 +1932,7 @@ func TestQueryCostLimits(t *testing.T) {
 			},
 			{
 				in:     "global:\n  query_max_series: many\n",
-				errMsg: "cannot unmarshal !!str `many` into uint64",
+				errMsg: "!!str `many` into uint64",
 			},
 			{
 				in:     "global:\n  query_max_duration: 45\n",
@@ -1971,7 +1971,7 @@ func TestRemoteWriteRetryOnRateLimit(t *testing.T) {
 	want, err := LoadFile("testdata/remote_write_retry_on_rate_limit.good.yml", false, promslog.NewNopLogger())
 	require.NoError(t, err)
 
-	out, err := yaml.Marshal(want)
+	out, err := yamlutil.Marshal(want)
 	require.NoError(t, err)
 
 	got, err := Load(string(out), promslog.NewNopLogger())
@@ -2000,10 +2000,10 @@ func TestOTLPSanitizeResourceAttributes(t *testing.T) {
 		want, err := LoadFile(filepath.Join("testdata", "otlp_sanitize_default_resource_attributes.good.yml"), false, promslog.NewNopLogger())
 		require.NoError(t, err)
 
-		out, err := yaml.Marshal(want)
+		out, err := yamlutil.Marshal(want)
 		require.NoError(t, err)
 		var got Config
-		require.NoError(t, yaml.UnmarshalStrict(out, &got))
+		require.NoError(t, yamlutil.UnmarshalStrict(out, &got))
 
 		require.False(t, got.OTLPConfig.PromoteAllResourceAttributes)
 		require.Empty(t, got.OTLPConfig.IgnoreResourceAttributes)
@@ -2014,10 +2014,10 @@ func TestOTLPSanitizeResourceAttributes(t *testing.T) {
 		want, err := LoadFile(filepath.Join("testdata", "otlp_sanitize_promote_resource_attributes.good.yml"), false, promslog.NewNopLogger())
 		require.NoError(t, err)
 
-		out, err := yaml.Marshal(want)
+		out, err := yamlutil.Marshal(want)
 		require.NoError(t, err)
 		var got Config
-		require.NoError(t, yaml.UnmarshalStrict(out, &got))
+		require.NoError(t, yamlutil.UnmarshalStrict(out, &got))
 
 		require.False(t, got.OTLPConfig.PromoteAllResourceAttributes)
 		require.Empty(t, got.OTLPConfig.IgnoreResourceAttributes)
@@ -2035,10 +2035,10 @@ func TestOTLPSanitizeResourceAttributes(t *testing.T) {
 		want, err := LoadFile(filepath.Join("testdata", "otlp_sanitize_resource_attributes_promote_all.good.yml"), false, promslog.NewNopLogger())
 		require.NoError(t, err)
 
-		out, err := yaml.Marshal(want)
+		out, err := yamlutil.Marshal(want)
 		require.NoError(t, err)
 		var got Config
-		require.NoError(t, yaml.UnmarshalStrict(out, &got))
+		require.NoError(t, yamlutil.UnmarshalStrict(out, &got))
 		require.True(t, got.OTLPConfig.PromoteAllResourceAttributes)
 		require.Empty(t, got.OTLPConfig.PromoteResourceAttributes)
 		require.Empty(t, got.OTLPConfig.IgnoreResourceAttributes)
@@ -2048,10 +2048,10 @@ func TestOTLPSanitizeResourceAttributes(t *testing.T) {
 		want, err := LoadFile(filepath.Join("testdata", "otlp_sanitize_ignore_resource_attributes.good.yml"), false, promslog.NewNopLogger())
 		require.NoError(t, err)
 
-		out, err := yaml.Marshal(want)
+		out, err := yamlutil.Marshal(want)
 		require.NoError(t, err)
 		var got Config
-		require.NoError(t, yaml.UnmarshalStrict(out, &got))
+		require.NoError(t, yamlutil.UnmarshalStrict(out, &got))
 		require.True(t, got.OTLPConfig.PromoteAllResourceAttributes)
 		require.Empty(t, got.OTLPConfig.PromoteResourceAttributes)
 		require.Equal(t, []string{"k8s.cluster.name", "k8s.job.name", "k8s.namespace.name"}, got.OTLPConfig.IgnoreResourceAttributes)
@@ -2080,10 +2080,10 @@ func TestOTLPAllowServiceNameInTargetInfo(t *testing.T) {
 		want, err := LoadFile(filepath.Join("testdata", "otlp_allow_keep_identifying_resource_attributes.good.yml"), false, promslog.NewNopLogger())
 		require.NoError(t, err)
 
-		out, err := yaml.Marshal(want)
+		out, err := yamlutil.Marshal(want)
 		require.NoError(t, err)
 		var got Config
-		require.NoError(t, yaml.UnmarshalStrict(out, &got))
+		require.NoError(t, yamlutil.UnmarshalStrict(out, &got))
 
 		require.True(t, got.OTLPConfig.KeepIdentifyingResourceAttributes)
 	})
@@ -2094,10 +2094,10 @@ func TestOTLPConvertHistogramsToNHCB(t *testing.T) {
 		want, err := LoadFile(filepath.Join("testdata", "otlp_convert_histograms_to_nhcb.good.yml"), false, promslog.NewNopLogger())
 		require.NoError(t, err)
 
-		out, err := yaml.Marshal(want)
+		out, err := yamlutil.Marshal(want)
 		require.NoError(t, err)
 		var got Config
-		require.NoError(t, yaml.UnmarshalStrict(out, &got))
+		require.NoError(t, yamlutil.UnmarshalStrict(out, &got))
 
 		require.True(t, got.OTLPConfig.ConvertHistogramsToNHCB)
 	})
@@ -2108,10 +2108,10 @@ func TestOTLPPromoteScopeMetadata(t *testing.T) {
 		want, err := LoadFile(filepath.Join("testdata", "otlp_promote_scope_metadata.good.yml"), false, promslog.NewNopLogger())
 		require.NoError(t, err)
 
-		out, err := yaml.Marshal(want)
+		out, err := yamlutil.Marshal(want)
 		require.NoError(t, err)
 		var got Config
-		require.NoError(t, yaml.UnmarshalStrict(out, &got))
+		require.NoError(t, yamlutil.UnmarshalStrict(out, &got))
 
 		require.True(t, got.OTLPConfig.PromoteScopeMetadata)
 	})
@@ -2131,10 +2131,10 @@ func TestOTLPLabelUnderscoreSanitization(t *testing.T) {
 		conf, err := LoadFile(filepath.Join("testdata", "otlp_label_underscore_sanitization_enabled.good.yml"), false, promslog.NewNopLogger())
 		require.NoError(t, err)
 
-		out, err := yaml.Marshal(conf)
+		out, err := yamlutil.Marshal(conf)
 		require.NoError(t, err)
 		var got Config
-		require.NoError(t, yaml.UnmarshalStrict(out, &got))
+		require.NoError(t, yamlutil.UnmarshalStrict(out, &got))
 
 		require.True(t, got.OTLPConfig.LabelNameUnderscoreSanitization)
 		require.True(t, got.OTLPConfig.LabelNamePreserveMultipleUnderscores)
@@ -2316,7 +2316,7 @@ func TestElideSecrets(t *testing.T) {
 
 	secretRe := regexp.MustCompile(`\\u003csecret\\u003e|<secret>`)
 
-	config, err := yaml.Marshal(c)
+	config, err := yamlutil.Marshal(c)
 	require.NoError(t, err)
 	yamlConfig := string(config)
 
@@ -2662,7 +2662,7 @@ var expectedErrors = []struct {
 	},
 	{
 		filename: "section_key_dup.bad.yml",
-		errMsg:   "field scrape_configs already set in type config.plain",
+		errMsg:   `mapping key "scrape_configs" already defined at line 1`,
 	},
 	{
 		filename: "azure_client_id_missing.bad.yml",
@@ -2846,23 +2846,23 @@ var expectedErrors = []struct {
 	},
 	{
 		filename: "scrape_config_files_glob.bad.yml",
-		errMsg:   `parsing YAML file testdata/scrape_config_files_glob.bad.yml: invalid scrape config file path "scrape_configs/*/*"`,
+		errMsg:   `invalid scrape config file path "scrape_configs/*/*"`,
 	},
 	{
 		filename: "scrape_config_files_scrape_protocols.bad.yml",
-		errMsg:   `parsing YAML file testdata/scrape_config_files_scrape_protocols.bad.yml: scrape_protocols: unknown scrape protocol prometheusproto, supported: [OpenMetricsText0.0.1 OpenMetricsText1.0.0 OpenMetricsText2.0.0 OpenMetricsText2.0.0-rc PrometheusProto PrometheusText0.0.4 PrometheusText1.0.0] for scrape config with job name "node"`,
+		errMsg:   `scrape_protocols: unknown scrape protocol prometheusproto, supported: [OpenMetricsText0.0.1 OpenMetricsText1.0.0 OpenMetricsText2.0.0 OpenMetricsText2.0.0-rc PrometheusProto PrometheusText0.0.4 PrometheusText1.0.0] for scrape config with job name "node"`,
 	},
 	{
 		filename: "scrape_config_files_scrape_protocols2.bad.yml",
-		errMsg:   `parsing YAML file testdata/scrape_config_files_scrape_protocols2.bad.yml: duplicated protocol in scrape_protocols, got [OpenMetricsText1.0.0 PrometheusProto OpenMetricsText1.0.0] for scrape config with job name "node"`,
+		errMsg:   `duplicated protocol in scrape_protocols, got [OpenMetricsText1.0.0 PrometheusProto OpenMetricsText1.0.0] for scrape config with job name "node"`,
 	},
 	{
 		filename: "scrape_config_files_fallback_scrape_protocol1.bad.yml",
-		errMsg:   `parsing YAML file testdata/scrape_config_files_fallback_scrape_protocol1.bad.yml: invalid fallback_scrape_protocol for scrape config with job name "node": unknown scrape protocol prometheusproto, supported: [OpenMetricsText0.0.1 OpenMetricsText1.0.0 OpenMetricsText2.0.0 OpenMetricsText2.0.0-rc PrometheusProto PrometheusText0.0.4 PrometheusText1.0.0]`,
+		errMsg:   `invalid fallback_scrape_protocol for scrape config with job name "node": unknown scrape protocol prometheusproto, supported: [OpenMetricsText0.0.1 OpenMetricsText1.0.0 OpenMetricsText2.0.0 OpenMetricsText2.0.0-rc PrometheusProto PrometheusText0.0.4 PrometheusText1.0.0]`,
 	},
 	{
 		filename: "scrape_config_files_fallback_scrape_protocol2.bad.yml",
-		errMsg:   `unmarshal errors`,
+		errMsg:   `!!seq into config.ScrapeProtocol`,
 	},
 	{
 		filename: "scrape_config_utf8_conflicting.bad.yml",
@@ -2906,11 +2906,11 @@ var expectedErrors = []struct {
 	},
 	{
 		filename: "query_max_series.bad.yml",
-		errMsg:   "cannot unmarshal !!int `-1` into uint64",
+		errMsg:   "!!int `-1` into uint64",
 	},
 	{
 		filename: "query_max_samples_read.bad.yml",
-		errMsg:   "cannot unmarshal !!str `many` into uint64",
+		errMsg:   "!!str `many` into uint64",
 	},
 	{
 		filename: "query_max_duration.bad.yml",
@@ -2923,6 +2923,10 @@ func TestBadConfigs(t *testing.T) {
 		_, err := LoadFile("testdata/"+ee.filename, false, promslog.NewNopLogger())
 		require.ErrorContains(t, err, ee.errMsg,
 			"Expected error for %s to contain %q but got: %s", ee.filename, ee.errMsg, err)
+		// Make sure the error is attributed to the file under test, so that a
+		// regression in error wrapping cannot go unnoticed.
+		require.ErrorContains(t, err, "parsing YAML file testdata/"+ee.filename,
+			"Expected error for %s to name the offending file, got: %s", ee.filename, err)
 	}
 }
 
@@ -2953,11 +2957,201 @@ func TestTSDBChunkEncoding(t *testing.T) {
 	require.Empty(t, c.StorageConfig.TSDBConfig.ChunkEncoding.Floats)
 }
 
+// TestConfigStringYAMLFormatting pins the YAML that Config.String() produces. It is
+// what the HTTP API (/api/v1/status/config) and promtool expose to users, and it is
+// what the config checksum is not based on. yaml/v4 indents sequences, unlike
+// yaml/v2, so any change here is user visible and needs an entry in the CHANGELOG.
+func TestConfigStringYAMLFormatting(t *testing.T) {
+	const input = `
+global:
+  scrape_interval: 30s
+  external_labels:
+    cluster: prod
+    replica: "1"
+rule_files:
+  - rules/first.yml
+  - rules/second.yml
+alerting:
+  alertmanagers:
+    - api_version: v2
+      static_configs:
+        - targets: ['alertmanager:9093']
+scrape_configs:
+  - job_name: node
+    static_configs:
+      - targets: ['node:9100']
+        labels:
+          env: prod
+    relabel_configs:
+      - source_labels: [__address__]
+        regex: '(.*):9100'
+        target_label: instance
+remote_write:
+  - url: http://remote:9090/api/v1/write
+    basic_auth:
+      username: prom
+      password: secret
+    write_relabel_configs:
+      - source_labels: [__name__]
+        regex: 'foo.*'
+        action: keep
+remote_read:
+  - url: http://remote:9090/api/v1/read
+    required_matchers:
+      env: prod
+`
+
+	const expected = `global:
+  scrape_interval: 30s
+  scrape_timeout: 10s
+  evaluation_interval: 1m
+  external_labels:
+    cluster: prod
+    replica: "1"
+  metric_name_validation_scheme: utf8
+  scrape_native_histograms: false
+  extra_scrape_metrics: false
+runtime:
+  gogc: 75
+  log_level: info
+alerting:
+  alertmanagers:
+    - follow_redirects: true
+      enable_http2: true
+      scheme: http
+      timeout: 10s
+      api_version: v2
+      static_configs:
+        - targets:
+            - alertmanager:9093
+rule_files:
+  - rules/first.yml
+  - rules/second.yml
+scrape_configs:
+  - job_name: node
+    honor_timestamps: true
+    track_timestamps_staleness: false
+    scrape_interval: 30s
+    scrape_timeout: 10s
+    scrape_protocols:
+      - OpenMetricsText1.0.0
+      - OpenMetricsText0.0.1
+      - PrometheusText1.0.0
+      - PrometheusText0.0.4
+    scrape_native_histograms: false
+    always_scrape_classic_histograms: false
+    convert_classic_histograms_to_nhcb: false
+    metrics_path: /metrics
+    scheme: http
+    enable_compression: true
+    metric_name_validation_scheme: utf8
+    metric_name_escaping_scheme: allow-utf-8
+    extra_scrape_metrics: false
+    follow_redirects: true
+    enable_http2: true
+    relabel_configs:
+      - source_labels: [__address__]
+        separator: ;
+        regex: (.*):9100
+        target_label: instance
+        replacement: $1
+        action: replace
+    static_configs:
+      - targets:
+          - node:9100
+        labels:
+          env: prod
+storage:
+  tsdb:
+    outofordertimewindow: 0
+    retention: {}
+remote_write:
+  - url: http://remote:9090/api/v1/write
+    remote_timeout: 30s
+    write_relabel_configs:
+      - source_labels: [__name__]
+        separator: ;
+        regex: foo.*
+        replacement: $1
+        action: keep
+    protobuf_message: prometheus.WriteRequest
+    basic_auth:
+      username: prom
+      password: <secret>
+    follow_redirects: true
+    enable_http2: false
+    queue_config:
+      capacity: 10000
+      max_shards: 50
+      min_shards: 1
+      max_samples_per_send: 2000
+      batch_send_deadline: 5s
+      min_backoff: 30ms
+      max_backoff: 5s
+    metadata_config:
+      send: true
+      send_interval: 1m
+      max_samples_per_send: 2000
+remote_read:
+  - url: http://remote:9090/api/v1/read
+    remote_timeout: 1m
+    chunked_read_limit: 50000000
+    follow_redirects: true
+    enable_http2: true
+    required_matchers:
+      env: prod
+    filter_external_labels: true
+otlp:
+  translation_strategy: UnderscoreEscapingWithSuffixes
+  label_name_underscore_sanitization: true
+  label_name_preserve_multiple_underscores: true
+`
+
+	cfg, err := Load(input, promslog.NewNopLogger())
+	require.NoError(t, err)
+	require.Equal(t, expected, cfg.String())
+
+	// The dumped config must be loadable again, and stable across reloads.
+	reloaded, err := Load(cfg.String(), promslog.NewNopLogger())
+	require.NoError(t, err)
+	require.Equal(t, expected, reloaded.String())
+}
+
+// TestNullFieldsKeepDefaults pins the behavior of an explicit null for a field that
+// has a non-zero default. yaml/v2 zeroed such a field, which then failed validation
+// ("invalid DNS-SD records type", "remote write queue capacity must be positive");
+// yaml/v4 leaves the field untouched, so the default survives and the config is
+// accepted. This is a deliberate change of the migration rather than an oversight:
+// the defaults are the documented behavior for omitted fields. The one place where
+// the previous behavior is preserved is relabel's action, where falling back to
+// replace would silently rewrite labels, see relabel.TestConfig_UnmarshalNullAction.
+func TestNullFieldsKeepDefaults(t *testing.T) {
+	cfg, err := Load(`
+scrape_configs:
+  - job_name: dns
+    dns_sd_configs:
+      - names: ['_prometheus._tcp.example.com']
+        type: null
+remote_write:
+  - url: 'http://remote:9090/api/v1/write'
+    queue_config:
+      capacity: null
+      max_shards: null
+`, promslog.NewNopLogger())
+	require.NoError(t, err)
+
+	dnsCfg, ok := cfg.ScrapeConfigs[0].ServiceDiscoveryConfigs[0].(*dns.SDConfig)
+	require.True(t, ok)
+	require.Equal(t, "SRV", dnsCfg.Type)
+	require.Equal(t, DefaultQueueConfig.Capacity, cfg.RemoteWriteConfigs[0].QueueConfig.Capacity)
+	require.Equal(t, DefaultQueueConfig.MaxShards, cfg.RemoteWriteConfigs[0].QueueConfig.MaxShards)
+}
+
 func TestBadStaticConfigsYML(t *testing.T) {
 	content, err := os.ReadFile("testdata/static_config.bad.yml")
 	require.NoError(t, err)
 	var tg targetgroup.Group
-	err = yaml.UnmarshalStrict(content, &tg)
+	err = yamlutil.UnmarshalStrict(content, &tg)
 	require.Error(t, err)
 }
 
@@ -3578,11 +3772,11 @@ func TestScrapeConfigDisableCompression(t *testing.T) {
 	want, err := LoadFile("testdata/scrape_config_disable_compression.good.yml", false, promslog.NewNopLogger())
 	require.NoError(t, err)
 
-	out, err := yaml.Marshal(want)
+	out, err := yamlutil.Marshal(want)
 
 	require.NoError(t, err)
 	got := &Config{}
-	require.NoError(t, yaml.UnmarshalStrict(out, got))
+	require.NoError(t, yamlutil.UnmarshalStrict(out, got))
 
 	require.False(t, got.ScrapeConfigs[0].EnableCompression)
 }
@@ -3631,11 +3825,11 @@ func TestScrapeConfigNameValidationSettings(t *testing.T) {
 			want, err := LoadFile(fmt.Sprintf("testdata/%s.yml", tc.inputFile), false, promslog.NewNopLogger())
 			require.NoError(t, err)
 
-			out, err := yaml.Marshal(want)
+			out, err := yamlutil.Marshal(want)
 
 			require.NoError(t, err)
 			got := &Config{}
-			require.NoError(t, yaml.UnmarshalStrict(out, got))
+			require.NoError(t, yamlutil.UnmarshalStrict(out, got))
 
 			require.Equal(t, tc.expectScheme, got.ScrapeConfigs[0].MetricNameValidationScheme)
 
@@ -3684,11 +3878,11 @@ func TestScrapeConfigNameEscapingSettings(t *testing.T) {
 			want, err := LoadFile(fmt.Sprintf("testdata/%s.yml", tc.inputFile), false, promslog.NewNopLogger())
 			require.NoError(t, err)
 
-			out, err := yaml.Marshal(want)
+			out, err := yamlutil.Marshal(want)
 
 			require.NoError(t, err)
 			got := &Config{}
-			require.NoError(t, yaml.UnmarshalStrict(out, got))
+			require.NoError(t, yamlutil.UnmarshalStrict(out, got))
 
 			require.Equal(t, tc.expectValidationScheme, got.ScrapeConfigs[0].MetricNameValidationScheme)
 			require.Equal(t, tc.expectEscapingScheme, got.ScrapeConfigs[0].MetricNameEscapingScheme)

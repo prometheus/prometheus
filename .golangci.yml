@@ -84,6 +84,17 @@ linters:
     depguard:
       rules:
         main:
+          # util/yamlutil is the only package allowed to import a go-yaml module
+          # directly: everything else must go through it, so that strictness,
+          # empty-input handling and marshalling stay consistent across the
+          # codebase. model/rulefmt is the one exception, because it reports line
+          # and column numbers of invalid rules and therefore needs yaml.Node.
+          # Note that generated files (*.l.go, *.pb.go, *.y.go) are excluded from
+          # all linters below, so this rule is not applied to them.
+          files:
+            - "$all"
+            - "!**/util/yamlutil/**"
+            - "!**/model/rulefmt/**"
           deny:
             - pkg: "sync/atomic"
               desc: "Use go.uber.org/atomic instead of sync/atomic"
@@ -104,9 +115,15 @@ linters:
             - pkg: "golang.org/x/exp/slices"
               desc: "Use 'slices' instead."
             - pkg: "gopkg.in/yaml.v2"
-              desc: "Use go.yaml.in/yaml/v2 instead of gopkg.in/yaml.v2"
+              desc: "Use github.com/prometheus/prometheus/util/yamlutil instead of gopkg.in/yaml.v2"
             - pkg: "gopkg.in/yaml.v3"
-              desc: "Use go.yaml.in/yaml/v3 instead of gopkg.in/yaml.v3"
+              desc: "Use github.com/prometheus/prometheus/util/yamlutil instead of gopkg.in/yaml.v3"
+            - pkg: "go.yaml.in/yaml/v2"
+              desc: "Use github.com/prometheus/prometheus/util/yamlutil instead of go.yaml.in/yaml/v2"
+            - pkg: "go.yaml.in/yaml/v3"
+              desc: "Use github.com/prometheus/prometheus/util/yamlutil instead of go.yaml.in/yaml/v3, unless you need yaml.Node (see model/rulefmt)"
+            - pkg: "go.yaml.in/yaml/v4"
+              desc: "Use github.com/prometheus/prometheus/util/yamlutil instead of go.yaml.in/yaml/v4"
     errcheck:
       exclude-functions:
         # Don't flag lines such as "io.Copy(io.Discard, resp.Body)".

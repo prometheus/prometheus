@@ -23,7 +23,8 @@ import (
 
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
-	"go.yaml.in/yaml/v2"
+
+	"github.com/prometheus/prometheus/util/yamlutil"
 )
 
 var (
@@ -47,7 +48,7 @@ access_key: %s
 api_url: %s
 `, testProjectID, testSecretKey, testAccessKey, mock.URL)
 	var cfg SDConfig
-	require.NoError(t, yaml.UnmarshalStrict([]byte(cfgString), &cfg))
+	require.NoError(t, yamlutil.UnmarshalStrict([]byte(cfgString), &cfg))
 
 	d, err := newRefresher(&cfg)
 	require.NoError(t, err)
@@ -264,7 +265,7 @@ access_key: %s
 api_url: %s
 `, testProjectID, testSecretKey, testAccessKey, mock.URL)
 	var cfg SDConfig
-	require.NoError(t, yaml.UnmarshalStrict([]byte(cfgString), &cfg))
+	require.NoError(t, yamlutil.UnmarshalStrict([]byte(cfgString), &cfg))
 
 	d, err := newRefresher(&cfg)
 	require.NoError(t, err)
@@ -292,7 +293,7 @@ access_key: %s
 api_url: %s
 `, testProjectID, testSecretKeyFile, testAccessKey, mock.URL)
 	var cfg SDConfig
-	require.NoError(t, yaml.UnmarshalStrict([]byte(cfgString), &cfg))
+	require.NoError(t, yamlutil.UnmarshalStrict([]byte(cfgString), &cfg))
 
 	d, err := newRefresher(&cfg)
 	require.NoError(t, err)

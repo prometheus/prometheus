@@ -22,6 +22,7 @@ import (
 	"github.com/prometheus/common/config"
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"github.com/prometheus/prometheus/util/yamlutil"
 )
 
 // Discoverer provides information about target groups. It maintains a set
@@ -125,7 +126,7 @@ func (c *Configs) UnmarshalYAML(unmarshal func(any) error) error {
 	cfgVal := cfgPtr.Elem()
 
 	if err := unmarshal(cfgPtr.Interface()); err != nil {
-		return replaceYAMLTypeError(err, cfgTyp, configsType)
+		return yamlutil.ReplaceTypeNames(err, cfgTyp, configsType)
 	}
 
 	var err error

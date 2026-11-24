@@ -23,9 +23,9 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
-	"go.yaml.in/yaml/v2"
 
 	"github.com/prometheus/prometheus/discovery"
+	"github.com/prometheus/prometheus/util/yamlutil"
 )
 
 func TestDockerSDRefresh(t *testing.T) {
@@ -40,7 +40,7 @@ func TestDockerSDRefresh(t *testing.T) {
 host: %s
 `, url)
 	var cfg DockerSDConfig
-	require.NoError(t, yaml.Unmarshal([]byte(cfgString), &cfg))
+	require.NoError(t, yamlutil.UnmarshalStrict([]byte(cfgString), &cfg))
 
 	reg := prometheus.NewRegistry()
 	refreshMetrics := discovery.NewRefreshMetrics(reg)
@@ -239,7 +239,7 @@ func TestDockerSDRefreshMatchAllNetworks(t *testing.T) {
 host: %s
 `, url)
 	var cfg DockerSDConfig
-	require.NoError(t, yaml.Unmarshal([]byte(cfgString), &cfg))
+	require.NoError(t, yamlutil.UnmarshalStrict([]byte(cfgString), &cfg))
 
 	cfg.MatchFirstNetwork = false
 	reg := prometheus.NewRegistry()
@@ -536,7 +536,7 @@ func TestDockerSDRefreshIPv6Only(t *testing.T) {
 host: %s
 `, url)
 	var cfg DockerSDConfig
-	require.NoError(t, yaml.Unmarshal([]byte(cfgString), &cfg))
+	require.NoError(t, yamlutil.UnmarshalStrict([]byte(cfgString), &cfg))
 
 	reg := prometheus.NewRegistry()
 	refreshMetrics := discovery.NewRefreshMetrics(reg)

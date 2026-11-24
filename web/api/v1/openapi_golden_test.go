@@ -22,8 +22,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"go.yaml.in/yaml/v3"
 
+	"github.com/prometheus/prometheus/util/yamlutil"
 	"github.com/prometheus/prometheus/web/api/testhelpers"
 )
 
@@ -71,7 +71,7 @@ func TestOpenAPIGolden_3_1(t *testing.T) {
 
 	// Verify version field is 3.1.0.
 	var spec map[string]any
-	err = yaml.Unmarshal([]byte(resp.Body), &spec)
+	err = yamlutil.Unmarshal([]byte(resp.Body), &spec)
 	require.NoError(t, err)
 	require.Equal(t, "3.1.0", spec["openapi"], "OpenAPI version should be 3.1.0")
 
@@ -123,7 +123,7 @@ func TestOpenAPIGolden_3_2(t *testing.T) {
 
 	// Verify version field is 3.2.0.
 	var spec map[string]any
-	err = yaml.Unmarshal([]byte(resp.Body), &spec)
+	err = yamlutil.Unmarshal([]byte(resp.Body), &spec)
 	require.NoError(t, err)
 	require.Equal(t, "3.2.0", spec["openapi"], "OpenAPI version should be 3.2.0")
 
@@ -175,7 +175,7 @@ func TestOpenAPIVersionSelection(t *testing.T) {
 			require.Equal(t, 200, resp.StatusCode)
 
 			var spec map[string]any
-			err := yaml.Unmarshal([]byte(resp.Body), &spec)
+			err := yamlutil.Unmarshal([]byte(resp.Body), &spec)
 			require.NoError(t, err)
 
 			require.Equal(t, tc.expectedVersion, spec["openapi"])

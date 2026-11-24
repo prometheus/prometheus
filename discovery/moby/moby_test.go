@@ -27,10 +27,10 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
-	"go.yaml.in/yaml/v2"
 
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"github.com/prometheus/prometheus/util/yamlutil"
 )
 
 // The refresh interval doubles as the request timeout, so it is kept well
@@ -85,7 +85,7 @@ func TestRefreshTimesOutOnUnresponsiveDaemon(t *testing.T) {
 				name: "docker",
 				newDiscovery: func(t *testing.T, host string) refresher {
 					var cfg DockerSDConfig
-					require.NoError(t, yaml.Unmarshal(fmt.Appendf(nil, `
+					require.NoError(t, yamlutil.Unmarshal(fmt.Appendf(nil, `
 ---
 host: %s
 refresh_interval: %s
@@ -103,7 +103,7 @@ refresh_interval: %s
 				name: "dockerswarm",
 				newDiscovery: func(t *testing.T, host string) refresher {
 					var cfg DockerSwarmSDConfig
-					require.NoError(t, yaml.Unmarshal(fmt.Appendf(nil, `
+					require.NoError(t, yamlutil.Unmarshal(fmt.Appendf(nil, `
 ---
 host: %s
 role: nodes
