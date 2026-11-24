@@ -623,6 +623,54 @@ func TestReader_PostingsForLabelMatching(t *testing.T) {
 	require.Equal(t, []storage.SeriesRef{4, 6, 8, 10}, refs)
 }
 
+// TestReader_LabelValuesStartAfter checks StartAfter against the sampled
+// postings offset table: 100 values hold samples at every symbolFactor-th
+// value plus the last one, so resume points land on, between and after the
+// samples.
+func TestReader_LabelValuesStartAfter(t *testing.T) {
+	const valueCount = 100
+	var input indexWriterSeriesSlice
+	all := make([]string, valueCount)
+	for i := range valueCount {
+		all[i] = fmt.Sprintf("v%03d", i)
+		input = append(input, &indexWriterSeries{
+			labels: labels.FromStrings("lbl", all[i]),
+			chunks: []chunks.Meta{{Ref: 1, MinTime: 0, MaxTime: 10}},
+		})
+	}
+	ir, _, _ := createFileReader(context.Background(), t, input)
+
+	for _, tc := range []struct {
+		startAfter string
+		limit      int
+		want       []string
+	}{
+		{"a", 0, all},
+		{"v000", 3, all[1:4]},
+		{"v031", 2, all[32:34]},
+		{"v032", 2, all[33:35]},
+		{"v032x", 0, all[33:]},
+		{"v063", 0, all[64:]},
+		{"v097", 5, all[98:]},
+		{"v098", 0, all[99:]},
+		{"v099", 0, nil},
+		{"z", 3, nil},
+	} {
+		t.Run(fmt.Sprintf("%s/%d", tc.startAfter, tc.limit), func(t *testing.T) {
+			for _, smallest := range []bool{false, true} {
+				hints := &storage.LabelHints{StartAfter: tc.startAfter, Limit: tc.limit, LimitSmallest: smallest && tc.limit > 0}
+				got, err := ir.SortedLabelValues(context.Background(), "lbl", hints)
+				require.NoError(t, err)
+				if tc.want == nil {
+					require.Empty(t, got)
+					continue
+				}
+				require.Equal(t, tc.want, got, "LimitSmallest: %v", hints.LimitSmallest)
+			}
+		})
+	}
+}
+
 func TestReader_PostingsForAllLabelValues(t *testing.T) {
 	const seriesCount = 9
 	var input indexWriterSeriesSlice

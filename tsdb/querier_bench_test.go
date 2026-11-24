@@ -401,6 +401,8 @@ func BenchmarkSearchLabelValues(b *testing.B) {
 					require.NoError(b, err)
 					b.Cleanup(func() { require.NoError(b, q.Close()) })
 					searcher := q.(storage.Searcher)
+					// A cursor page from the middle of the value range.
+					resumeAfter := fmt.Sprintf("metric_%06d%s", cardinality/2, postingsBenchSuffix)
 
 					for _, tc := range []struct {
 						name     string
@@ -411,6 +413,8 @@ func BenchmarkSearchLabelValues(b *testing.B) {
 						{"limit=100_filter", &storage.SearchHints{Limit: 100, Filter: prefixFilter{"metric_00"}}, nil},
 						{"limit=100_matcher", &storage.SearchHints{Limit: 100}, []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "job", "api")}},
 						{"limit=100_filter_matcher", &storage.SearchHints{Limit: 100, Filter: prefixFilter{"metric_00"}}, []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "job", "api")}},
+						{"limit=100_resume", &storage.SearchHints{Limit: 100, ResumeAfter: resumeAfter}, nil},
+						{"limit=100_resume_matcher", &storage.SearchHints{Limit: 100, ResumeAfter: resumeAfter}, []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "job", "api")}},
 						{"unlimited", &storage.SearchHints{}, nil},
 					} {
 						b.Run(tc.name, func(b *testing.B) {

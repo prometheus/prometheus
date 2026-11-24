@@ -252,6 +252,9 @@ const minLinearAllocCap = 256
 // The input values slice is assumed to be ordered ascending by value; the function only
 // performs extra work for orderings that differ from this.
 //
+// A non-empty ResumeAfter with a value ordering first trims the input with a
+// binary search, so the paths below see only the values after it.
+//
 // Allocation and ordering are tuned to the (Filter, OrderBy, Limit) combination:
 //   - Filter == nil: at most Limit entries are copied; OrderByValueDesc walks the input
 //     in reverse so we never materialise the full slice when limited.
@@ -266,6 +269,7 @@ func ApplySearchHints(values []string, hints *SearchHints) []SearchResult {
 	if hints == nil {
 		hints = &SearchHints{}
 	}
+	values = valuesAfter(values, hints.ResumeAfter, hints.OrderBy)
 	if hints.Filter == nil {
 		return applySearchHintsNoFilter(values, hints)
 	}
@@ -278,6 +282,26 @@ func ApplySearchHints(values []string, hints *SearchHints) []SearchResult {
 		}
 	}
 	return applySearchHintsLinear(values, hints)
+}
+
+// valuesAfter returns the sub-slice of the ascending values that come after
+// resumeAfter in order, without copying. See SearchHints.ResumeAfter.
+func valuesAfter(values []string, resumeAfter string, order Ordering) []string {
+	if resumeAfter == "" {
+		return values
+	}
+	switch order {
+	case OrderByValueAsc:
+		i, found := slices.BinarySearch(values, resumeAfter)
+		if found {
+			i++
+		}
+		return values[i:]
+	case OrderByValueDesc:
+		i, _ := slices.BinarySearch(values, resumeAfter)
+		return values[:i]
+	}
+	return values
 }
 
 // reverseFilterEarlyExit walks the input ascending-sorted slice from the tail,
@@ -401,6 +425,49 @@ func smallestNValues(values []string, n int) []string {
 	// over n entries, not over the whole input.
 	slices.Sort(h)
 	return h
+}
+
+// smallestNValuesAfter is smallestNValues over the values greater than after.
+// It is a separate function so that the extra comparison stays out of the
+// smallestNValues loop. n must be greater than zero.
+func smallestNValuesAfter(values []string, n int, after string) []string {
+	h := make(smallestNHeap, 0, min(n, len(values)))
+	i := 0
+	for ; i < len(values) && len(h) < n; i++ {
+		if values[i] > after {
+			h = append(h, values[i])
+		}
+	}
+	if len(h) == n {
+		h.init()
+		for _, v := range values[i:] {
+			if v < h[0] && v > after {
+				h[0] = v
+				h.siftDown(0)
+			}
+		}
+	}
+	slices.Sort(h)
+	return h
+}
+
+// valuesGreaterThan returns the values greater than after, in input order. A
+// limit greater than zero keeps only the first limit of them. It does not
+// modify values.
+func valuesGreaterThan(values []string, after string, limit int) []string {
+	var out []string
+	if limit > 0 {
+		out = make([]string, 0, min(limit, len(values)))
+	}
+	for _, v := range values {
+		if v > after {
+			out = append(out, v)
+			if limit > 0 && len(out) == limit {
+				break
+			}
+		}
+	}
+	return out
 }
 
 // smallestNHeap is a typed binary max-heap over label values, so heap[0] is the

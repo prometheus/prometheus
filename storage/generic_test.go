@@ -208,6 +208,38 @@ func TestApplySearchHints(t *testing.T) {
 		require.Equal(t, "gamma", got[2].Value)
 	})
 
+	t.Run("resume after", func(t *testing.T) {
+		sorted := []string{"a", "c", "e", "g"}
+		acceptAll := FilterFunc(func(string) (bool, float64) { return true, 0.5 })
+		for _, tc := range []struct {
+			name  string
+			hints SearchHints
+			want  []string
+		}{
+			{"asc present value", SearchHints{ResumeAfter: "c"}, []string{"e", "g"}},
+			{"asc absent value", SearchHints{ResumeAfter: "d"}, []string{"e", "g"}},
+			{"asc before every value", SearchHints{ResumeAfter: "0"}, []string{"a", "c", "e", "g"}},
+			{"asc last value", SearchHints{ResumeAfter: "g"}, []string{}},
+			{"asc limit counts after resume", SearchHints{ResumeAfter: "a", Limit: 2}, []string{"c", "e"}},
+			{"asc filter limit", SearchHints{ResumeAfter: "a", Limit: 2, Filter: acceptAll}, []string{"c", "e"}},
+			{"desc present value", SearchHints{ResumeAfter: "e", OrderBy: OrderByValueDesc}, []string{"c", "a"}},
+			{"desc absent value", SearchHints{ResumeAfter: "f", OrderBy: OrderByValueDesc}, []string{"e", "c", "a"}},
+			{"desc first value", SearchHints{ResumeAfter: "a", OrderBy: OrderByValueDesc}, []string{}},
+			{"desc filter limit", SearchHints{ResumeAfter: "g", OrderBy: OrderByValueDesc, Limit: 2, Filter: acceptAll}, []string{"e", "c"}},
+			{"desc filter no limit", SearchHints{ResumeAfter: "g", OrderBy: OrderByValueDesc, Filter: acceptAll}, []string{"e", "c", "a"}},
+			{"score order ignores it", SearchHints{ResumeAfter: "c", OrderBy: OrderByScoreDesc, Filter: acceptAll}, []string{"a", "c", "e", "g"}},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				got := ApplySearchHints(sorted, &tc.hints)
+				gotValues := make([]string, len(got))
+				for i, r := range got {
+					gotValues[i] = r.Value
+				}
+				require.Equal(t, tc.want, gotValues)
+			})
+		}
+	})
+
 	t.Run("filter selectivity 1 percent caps allocation", func(t *testing.T) {
 		// 10k values, 1% match. Without the alloc cap fix the result slice
 		// would be sized to 10k. We don't directly assert capacity here (it

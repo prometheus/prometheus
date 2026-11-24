@@ -525,6 +525,26 @@ func TestSearchLabelValuesIndexFormatV1(t *testing.T) {
 		require.Len(t, got, 5)
 	})
 
+	t.Run("index reader honours start after", func(t *testing.T) {
+		ir, err := block.Index()
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, ir.Close()) })
+
+		got, err := ir.LabelValues(ctx, "bar", &storage.LabelHints{StartAfter: "12", Limit: 5, LimitSmallest: true})
+		require.NoError(t, err)
+		require.Equal(t, []string{"13", "14", "15", "16", "17"}, got)
+
+		// The early stop path reads the map in random order. A limit of every
+		// value after "12" fails whenever the read keeps one of the five
+		// values up to "12".
+		got, err = ir.LabelValues(ctx, "bar", &storage.LabelHints{StartAfter: "12", Limit: 95})
+		require.NoError(t, err)
+		require.Len(t, got, 95)
+		for _, v := range got {
+			require.Greater(t, v, "12")
+		}
+	})
+
 	t.Run("search returns the smallest values", func(t *testing.T) {
 		q, err := NewBlockQuerier(block, 0, 1000)
 		require.NoError(t, err)

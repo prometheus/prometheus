@@ -1380,6 +1380,10 @@ func (r *Reader) LabelValues(ctx context.Context, name string, hints *storage.La
 			if earlyLimit && len(values) >= hints.Limit {
 				break
 			}
+			// Without an early stop, ApplyLimit below drops these values.
+			if earlyLimit && hints.StartAfter != "" && k <= hints.StartAfter {
+				continue
+			}
 			values = append(values, k)
 		}
 		if !earlyLimit {
@@ -1395,19 +1399,49 @@ func (r *Reader) LabelValues(ctx context.Context, name string, hints *storage.La
 		return nil, nil
 	}
 
-	valuesLength := len(e) * symbolFactor
+	startAfter := ""
+	if hints != nil {
+		startAfter = hints.StartAfter
+	}
+	start := 0
+	if startAfter != "" {
+		// e is ascending and ends with the last value, so the traversal can
+		// begin at the last sampled entry that is not greater than startAfter.
+		start = sort.Search(len(e), func(i int) bool { return e[i].value > startAfter })
+		if start == len(e) {
+			return nil, nil
+		}
+		if start > 0 {
+			start--
+		}
+	}
+
+	valuesLength := (len(e) - start) * symbolFactor
 	if hints != nil && hints.Limit > 0 && valuesLength > hints.Limit {
 		valuesLength = hints.Limit
 	}
 	values := make([]string, 0, valuesLength)
 	lastVal := e[len(e)-1].value
-	err := r.traversePostingOffsets(ctx, e[0].off, func(val string, _ uint64) (bool, error) {
+	collect := func(val string, _ uint64) (bool, error) {
 		if hints != nil && hints.Limit > 0 && len(values) >= hints.Limit {
 			return false, nil
 		}
 		values = append(values, val)
 		return val != lastVal, nil
-	})
+	}
+	// The skip runs in its own callback, so a read without startAfter does
+	// not pay for the comparison on every value.
+	cb := collect
+	if startAfter != "" {
+		cb = func(val string, off uint64) (bool, error) {
+			if val <= startAfter {
+				// lastVal is greater than startAfter, so the traversal goes on.
+				return true, nil
+			}
+			return collect(val, off)
+		}
+	}
+	err := r.traversePostingOffsets(ctx, e[start].off, cb)
 	return values, err
 }
 

@@ -1563,6 +1563,9 @@ func TestMemPostings_LabelValuesLimitSmallest(t *testing.T) {
 		{"limit above count", "lbl", &storage.LabelHints{Limit: 10, LimitSmallest: true}, nil},
 		{"limit without flag", "lbl", &storage.LabelHints{Limit: 2}, []string{"e", "d"}},
 		{"unknown label name", "missing", &storage.LabelHints{Limit: 2, LimitSmallest: true}, nil},
+		{"start after without limit", "lbl", &storage.LabelHints{StartAfter: "b"}, []string{"e", "d", "c"}},
+		{"start after with smallest limit", "lbl", &storage.LabelHints{StartAfter: "b", Limit: 2, LimitSmallest: true}, []string{"c", "d"}},
+		{"start after every value", "lbl", &storage.LabelHints{StartAfter: "e", Limit: 2, LimitSmallest: true}, []string{}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got := p.LabelValues(ctx, tc.label, tc.hints)
