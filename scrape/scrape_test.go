@@ -27,6 +27,7 @@ import (
 	"maps"
 	"math"
 	"math/bits"
+	"math/rand/v2"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -11703,6 +11704,327 @@ func TestScrapeCacheScrapeOrderCursor(t *testing.T) {
 	c.get(mets[1])
 	c.iterDone(true)
 	require.Len(t, c.entries, len(mets)+len(reports))
+}
+
+// staleOracleEntry is one cached metric string, or one orphan, in staleOracle.
+type staleOracleEntry struct {
+	ref             storage.SeriesRef
+	lset            labels.Labels
+	seen, prev, cur bool
+}
+
+// staleOracleMove records that a SeriesRef rotated to ref for lset.
+type staleOracleMove struct {
+	ref  storage.SeriesRef
+	lset labels.Labels
+}
+
+// staleOracle is a brute-force model of scrapeCache staleness tracking, keyed
+// by metric string. It has no slots, bitsets, or ref uniqueness filtering, so
+// scrapeCache can be compared against it whatever its internal layout.
+type staleOracle struct {
+	entries map[string]*staleOracleEntry
+	orphans []staleOracleEntry
+	moved   map[storage.SeriesRef][]staleOracleMove
+}
+
+func newStaleOracle() *staleOracle {
+	return &staleOracle{entries: map[string]*staleOracleEntry{}}
+}
+
+func (o *staleOracle) get(key string) (*staleOracleEntry, bool) {
+	e, ok := o.entries[key]
+	if ok {
+		e.seen = true
+	}
+	return e, ok
+}
+
+// forget removes key and keeps its staleness state as an orphan, like
+// deleteSeries or addRef over an existing metric string.
+func (o *staleOracle) forget(key string) {
+	e, ok := o.entries[key]
+	if !ok {
+		return
+	}
+	if e.ref != 0 && (e.prev || e.cur) {
+		o.orphans = append(o.orphans, staleOracleEntry{ref: e.ref, lset: e.lset, prev: e.prev, cur: e.cur})
+	}
+	delete(o.entries, key)
+}
+
+func (o *staleOracle) addRef(key string, ref storage.SeriesRef, lset labels.Labels) {
+	o.forget(key)
+	o.entries[key] = &staleOracleEntry{ref: ref, lset: lset, seen: true}
+}
+
+func (o *staleOracle) updateRef(key string, ref storage.SeriesRef) {
+	e := o.entries[key]
+	if e.ref == ref {
+		return
+	}
+	if e.ref != 0 {
+		if o.moved == nil {
+			o.moved = map[storage.SeriesRef][]staleOracleMove{}
+		}
+		o.moved[e.ref] = append(o.moved[e.ref], staleOracleMove{ref: ref, lset: e.lset})
+	}
+	e.ref = ref
+}
+
+// remap follows the SeriesRef rotations of this scrape for lset, using the
+// latest rotation recorded for each ref.
+func (o *staleOracle) remap(ref storage.SeriesRef, lset labels.Labels) storage.SeriesRef {
+	for range len(o.moved) {
+		moves, ok := o.moved[ref]
+		if !ok {
+			return ref
+		}
+		var next storage.SeriesRef
+		for _, m := range slices.Backward(moves) {
+			if labels.Equal(m.lset, lset) {
+				next = m.ref
+				break
+			}
+		}
+		if next == 0 || next == ref {
+			return ref
+		}
+		ref = next
+	}
+	return ref
+}
+
+// stale returns the expected stale refs, each with the label sets of the
+// candidates that map to it. A candidate was tracked in the previous scrape and
+// not in this one; it is not stale when an entry or orphan tracked in this
+// scrape holds the same remapped ref.
+func (o *staleOracle) stale() map[storage.SeriesRef][]labels.Labels {
+	all := make([]*staleOracleEntry, 0, len(o.entries)+len(o.orphans))
+	for _, e := range o.entries {
+		all = append(all, e)
+	}
+	for i := range o.orphans {
+		all = append(all, &o.orphans[i])
+	}
+	live := map[storage.SeriesRef]struct{}{}
+	for _, e := range all {
+		if e.cur {
+			live[o.remap(e.ref, e.lset)] = struct{}{}
+		}
+	}
+	out := map[storage.SeriesRef][]labels.Labels{}
+	for _, e := range all {
+		if !e.prev || e.cur {
+			continue
+		}
+		ref := o.remap(e.ref, e.lset)
+		if _, ok := live[ref]; ok {
+			continue
+		}
+		out[ref] = append(out[ref], e.lset)
+	}
+	return out
+}
+
+func (o *staleOracle) iterDone(flush bool) {
+	for k, e := range o.entries {
+		e.prev, e.cur = e.cur, false
+		if flush && !e.seen {
+			delete(o.entries, k)
+		}
+		e.seen = false
+	}
+	kept := o.orphans[:0]
+	for _, e := range o.orphans {
+		if e.cur {
+			e.prev, e.cur = true, false
+			kept = append(kept, e)
+		}
+	}
+	o.orphans = kept
+	o.moved = nil
+}
+
+// TestScrapeCacheStalenessDifferential drives scrapeCache and staleOracle with
+// the same random scrapes and requires forEachStale to emit exactly the
+// oracle's stale refs. Scenarios include metric strings aliasing one label set
+// and ref, head GC rotating refs, refs added as 0 and set later, deleteSeries
+// orphans, addRef over an existing metric string, series missing for some
+// scrapes and coming back with their old ref, WAL-replay-like random refs,
+// flushing and non-flushing iterations, and a retry of forEachStale.
+func TestScrapeCacheStalenessDifferential(t *testing.T) {
+	const (
+		seeds = 300
+		iters = 40
+	)
+	for seed := range uint64(seeds) {
+		t.Run(strconv.FormatUint(seed, 10), func(t *testing.T) {
+			rng := rand.New(rand.NewPCG(seed, 0))
+			c := newScrapeCache(newTestScrapeMetrics(t))
+			o := newStaleOracle()
+
+			nL := 1 + rng.IntN(120)
+			lsets := make([]labels.Labels, nL)
+			for l := range nL {
+				lsets[l] = labels.FromStrings(model.MetricNameLabel, "m", "l", strconv.Itoa(l))
+			}
+			type metric struct {
+				key string
+				l   int
+			}
+			var mets []metric
+			maxAliases := 1 + rng.IntN(3)
+			for l := range nL {
+				for a := range 1 + rng.IntN(maxAliases) {
+					mets = append(mets, metric{key: fmt.Sprintf("m{l=%q,a=%q}", strconv.Itoa(l), strconv.Itoa(a)), l: l})
+				}
+			}
+
+			// The head hands out unique refs, either monotonically or in random
+			// order as after a WAL replay.
+			head := make([]storage.SeriesRef, nL)
+			used := map[storage.SeriesRef]struct{}{}
+			next := storage.SeriesRef(1 + rng.IntN(1000))
+			randomRefs := rng.IntN(2) == 0
+			headRef := func(l int) storage.SeriesRef {
+				if head[l] != 0 {
+					return head[l]
+				}
+				for {
+					var ref storage.SeriesRef
+					if randomRefs {
+						ref = storage.SeriesRef(1 + rng.IntN(100000))
+					} else {
+						next += storage.SeriesRef(1 + rng.IntN(3))
+						ref = next
+					}
+					if _, ok := used[ref]; !ok {
+						used[ref] = struct{}{}
+						head[l] = ref
+						return ref
+					}
+				}
+			}
+
+			var (
+				presence, gcRate, deleteRate, reAddRate, untrackRate float64
+				quiet, sorted                                        bool
+				absent                                               = map[string]bool{}
+			)
+			for it := range iters {
+				// Change the scrape profile every few scrapes. Churn phases mix
+				// every event. Quiet phases only delete a few series, which stay
+				// absent for one scrape, so suspect ref state can heal while
+				// orphans exist; they may start with a head GC burst rotating
+				// many refs at once.
+				if it%8 == 0 {
+					quiet = rng.IntN(2) == 0
+					sorted = rng.IntN(2) == 0
+					if quiet {
+						presence, gcRate, deleteRate, reAddRate, untrackRate = 1, 0, 0.005, 0, 0
+						if rng.IntN(2) == 0 {
+							gcRate = 0.5
+						}
+					} else {
+						presence = []float64{1, 0.97, 0.5 + rng.Float64()/2}[rng.IntN(3)]
+						gcRate = []float64{0, 0.01, 0.05}[rng.IntN(3)]
+						deleteRate = []float64{0, 0.01, 0.05}[rng.IntN(3)]
+						reAddRate, untrackRate = 1.0/60, 1.0/30
+					}
+				} else if quiet {
+					gcRate = 0
+				}
+				for l := range head {
+					if head[l] != 0 && rng.Float64() < gcRate {
+						head[l] = 0
+					}
+				}
+				order := rng.Perm(len(mets))
+				if sorted {
+					slices.Sort(order)
+				}
+				nextAbsent := map[string]bool{}
+				for _, i := range order {
+					m := mets[i]
+					if absent[m.key] || rng.Float64() >= presence {
+						continue
+					}
+					met := []byte(m.key)
+					h, slot, ce, ok, _ := c.get(met)
+					oe, ook := o.get(m.key)
+					if ok != ook {
+						t.Fatalf("seed %d iter %d: cache presence of %s is %t, want %t", seed, it, m.key, ok, ook)
+					}
+					ref := headRef(m.l)
+					switch {
+					case !ok && rng.IntN(15) == 0:
+						// Added without a ref, e.g. a start time anchor, and
+						// either set right away or left at 0 until a later scrape.
+						slot, ce = c.addRef(h, 0, lsets[m.l], nil)
+						o.addRef(m.key, 0, lsets[m.l])
+						if rng.IntN(2) == 0 {
+							c.updateSlotRef(slot, &ce, ref)
+							o.updateRef(m.key, ref)
+						}
+					case !ok || rng.Float64() < reAddRate:
+						// New metric string, or addRef over an existing one.
+						slot, ce = c.addRef(h, ref, lsets[m.l], nil)
+						o.addRef(m.key, ref, lsets[m.l])
+					default:
+						if ce.ref != oe.ref {
+							t.Fatalf("seed %d iter %d: ref of %s is %d, want %d", seed, it, m.key, ce.ref, oe.ref)
+						}
+						if ce.ref != ref {
+							c.updateSlotRef(slot, &ce, ref)
+							o.updateRef(m.key, ref)
+						}
+					}
+					if ce.ref != 0 && rng.Float64() >= untrackRate {
+						c.trackSlot(slot)
+						o.entries[m.key].cur = true
+					}
+					if rng.Float64() < deleteRate {
+						c.deleteSeries(h)
+						o.forget(m.key)
+						if quiet || rng.IntN(2) == 0 {
+							nextAbsent[m.key] = true
+						}
+					}
+				}
+				absent = nextAbsent
+
+				want := o.stale()
+				var first []storage.SeriesRef
+				for try := range 2 {
+					got := map[storage.SeriesRef]struct{}{}
+					var refs []storage.SeriesRef
+					c.forEachStale(func(ref storage.SeriesRef, lset labels.Labels) bool {
+						_, dup := got[ref]
+						require.False(t, dup, "seed %d iter %d try %d: ref %d emitted twice", seed, it, try, ref)
+						got[ref] = struct{}{}
+						refs = append(refs, ref)
+						cands, ok := want[ref]
+						require.True(t, ok, "seed %d iter %d try %d: unexpected stale ref %d %s", seed, it, try, ref, lset)
+						require.True(t, slices.ContainsFunc(cands, func(l labels.Labels) bool { return labels.Equal(l, lset) }),
+							"seed %d iter %d try %d: ref %d emitted with labels %s, want one of %v", seed, it, try, ref, lset, cands)
+						return true
+					})
+					require.Len(t, got, len(want), "seed %d iter %d try %d: got %v, want %v", seed, it, try, refs, slices.Sorted(maps.Keys(want)))
+					slices.Sort(refs)
+					if try == 0 {
+						first = refs
+					} else {
+						require.Equal(t, first, refs, "seed %d iter %d: retry differs", seed, it)
+					}
+				}
+
+				flush := rng.IntN(3) != 0
+				c.iterDone(flush)
+				o.iterDone(flush)
+			}
+		})
+	}
 }
 
 // BenchmarkScrapeCacheStaleness benchmarks scrapeCache staleness tracking across
