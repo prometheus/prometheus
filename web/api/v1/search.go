@@ -97,9 +97,10 @@ const searchCursorVersion = 1
 
 // maxSearchCursorBytes caps the encoded cursor, which bounds the work to
 // decode one. The cursor holds every match[] selector, search[] term and
-// search_expr of the request, so the server omits next_cursor for a request whose cursor
-// would be longer. The cap is far below the 1 MB default header limit of
-// net/http, so a GET request to the Prometheus server can carry the cursor.
+// search_expr of the request, so the server omits next_cursor for a request
+// whose cursor would be longer. The cap is far below the 1 MB default header
+// limit of net/http, so a GET request to the Prometheus server can carry the
+// cursor.
 const maxSearchCursorBytes = 16 << 10
 
 var (

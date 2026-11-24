@@ -818,11 +818,13 @@ curl -g 'http://localhost:9090/api/v1/search/label_values?cursor=<next_cursor>'
 
 A cursor holds every parameter of the search that returned it, including the
 resolved `start` and `end`, so it is only valid for that search and on the same
-endpoint. A request that sends `cursor` with any other parameter fails with
-HTTP 400. The cursor is opaque and unsigned: the server parses each field
-again with the same validation as a fresh request, so a cursor fails if the
-operator lowered `--web.search.max-limit` below its `limit` after the server
-returned it. Cursors are limited to 16384 bytes. If a proxy limits the URL
+endpoint. The pages do not come from one snapshot of the data: a value that
+appears after the server returned a page, and that sorts before the last result
+of that page, is not on a later page. A request that sends `cursor` with any
+other parameter fails with HTTP 400. The cursor is opaque and unsigned: the
+server parses each field again with the same validation as a fresh request, so
+a cursor fails if the operator lowered `--web.search.max-limit` below its
+`limit` after the server returned it. Cursors are limited to 16384 bytes. If a proxy limits the URL
 length, send the cursor in the body of a POST request. If the cursor for a
 search would be longer, the search holds text that is not valid UTF-8, or the
 last result of the page is an empty string, the trailer has no `next_cursor`
