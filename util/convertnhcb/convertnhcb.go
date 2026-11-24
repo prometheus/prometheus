@@ -25,12 +25,14 @@ import (
 )
 
 var (
-	errNegativeBucketCount = errors.New("bucket count must be non-negative")
-	errNaNBucket           = errors.New("bucket boundary must not be NaN")
-	errNegativeCount       = errors.New("count must be non-negative")
-	errMissingCount        = errors.New("count must be provided when no buckets are present")
-	errCountMismatch       = errors.New("count mismatch")
-	errCountNotCumulative  = errors.New("count is not cumulative")
+	errNegativeBucketCount  = errors.New("bucket count must be non-negative")
+	errNonFiniteBucketCount = errors.New("bucket count must be finite")
+	errNaNBucket            = errors.New("bucket boundary must not be NaN")
+	errNegativeCount        = errors.New("count must be non-negative")
+	errNonFiniteCount       = errors.New("count must be finite")
+	errMissingCount         = errors.New("count must be provided when no buckets are present")
+	errCountMismatch        = errors.New("count mismatch")
+	errCountNotCumulative   = errors.New("count is not cumulative")
 )
 
 type tempHistogramBucket struct {
@@ -77,6 +79,10 @@ func (h *TempHistogram) SetBucketCount(boundary, count float64) error {
 		h.err = errNaNBucket
 		return h.err
 	}
+	if math.IsNaN(count) || math.IsInf(count, 0) {
+		h.err = fmt.Errorf("%w: le=%g, count=%g", errNonFiniteBucketCount, boundary, count)
+		return h.err
+	}
 	if count < 0 {
 		h.err = fmt.Errorf("%w: le=%g, count=%g", errNegativeBucketCount, boundary, count)
 		return h.err
@@ -121,6 +127,10 @@ func (h *TempHistogram) SetBucketCount(boundary, count float64) error {
 
 func (h *TempHistogram) SetCount(count float64) error {
 	if h.err != nil {
+		return h.err
+	}
+	if math.IsNaN(count) || math.IsInf(count, 0) {
+		h.err = fmt.Errorf("%w: count=%g", errNonFiniteCount, count)
 		return h.err
 	}
 	if count < 0 {
