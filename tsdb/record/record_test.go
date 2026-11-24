@@ -1362,14 +1362,31 @@ func BenchmarkWAL_HistogramEncoding(b *testing.B) {
 						b.Run(fmt.Sprintf("type=%s/labels=%d/histograms=%d/buckets=%d/stStorage=%t", maker.name, labelCount, histograms, buckets, enableSTStorage), func(b *testing.B) {
 							series, samples, nhcbs := maker.make(labelCount, histograms, buckets)
 							enc := Encoder{EnableSTStorage: enableSTStorage}
-							var recordBytes int
+							var (
+								buf         []byte
+								recordBytes int
+							)
+							// Mirror headAppenderBase.log: skip empty slices, since the
+							// encoders emit a record header even for no samples, and reuse
+							// one buffer across records.
 							for b.Loop() {
-								recordBytes = len(enc.Series(series, nil))
-								recordBytes += len(enc.Samples(samples, nil))
-								buf, leftOver := enc.HistogramSamples(nhcbs, nil)
-								recordBytes += len(buf)
-								if len(leftOver) > 0 {
-									recordBytes += len(enc.CustomBucketsHistogramSamples(leftOver, nil))
+								recordBytes = 0
+								if len(series) > 0 {
+									buf = enc.Series(series, buf[:0])
+									recordBytes += len(buf)
+								}
+								if len(samples) > 0 {
+									buf = enc.Samples(samples, buf[:0])
+									recordBytes += len(buf)
+								}
+								if len(nhcbs) > 0 {
+									var leftOver []RefHistogramSample
+									buf, leftOver = enc.HistogramSamples(nhcbs, buf[:0])
+									recordBytes += len(buf)
+									if len(leftOver) > 0 {
+										buf = enc.CustomBucketsHistogramSamples(leftOver, buf[:0])
+										recordBytes += len(buf)
+									}
 								}
 							}
 							require.Positive(b, recordBytes)
