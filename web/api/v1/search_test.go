@@ -16,6 +16,7 @@ package v1
 import (
 	"bufio"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -24,6 +25,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -410,7 +412,14 @@ func TestAPI_SearchEndpoints_SecondaryWarnings(t *testing.T) {
 								expected = expected[:limit]
 							}
 							require.Equal(t, expected, results)
-							require.JSONEq(t, fmt.Sprintf(`{"status":"success","has_more":%t,"returned":%d}`, trailer.HasMore, len(results)), string(lines[len(lines)-1]))
+							wantTrailer := map[string]any{"status": "success", "has_more": trailer.HasMore, "returned": len(results)}
+							if trailer.HasMore {
+								require.NotEmpty(t, trailer.NextCursor)
+								wantTrailer["next_cursor"] = trailer.NextCursor
+							}
+							wantJSON, err := json.Marshal(wantTrailer)
+							require.NoError(t, err)
+							require.JSONEq(t, string(wantJSON), string(lines[len(lines)-1]))
 							if tc.noopSecondary || tc.emptyRange {
 								require.Empty(t, warnings)
 							} else {
@@ -1578,7 +1587,7 @@ func TestStreamSearchResultsWarningsSorted(t *testing.T) {
 			// requires that.
 			sp := searchParams{limit: 100, batchSize: 100, rangeWarning: tc.rangeWarning}
 
-			streamSearchResults(t.Context(), api, rec, rs, sp, func(sr storage.SearchResult) string {
+			streamSearchResults(t.Context(), api, rec, rs, sp, nil, func(sr storage.SearchResult) string {
 				return sr.Value
 			})
 
@@ -1659,7 +1668,7 @@ func TestStreamSearchResultsWarningsTrailerDiff(t *testing.T) {
 	// warnings snapshot is taken before the inner is exhausted.
 	sp := searchParams{limit: 100, batchSize: 1}
 
-	streamSearchResults(t.Context(), api, rec, rs, sp, func(sr storage.SearchResult) string {
+	streamSearchResults(t.Context(), api, rec, rs, sp, nil, func(sr storage.SearchResult) string {
 		return sr.Value
 	})
 
@@ -2144,6 +2153,415 @@ func TestSearchResultStreamerBatchCapacity(t *testing.T) {
 				require.LessOrEqual(t, cap(batch), want)
 			}
 			require.Equal(t, count > 3, streamer.hasMore)
+		})
+	}
+}
+
+// searchPage runs one search request and returns the names or values of its
+// results and its trailer.
+func searchPage(t *testing.T, api *API, path string, params url.Values) ([]string, searchTrailer) {
+	t.Helper()
+	rec := doSearchRequest(t, api, path, params)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	lines := parseNDJSON(t, rec.Body.String())
+	require.NotEmpty(t, lines)
+	var got []string
+	for _, line := range lines[:len(lines)-1] {
+		var batch searchBatch[map[string]any]
+		require.NoError(t, json.Unmarshal(line, &batch))
+		for _, r := range batch.Results {
+			v, ok := r["value"]
+			if !ok {
+				v = r["name"]
+			}
+			got = append(got, v.(string))
+		}
+	}
+	var trailer searchTrailer
+	require.NoError(t, json.Unmarshal(lines[len(lines)-1], &trailer))
+	require.Equal(t, "success", trailer.Status)
+	return got, trailer
+}
+
+// decodeTestCursor decodes a next_cursor without the server-side checks.
+func decodeTestCursor(t *testing.T, raw string) searchCursor {
+	t.Helper()
+	data, err := base64.RawURLEncoding.DecodeString(raw)
+	require.NoError(t, err)
+	var c searchCursor
+	require.NoError(t, json.Unmarshal(data, &c))
+	return c
+}
+
+func encodeTestCursor(t *testing.T, v any) string {
+	t.Helper()
+	data, err := json.Marshal(v)
+	require.NoError(t, err)
+	return base64.RawURLEncoding.EncodeToString(data)
+}
+
+func TestSearchCursorPagination(t *testing.T) {
+	api := newSearchTestAPI(t)
+	metricNames := []string{"go_gc_duration_seconds", "go_gc_heap_goal_bytes", "go_goroutines", "process_cpu_seconds_total", "up"}
+	metricNamesDesc := slices.Clone(metricNames)
+	slices.Reverse(metricNamesDesc)
+
+	for _, tc := range []struct {
+		name   string
+		path   string
+		params url.Values
+		want   []string
+	}{
+		{"metric names ascending", "/search/metric_names", url.Values{}, metricNames},
+		{"metric names descending", "/search/metric_names", url.Values{"sort_by": {"alpha"}, "sort_dir": {"dsc"}}, metricNamesDesc},
+		{"metric names with search", "/search/metric_names", url.Values{"search[]": {"go_g"}, "fuzz_alg": {"jarowinkler"}}, []string{"go_gc_duration_seconds", "go_gc_heap_goal_bytes", "go_goroutines"}},
+		{"metric names with search_expr", "/search/metric_names", url.Values{"search_expr": {"go AND NOT heap"}, "fuzz_alg": {"jarowinkler"}}, []string{"go_gc_duration_seconds", "go_goroutines"}},
+		{"label names", "/search/label_names", url.Values{}, []string{"__name__", "instance", "job"}},
+		{"label values one matcher set", "/search/label_values", url.Values{"label": {"instance"}, "match[]": {"up"}}, []string{"localhost:9090", "localhost:9091"}},
+		{"label values merged matcher sets", "/search/label_values", url.Values{"label": {"job"}, "match[]": {"up", "go_goroutines"}}, []string{"node", "prometheus"}},
+		{"label values merged matcher sets descending", "/search/label_values", url.Values{"label": {"instance"}, "match[]": {"up", "go_goroutines"}, "sort_by": {"alpha"}, "sort_dir": {"dsc"}}, []string{"localhost:9091", "localhost:9090"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			params := tc.params
+			params.Set("limit", "1")
+			var got []string
+			for range len(tc.want) + 1 {
+				page, trailer := searchPage(t, api, tc.path, params)
+				got = append(got, page...)
+				if !trailer.HasMore {
+					require.Empty(t, trailer.NextCursor)
+					break
+				}
+				require.NotEmpty(t, trailer.NextCursor)
+				params = url.Values{"cursor": {trailer.NextCursor}}
+			}
+			require.Equal(t, tc.want, got)
+		})
+	}
+
+	t.Run("cursor keeps the request fields", func(t *testing.T) {
+		params := url.Values{
+			"limit":            {"1"},
+			"start":            {"3600.123"},
+			"end":              {"7000.456"},
+			"include_score":    {"true"},
+			"include_metadata": {"true"},
+			"match[]":          {`{job="prometheus"}`},
+		}
+		_, trailer := searchPage(t, api, "/search/metric_names", params)
+		c := decodeTestCursor(t, trailer.NextCursor)
+		require.Equal(t, searchCursor{
+			Version:         searchCursorVersion,
+			Endpoint:        "metric_names",
+			Match:           []string{`{job="prometheus"}`},
+			FuzzAlg:         defaultFuzzAlg,
+			CaseSensitive:   true,
+			SortDir:         "asc",
+			IncludeScore:    true,
+			IncludeMetadata: true,
+			Start:           3600123,
+			End:             7000456,
+			Limit:           1,
+			BatchSize:       1,
+			ResumeAfter:     "go_gc_duration_seconds",
+		}, c)
+
+		rec := doSearchRequest(t, api, "/search/metric_names", url.Values{"cursor": {trailer.NextCursor}})
+		require.Equal(t, http.StatusOK, rec.Code)
+		var batch searchBatch[searchMetricNameResult]
+		require.NoError(t, json.Unmarshal(parseNDJSON(t, rec.Body.String())[0], &batch))
+		require.Len(t, batch.Results, 1)
+		require.Equal(t, "go_gc_heap_goal_bytes", batch.Results[0].Name)
+		require.NotNil(t, batch.Results[0].Score, "include_score must carry over")
+
+		_, trailer = searchPage(t, api, "/search/metric_names", url.Values{"cursor": {trailer.NextCursor}})
+		rec = doSearchRequest(t, api, "/search/metric_names", url.Values{"cursor": {trailer.NextCursor}})
+		require.NoError(t, json.Unmarshal(parseNDJSON(t, rec.Body.String())[0], &batch))
+		require.Equal(t, searchMetricNameResult{Name: "go_goroutines", Score: batch.Results[0].Score, Type: "gauge", Help: "Number of goroutines."}, batch.Results[0], "include_metadata must carry over")
+	})
+
+	t.Run("cursor keeps search_expr", func(t *testing.T) {
+		_, trailer := searchPage(t, api, "/search/metric_names", url.Values{"search_expr": {"go AND NOT heap"}, "limit": {"1"}})
+		c := decodeTestCursor(t, trailer.NextCursor)
+		require.Equal(t, "go AND NOT heap", c.SearchExpr)
+		require.Empty(t, c.Search)
+	})
+
+	t.Run("cursor of label values keeps the label", func(t *testing.T) {
+		_, trailer := searchPage(t, api, "/search/label_values", url.Values{"label": {"job"}, "limit": {"1"}})
+		require.Equal(t, "job", decodeTestCursor(t, trailer.NextCursor).Label)
+	})
+
+	t.Run("score ordering has no cursor", func(t *testing.T) {
+		_, trailer := searchPage(t, api, "/search/metric_names", url.Values{"search[]": {"go"}, "sort_by": {"score"}, "limit": {"1"}})
+		require.True(t, trailer.HasMore)
+		require.Empty(t, trailer.NextCursor)
+	})
+
+	t.Run("POST form", func(t *testing.T) {
+		_, trailer := searchPage(t, api, "/search/label_names", url.Values{"limit": {"1"}})
+		r := route.New()
+		api.Register(r)
+		req := httptest.NewRequest(http.MethodPost, "/search/label_names", strings.NewReader(url.Values{"cursor": {trailer.NextCursor}}.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+		require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+		var batch searchBatch[searchLabelNameResult]
+		require.NoError(t, json.Unmarshal(parseNDJSON(t, rec.Body.String())[0], &batch))
+		require.Equal(t, []searchLabelNameResult{{Name: "instance"}}, batch.Results)
+	})
+}
+
+func TestSearchCursorRejected(t *testing.T) {
+	api := newSearchTestAPI(t)
+	api.maxSearchLimit = 50
+	_, trailer := searchPage(t, api, "/search/label_values", url.Values{"label": {"job"}, "limit": {"1"}})
+	valid := decodeTestCursor(t, trailer.NextCursor)
+	with := func(f func(c *searchCursor)) string {
+		c := valid
+		f(&c)
+		return encodeTestCursor(t, c)
+	}
+	validFields := func() map[string]any {
+		var m map[string]any
+		data, err := json.Marshal(valid)
+		require.NoError(t, err)
+		require.NoError(t, json.Unmarshal(data, &m))
+		return m
+	}
+	unknownField := validFields()
+	unknownField["score_after"] = 0.5
+	otherCase := validFields()
+	delete(otherCase, "v")
+	otherCase["V"] = searchCursorVersion
+	missingStart := validFields()
+	delete(missingStart, "start")
+	nullStart := validFields()
+	nullStart["start"] = nil
+	stringLimit := validFields()
+	stringLimit["limit"] = "5"
+	trailing, err := json.Marshal(valid)
+	require.NoError(t, err)
+	duplicate := append([]byte(`{"limit":3,`), trailing[1:]...)
+
+	for _, tc := range []struct {
+		name    string
+		path    string
+		params  url.Values
+		wantErr string
+	}{
+		{"other parameter", "/search/label_values", url.Values{"cursor": {trailer.NextCursor}, "limit": {"5"}}, "cursor and other search parameters are mutually exclusive"},
+		{"cursor twice", "/search/label_values", url.Values{"cursor": {trailer.NextCursor, trailer.NextCursor}}, "cursor must be given once"},
+		{"empty cursor", "/search/label_values", url.Values{"cursor": {""}}, "invalid cursor"},
+		{"too long", "/search/label_values", url.Values{"cursor": {strings.Repeat("A", maxSearchCursorBytes+1)}}, "exceeds maximum of 16384 bytes"},
+		{"not base64", "/search/label_values", url.Values{"cursor": {"!!!"}}, "invalid cursor"},
+		{"not JSON", "/search/label_values", url.Values{"cursor": {base64.RawURLEncoding.EncodeToString([]byte("nope"))}}, "invalid cursor"},
+		{"unknown field", "/search/label_values", url.Values{"cursor": {encodeTestCursor(t, unknownField)}}, `unknown field \"score_after\"`},
+		{"trailing data", "/search/label_values", url.Values{"cursor": {base64.RawURLEncoding.EncodeToString(append(trailing, []byte(" {}")...))}}, "unexpected data after the payload"},
+		{"key in other case", "/search/label_values", url.Values{"cursor": {encodeTestCursor(t, otherCase)}}, `unknown field \"V\"`},
+		{"duplicate key", "/search/label_values", url.Values{"cursor": {base64.RawURLEncoding.EncodeToString(duplicate)}}, `duplicate field \"limit\"`},
+		{"missing field", "/search/label_values", url.Values{"cursor": {encodeTestCursor(t, missingStart)}}, `missing field \"start\"`},
+		{"null field", "/search/label_values", url.Values{"cursor": {encodeTestCursor(t, nullStart)}}, `field \"start\" is null`},
+		{"wrong type", "/search/label_values", url.Values{"cursor": {encodeTestCursor(t, stringLimit)}}, `field \"limit\"`},
+		{"not an object", "/search/label_values", url.Values{"cursor": {base64.RawURLEncoding.EncodeToString([]byte("[1]"))}}, "payload is not a JSON object"},
+		{"other version", "/search/label_values", url.Values{"cursor": {with(func(c *searchCursor) { c.Version = 2 })}}, "unsupported version 2"},
+		{"other endpoint", "/search/label_names", url.Values{"cursor": {trailer.NextCursor}}, `issued by \"label_values\", not \"label_names\"`},
+		{"empty resume_after", "/search/label_values", url.Values{"cursor": {with(func(c *searchCursor) { c.ResumeAfter = "" })}}, "resume_after must not be empty"},
+		{"limit zero", "/search/label_values", url.Values{"cursor": {with(func(c *searchCursor) { c.Limit = 0 })}}, `invalid cursor: invalid limit \"0\"`},
+		{"limit above maximum", "/search/label_values", url.Values{"cursor": {with(func(c *searchCursor) { c.Limit = 51 })}}, "invalid cursor: limit 51 exceeds the configured maximum"},
+		{"fuzz_alg", "/search/label_values", url.Values{"cursor": {with(func(c *searchCursor) { c.FuzzAlg = "soundex" })}}, `invalid cursor: unsupported fuzz_alg \"soundex\"`},
+		{"too many terms", "/search/label_values", url.Values{"cursor": {with(func(c *searchCursor) { c.Search = make([]string, maxSearchTermsPerRequest+1) })}}, "invalid cursor: too many search[] terms"},
+		{"search_expr with search[]", "/search/label_values", url.Values{"cursor": {with(func(c *searchCursor) { c.Search, c.SearchExpr = []string{"up"}, "go" })}}, "invalid cursor: search[] and search_expr are mutually exclusive"},
+		{"invalid search_expr", "/search/label_values", url.Values{"cursor": {with(func(c *searchCursor) { c.SearchExpr = "go AND" })}}, "invalid cursor: invalid search_expr"},
+		{"matcher", "/search/label_values", url.Values{"cursor": {with(func(c *searchCursor) { c.Match = []string{`{job=~".*"}`} })}}, "invalid cursor: match[] must contain at least one non-empty matcher"},
+		{"inverted time range", "/search/label_values", url.Values{"cursor": {with(func(c *searchCursor) { c.Start, c.End = 2, 1 })}}, "invalid cursor: end timestamp must not be before start timestamp"},
+		{"missing label", "/search/label_values", url.Values{"cursor": {with(func(c *searchCursor) { c.Label = "" })}}, `missing required parameter \"label\"`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := doSearchRequest(t, api, tc.path, tc.params)
+			require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
+			require.Contains(t, rec.Body.String(), tc.wantErr)
+		})
+	}
+}
+
+func TestSearchCursorOmitted(t *testing.T) {
+	api := newSearchTestAPI(t)
+	for _, tc := range []struct {
+		name   string
+		params url.Values
+		want   error
+	}{
+		{"too large", url.Values{"search[]": {"go", strings.Repeat("x", maxSearchCursorBytes)}}, errSearchCursorTooLarge},
+		{"search term not UTF-8", url.Values{"search[]": {"go", "\xff"}}, errSearchCursorNotUTF8},
+		{
+			// A search_expr is at most 4096 bytes, so a long matcher makes the cursor too large.
+			"too large with search_expr",
+			url.Values{
+				"search_expr": {`go OR "` + strings.Repeat("x", 4000) + `"`},
+				"match[]":     {`{__name__=~"go.+|` + strings.Repeat("y", 9000) + `"}`},
+			},
+			errSearchCursorTooLarge,
+		},
+		{"search_expr not UTF-8", url.Values{"search_expr": {"go OR \xff"}}, errSearchCursorNotUTF8},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.params.Set("limit", "1")
+			_, trailer := searchPage(t, api, "/search/metric_names", tc.params)
+			require.True(t, trailer.HasMore)
+			require.Empty(t, trailer.NextCursor)
+			require.Equal(t, []string{tc.want.Error()}, trailer.Warnings)
+		})
+	}
+}
+
+func TestSearchCursorLongestSearchExpr(t *testing.T) {
+	api := newSearchTestAPI(t)
+	expr := `go OR "` + strings.Repeat("x", 4096-len(`go OR ""`)) + `"`
+	require.Len(t, expr, 4096)
+	_, trailer := searchPage(t, api, "/search/metric_names", url.Values{"search_expr": {expr}, "limit": {"1"}})
+	require.True(t, trailer.HasMore)
+	require.Empty(t, trailer.Warnings)
+	require.Equal(t, expr, decodeTestCursor(t, trailer.NextCursor).SearchExpr)
+}
+
+// TestSearchCursorDefaultTimeRange checks that a cursor page uses the range
+// of the first page and carries no default range warning.
+func TestSearchCursorDefaultTimeRange(t *testing.T) {
+	api := newSearchTestAPI(t)
+	api.metadataDefaultTimeRange = 2 * time.Hour
+	firstBatch := func(params url.Values) (searchBatch[searchLabelNameResult], searchTrailer) {
+		rec := doSearchRequest(t, api, "/search/label_names", params)
+		require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+		lines := parseNDJSON(t, rec.Body.String())
+		var batch searchBatch[searchLabelNameResult]
+		require.NoError(t, json.Unmarshal(lines[0], &batch))
+		var trailer searchTrailer
+		require.NoError(t, json.Unmarshal(lines[len(lines)-1], &trailer))
+		return batch, trailer
+	}
+
+	batch, trailer := firstBatch(url.Values{"limit": {"1"}})
+	require.Equal(t, []string{"start or end not given, applied a default: start=1970-01-01T00:00:00Z, end=1970-01-01T02:00:00Z"}, batch.Warnings)
+	c := decodeTestCursor(t, trailer.NextCursor)
+	require.Equal(t, int64(0), c.Start)
+	require.Equal(t, int64(7200000), c.End)
+
+	batch, _ = firstBatch(url.Values{"cursor": {trailer.NextCursor}})
+	require.Empty(t, batch.Warnings)
+	require.Equal(t, []searchLabelNameResult{{Name: "instance"}}, batch.Results)
+}
+
+func TestSearchCursorEmptyLastValue(t *testing.T) {
+	api := minimalSearchAPI()
+	api.Queryable = errorTestQueryable{q: fixedSearchQuerier{rs: storage.NewSearchResultSetFromSlice([]storage.SearchResult{
+		{Value: "", Score: 1},
+		{Value: "a", Score: 1},
+	}, nil)}}
+	_, trailer := searchPage(t, api, "/search/label_names", url.Values{"limit": {"1"}})
+	require.True(t, trailer.HasMore)
+	require.Empty(t, trailer.NextCursor)
+	require.Equal(t, []string{errSearchCursorEmptyValue.Error()}, trailer.Warnings)
+}
+
+func TestSearchCursorLength(t *testing.T) {
+	base := searchCursor{
+		Version:       searchCursorVersion,
+		Endpoint:      "label_names",
+		FuzzAlg:       defaultFuzzAlg,
+		CaseSensitive: true,
+		SortDir:       "asc",
+		Start:         3600000,
+		End:           7200000,
+		Limit:         10,
+		BatchSize:     10,
+	}
+	// The cursor has the maximum length when its JSON has 3/4 of the bytes.
+	withTerm := func(n int) searchCursor {
+		c := base
+		c.Search = []string{strings.Repeat("x", n)}
+		return c
+	}
+	empty, err := encodeSearchCursor(withTerm(0), "a")
+	require.NoError(t, err)
+	termAtMax := maxSearchCursorBytes*3/4 - base64.RawURLEncoding.DecodedLen(len(empty))
+
+	atMax, err := encodeSearchCursor(withTerm(termAtMax), "a")
+	require.NoError(t, err)
+	require.Len(t, atMax, maxSearchCursorBytes)
+	_, err = decodeSearchCursor(url.Values{"cursor": {atMax}}, "label_names")
+	require.NoError(t, err, "a cursor at the maximum length must decode")
+
+	_, err = encodeSearchCursor(withTerm(termAtMax+1), "a")
+	require.ErrorIs(t, err, errSearchCursorTooLarge)
+
+	// HTML escaping would make each of these characters six bytes.
+	c := base
+	c.Search = []string{"<>&"}
+	encoded, err := encodeSearchCursor(c, "a")
+	require.NoError(t, err)
+	decoded, err := base64.RawURLEncoding.DecodeString(encoded)
+	require.NoError(t, err)
+	require.Contains(t, string(decoded), `"search":["<>&"]`)
+	got, err := decodeSearchCursor(url.Values{"cursor": {encoded}}, "label_names")
+	require.NoError(t, err)
+	require.Equal(t, []string{"<>&"}, got.Search)
+}
+
+// TestSearchCursorBackstop checks the handler against a Searcher that ignores
+// SearchHints.ResumeAfter and returns every value from the first one.
+func TestSearchCursorBackstop(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		sortDir     string
+		values      []string
+		resumeAfter string
+		want        []string
+		wantWarning bool
+	}{
+		{"asc drops leading values", "asc", []string{"a", "b", "c", "d"}, "b", []string{"c", "d"}, true},
+		{"desc drops leading values", "dsc", []string{"d", "c", "b", "a"}, "c", []string{"b", "a"}, true},
+		{"hint honoured", "asc", []string{"c", "d"}, "b", []string{"c", "d"}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			results := make([]storage.SearchResult, len(tc.values))
+			for i, v := range tc.values {
+				results[i] = storage.SearchResult{Value: v, Score: 1}
+			}
+			api := minimalSearchAPI()
+			api.Queryable = errorTestQueryable{q: fixedSearchQuerier{rs: storage.NewSearchResultSetFromSlice(results, nil)}}
+			cursor := encodeTestCursor(t, searchCursor{
+				Version:       searchCursorVersion,
+				Endpoint:      "label_names",
+				FuzzAlg:       defaultFuzzAlg,
+				CaseSensitive: true,
+				SortDir:       tc.sortDir,
+				Start:         3600000,
+				End:           7200000,
+				Limit:         10,
+				BatchSize:     10,
+				ResumeAfter:   tc.resumeAfter,
+			})
+			rec := doSearchRequest(t, api, "/search/label_names", url.Values{"cursor": {cursor}})
+			require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+			lines := parseNDJSON(t, rec.Body.String())
+			require.Len(t, lines, 2, "expected one batch and a trailer")
+			var batch searchBatch[searchLabelNameResult]
+			require.NoError(t, json.Unmarshal(lines[0], &batch))
+			got := make([]string, len(batch.Results))
+			for i, r := range batch.Results {
+				got[i] = r.Name
+			}
+			require.Equal(t, tc.want, got)
+			var trailer searchTrailer
+			require.NoError(t, json.Unmarshal(lines[1], &trailer))
+			require.False(t, trailer.HasMore)
+			if tc.wantWarning {
+				require.Equal(t, []string{errSearchResumeIgnored.Error()}, batch.Warnings)
+			} else {
+				require.Empty(t, batch.Warnings)
+			}
 		})
 	}
 }
