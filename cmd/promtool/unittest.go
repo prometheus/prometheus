@@ -92,7 +92,11 @@ func ruleUnitTest(filename string, queryOpts promqltest.LazyLoaderOpts, p parser
 	}
 
 	var unitTestInp unitTestFile
-	if err := yaml.UnmarshalStrict(b, &unitTestInp); err != nil {
+	unmarshal := yaml.UnmarshalStrict
+	if ignoreUnknownFields {
+		unmarshal = yaml.Unmarshal
+	}
+	if err := unmarshal(b, &unitTestInp); err != nil {
 		ts.Abort(err)
 		return []error{err}
 	}

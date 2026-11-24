@@ -270,6 +270,22 @@ func TestRulesUnitTestRun(t *testing.T) {
 			want:                0,
 		},
 		{
+			name: "Test extra fields in test file ignored with ignoreUnknownFields true",
+			args: args{
+				files: []string{"./testdata/rules_run_extrafields_in_test.yml"},
+			},
+			ignoreUnknownFields: true,
+			want:                0,
+		},
+		{
+			name: "Test extra fields in test file rejected with ignoreUnknownFields false",
+			args: args{
+				files: []string{"./testdata/rules_run_extrafields_in_test.yml"},
+			},
+			ignoreUnknownFields: false,
+			want:                1,
+		},
+		{
 			name: "Test precise floating point comparison expected failure",
 			args: args{
 				files: []string{"./testdata/rules_run_no_fuzzy.yml"},

@@ -1,0 +1,24 @@
+# Minimal test case to see that --ignore-unknown-fields
+# is working as expected when extra fields are present
+# in the unit test file itself.
+rule_files:
+  - rules.yml
+
+evaluation_interval: 1m
+
+custom_test_metadata:
+  owner: team-monitoring
+  ci_pipeline: test-suite
+
+tests:
+  - name: test rule run with extra metadata in test file
+    input_series:
+      - series: test
+        values: 1
+
+    promql_expr_test:
+      - expr: test
+        eval_time: 0
+        exp_samples:
+          - value: 1
+            labels: test
