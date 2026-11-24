@@ -342,6 +342,44 @@ func TestTombstoneCleanFail(t *testing.T) {
 	require.Len(t, intersection(oldBlockDirs, actualBlockDirs), len(actualBlockDirs)-1)
 }
 
+// TestTombstoneCleanReloadFail checks that a failed reload does not leave the
+// original block eligible for deletion after its replacement is rolled back.
+func TestTombstoneCleanReloadFail(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	createBlock(t, dir, genSeries(2, 1, 0, 4))
+	db := newTestDB(t, withDir(dir))
+	db.DisableCompactions()
+	require.NoError(t, db.Delete(context.Background(), 0, 4, labels.MustNewMatcher(labels.MatchEqual, defaultLabelName, "0")))
+
+	q, err := db.Querier(0, 4)
+	require.NoError(t, err)
+	all := labels.MustNewMatcher(labels.MatchRegexp, defaultLabelName, ".+")
+	expected := query(t, q, all)
+	require.NotEmpty(t, expected)
+
+	// A new peer block cannot be opened during the cleanup's reload. Moving the
+	// index aside makes the failure deterministic without relying on permissions.
+	peer := createBlock(t, dir, genSeries(1, 1, 10, 12))
+	indexPath := filepath.Join(peer, indexFilename)
+	require.NoError(t, os.Rename(indexPath, indexPath+".bak"))
+	require.ErrorContains(t, db.CleanTombstones(), "reload blocks:")
+	require.NoError(t, os.Rename(indexPath+".bak", indexPath))
+
+	// Compacting the head reloads the blocks again, after the peer is readable.
+	require.NoError(t, db.CompactHead(NewRangeHead(db.Head(), 20, 20)))
+
+	q, err = db.Querier(0, 4)
+	require.NoError(t, err)
+	require.Equal(t, expected, query(t, q, all), "surviving samples changed after failed tombstone cleanup and compaction")
+
+	require.NoError(t, db.Close())
+	db = newTestDB(t, withDir(dir))
+	q, err = db.Querier(0, 4)
+	require.NoError(t, err)
+	require.Equal(t, expected, query(t, q, all), "surviving samples changed after failed tombstone cleanup and reopen")
+}
+
 func intersection(oldBlocks, actualBlocks []string) (intersection []string) {
 	hash := make(map[string]bool)
 	for _, e := range oldBlocks {
