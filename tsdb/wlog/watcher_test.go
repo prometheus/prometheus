@@ -254,23 +254,16 @@ func TestWatcher_Tail(t *testing.T) {
 					require.NoError(t, w.Close())
 				})
 
-				// Start watcher to that reads into a mock.
-				wt := newWriteToMock(0)
-				watcher := NewWatcher(wMetrics, nil, nil, "test", wt, dir, true, true, true, nil)
-				// Update the time because we just created samples around "now" time and watcher
-				// only starts watching after that time.
-				watcher.SetStartTime(now)
-				// Start spins up watcher loop in a go-routine.
-				watcher.Start()
-				t.Cleanup(watcher.Stop)
-
-				// Write to WAL like append commit would do, while watcher is tailing.
-
-				// Write first a few samples before the start time, we don't expect those to be appended.
+				// Seed old samples before startup so the watcher sees them during replay.
 				require.NoError(t, w.Log(enc.Samples([]record.RefSample{
 					{Ref: 1, T: timestamp.FromTime(now), V: 123},
 					{Ref: 2, T: timestamp.FromTime(now), V: 123.1},
 				}, nil)))
+
+				wt := newWriteToMock(0)
+				watcher := NewWatcher(wMetrics, nil, nil, "test", wt, dir, true, true, true, nil)
+				watcher.Start()
+				t.Cleanup(watcher.Stop)
 
 				for i := range records {
 					// Similar order as tsdb/head_appender.go.headAppenderBase.log
@@ -917,5 +910,61 @@ func TestRun_AvoidNotifyWhenBehind(t *testing.T) {
 				require.NoError(t, w.Close())
 			})
 		}
+	}
+}
+
+func TestWatcher_TailOlderSamples(t *testing.T) {
+	overwriteReadTimeout(t, 20*time.Millisecond)
+
+	for _, enableSTStorage := range []bool{false, true} {
+		t.Run(fmt.Sprintf("stStorage=%v", enableSTStorage), func(t *testing.T) {
+			dir := t.TempDir()
+			wal, err := NewSize(nil, nil, filepath.Join(dir, "wal"), 32*1024, compression.None)
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, wal.Close()) })
+
+			enc := record.Encoder{EnableSTStorage: enableSTStorage}
+			now := time.Now()
+			before := timestamp.FromTime(now.Add(-time.Minute))
+			older := timestamp.FromTime(now.Add(-5 * time.Minute))
+			newer := timestamp.FromTime(now.Add(time.Minute))
+
+			require.NoError(t, wal.Log(
+				enc.Series([]record.RefSeries{{Ref: 1, Labels: labels.FromStrings("__name__", "temperature")}}, nil),
+				enc.Samples([]record.RefSample{{Ref: 1, T: before, V: 10}}, nil),
+				enc.Series([]record.RefSeries{
+					{Ref: 2, Labels: labels.FromStrings("__name__", "request_duration")},
+					{Ref: 3, Labels: labels.FromStrings("__name__", "response_duration")},
+				}, nil),
+			))
+
+			wt := newWriteToMock(0)
+			watcher := NewWatcher(wMetrics, nil, nil, t.Name(), wt, dir, false, true, false, nil)
+			watcher.Start()
+			t.Cleanup(watcher.Stop)
+
+			// Wait until the watcher has read the existing records before writing live samples.
+			require.Eventually(t, func() bool { return wt.checkNumSeries() == 3 }, 5*time.Second, 10*time.Millisecond)
+
+			samples := []record.RefSample{{Ref: 1, T: older, V: 5}, {Ref: 1, T: newer, V: 15}}
+			histograms := []record.RefHistogramSample{{Ref: 2, T: older, H: &histogram.Histogram{Count: 1, ZeroCount: 1}}}
+			floatHistograms := []record.RefFloatHistogramSample{{Ref: 3, T: older, FH: &histogram.FloatHistogram{Count: 1, ZeroCount: 1}}}
+			hs, _ := enc.HistogramSamples(histograms, nil)
+			fhs, _ := enc.FloatHistogramSamples(floatHistograms, nil)
+			require.NoError(t, wal.Log(hs, fhs, enc.Samples(samples, nil)))
+			watcher.Notify()
+
+			require.Eventually(t, func() bool {
+				wt.mu.Lock()
+				defer wt.mu.Unlock()
+				return len(wt.samplesAppended) > 0 && wt.samplesAppended[len(wt.samplesAppended)-1].T == newer
+			}, 5*time.Second, 10*time.Millisecond)
+
+			wt.mu.Lock()
+			defer wt.mu.Unlock()
+			require.Equal(t, samples, wt.samplesAppended, "Live samples must reach remote write regardless of the watcher start time.")
+			require.Equal(t, histograms, wt.histogramsAppended)
+			require.Equal(t, floatHistograms, wt.floatHistogramsAppended)
+		})
 	}
 }

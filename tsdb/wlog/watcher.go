@@ -103,6 +103,8 @@ type Watcher struct {
 	startTime      time.Time
 	startTimestamp int64 // the start time as a Prometheus timestamp
 	sendSamples    bool
+	replaySegment  int
+	replayOffset   int64
 
 	recordsReadMetric       *prometheus.CounterVec
 	recordDecodeFailsMetric prometheus.Counter
@@ -302,6 +304,16 @@ func (w *Watcher) Run() error {
 	_, lastSegment, err := Segments(w.walDir)
 	if err != nil {
 		return fmt.Errorf("Segments: %w", err)
+	}
+
+	// Snapshot the end of the WAL before replay. Records added after that
+	// position are live even if their sample timestamps precede startup.
+	w.replaySegment, w.replayOffset = lastSegment, 0
+	if lastSegment >= 0 {
+		w.replayOffset, err = getSegmentSize(w.walDir, lastSegment)
+		if err != nil {
+			return fmt.Errorf("getting size of WAL segment %d: %w", lastSegment, err)
+		}
 	}
 
 	// We want to ensure this is false across iterations since
@@ -539,6 +551,7 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, onlySeries bool) er
 	for r.Next() && !isClosed(w.quit) {
 		var err error
 		rec := r.Record()
+		isLive := segmentNum > w.replaySegment || (segmentNum == w.replaySegment && r.Offset() > w.replayOffset)
 		w.recordsReadMetric.WithLabelValues(dec.Type(rec).String()).Inc()
 
 		switch dec.Type(rec) {
@@ -565,7 +578,7 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, onlySeries bool) er
 			// It's valid to do, because we override elements that we no longer need to read when filtering.
 			samplesToSend := samples[:0]
 			for _, s := range samples {
-				if s.T > w.startTimestamp {
+				if isLive || s.T > w.startTimestamp {
 					if !w.sendSamples {
 						w.sendSamples = true
 						duration := time.Since(w.startTime)
@@ -612,7 +625,7 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, onlySeries bool) er
 			// It's valid to do, because we override elements that we no longer need to read when filtering.
 			histogramsToSend := histograms[:0]
 			for _, h := range histograms {
-				if h.T > w.startTimestamp {
+				if isLive || h.T > w.startTimestamp {
 					if !w.sendSamples {
 						w.sendSamples = true
 						duration := time.Since(w.startTime)
@@ -642,7 +655,7 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, onlySeries bool) er
 			// It's valid to do, because we override elements that we no longer need to read when filtering.
 			floatHistogramsToSend := floatHistograms[:0]
 			for _, fh := range floatHistograms {
-				if fh.T > w.startTimestamp {
+				if isLive || fh.T > w.startTimestamp {
 					if !w.sendSamples {
 						w.sendSamples = true
 						duration := time.Since(w.startTime)
