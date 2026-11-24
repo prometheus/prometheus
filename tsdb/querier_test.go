@@ -4543,11 +4543,22 @@ func TestSearchLabelValuesLimitAppliedAfterOrdering(t *testing.T) {
 }
 
 // postingsRecordingIndexReader records the values of name that Postings is
-// asked for.
+// asked for. With ignoreStartAfter, LabelValues ignores hints.StartAfter,
+// which a reader can do when the hints have no Limit.
 type postingsRecordingIndexReader struct {
 	IndexReader
-	name   string
-	values []string
+	name             string
+	ignoreStartAfter bool
+	values           []string
+}
+
+func (r *postingsRecordingIndexReader) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error) {
+	if r.ignoreStartAfter && hints != nil {
+		h := *hints
+		h.StartAfter = ""
+		hints = &h
+	}
+	return r.IndexReader.LabelValues(ctx, name, hints, matchers...)
 }
 
 func (r *postingsRecordingIndexReader) Postings(ctx context.Context, name string, values ...string) (index.Postings, error) {
@@ -4558,11 +4569,14 @@ func (r *postingsRecordingIndexReader) Postings(ctx context.Context, name string
 }
 
 // TestLabelValuesWithMatchersStartAfter checks that values at or before
-// StartAfter get no postings lookup, which is the cost a cursor page saves.
+// StartAfter get no postings lookup, which is the cost a cursor page saves,
+// and that Limit counts from StartAfter.
 func TestLabelValuesWithMatchersStartAfter(t *testing.T) {
 	head, _ := newTestHead(t, 1000, compression.None, false)
 	app := head.AppenderV2(t.Context())
-	for _, name := range []string{"z_metric", "m_metric", "a_metric", "c_metric"} {
+	// The series references follow this order, and the early stop collects
+	// values in series reference order, so a_metric comes first.
+	for _, name := range []string{"a_metric", "z_metric", "c_metric", "m_metric"} {
 		_, err := app.Append(0, labels.FromStrings("__name__", name, "job", "api"), 0, 2100, 1, nil, nil, storage.AOptions{})
 		require.NoError(t, err)
 	}
@@ -4571,13 +4585,27 @@ func TestLabelValuesWithMatchersStartAfter(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, ir.Close()) })
 
-	r := &postingsRecordingIndexReader{IndexReader: ir, name: "__name__"}
-	got, err := labelValuesWithMatchers(t.Context(), r, "__name__", &storage.LabelHints{StartAfter: "c_metric", Limit: 1, LimitSmallest: true},
-		labels.MustNewMatcher(labels.MatchEqual, "job", "api"))
-	require.NoError(t, err)
-	require.Equal(t, []string{"m_metric"}, got)
-	slices.Sort(r.values)
-	require.Equal(t, []string{"m_metric", "z_metric"}, r.values)
+	for _, tc := range []struct {
+		name         string
+		hints        storage.LabelHints
+		want         []string
+		wantPostings []string
+	}{
+		{"smallest limit", storage.LabelHints{StartAfter: "c_metric", Limit: 1, LimitSmallest: true}, []string{"m_metric"}, []string{"m_metric", "z_metric"}},
+		{"early stop", storage.LabelHints{StartAfter: "a_metric", Limit: 2}, []string{"c_metric", "z_metric"}, []string{"c_metric", "m_metric", "z_metric"}},
+	} {
+		for _, ignore := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/ignoreStartAfter=%v", tc.name, ignore), func(t *testing.T) {
+				r := &postingsRecordingIndexReader{IndexReader: ir, name: "__name__", ignoreStartAfter: ignore}
+				hints := tc.hints
+				got, err := labelValuesWithMatchers(t.Context(), r, "__name__", &hints, labels.MustNewMatcher(labels.MatchEqual, "job", "api"))
+				require.NoError(t, err)
+				require.ElementsMatch(t, tc.want, got)
+				slices.Sort(r.values)
+				require.Equal(t, tc.wantPostings, r.values)
+			})
+		}
+	}
 }
 
 // TestSearchLabelValuesLimitAcrossMergedQueriers checks the merged case. The

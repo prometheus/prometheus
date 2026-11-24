@@ -81,7 +81,7 @@ func TestLabelHintsApplyLimit(t *testing.T) {
 		{"start after with smallest limit", &storage.LabelHints{StartAfter: "b", Limit: 2, LimitSmallest: true}, []string{"c", "d"}, true},
 		{"start after with smallest limit above count", &storage.LabelHints{StartAfter: "b", Limit: 5, LimitSmallest: true}, []string{"c", "d", "e"}, true},
 		{"start after before every value", &storage.LabelHints{StartAfter: "0", Limit: 3, LimitSmallest: true}, []string{"a", "b", "c"}, true},
-		{"start after every value", &storage.LabelHints{StartAfter: "e"}, nil, true},
+		{"start after every value", &storage.LabelHints{StartAfter: "e"}, []string{}, true},
 		{"start after every value with smallest limit", &storage.LabelHints{StartAfter: "e", Limit: 2, LimitSmallest: true}, []string{}, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

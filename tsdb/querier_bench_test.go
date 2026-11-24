@@ -415,6 +415,9 @@ func BenchmarkSearchLabelValues(b *testing.B) {
 						{"limit=100_filter_matcher", &storage.SearchHints{Limit: 100, Filter: prefixFilter{"metric_00"}}, []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "job", "api")}},
 						{"limit=100_resume", &storage.SearchHints{Limit: 100, ResumeAfter: resumeAfter}, nil},
 						{"limit=100_resume_matcher", &storage.SearchHints{Limit: 100, ResumeAfter: resumeAfter}, []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "job", "api")}},
+						// The prefix accepts every value, so the page after the resume point is full.
+						{"limit=100_filter_resume", &storage.SearchHints{Limit: 100, Filter: prefixFilter{"metric_"}, ResumeAfter: resumeAfter}, nil},
+						{"limit=100_filter_matcher_resume", &storage.SearchHints{Limit: 100, Filter: prefixFilter{"metric_"}, ResumeAfter: resumeAfter}, []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "job", "api")}},
 						{"unlimited", &storage.SearchHints{}, nil},
 					} {
 						b.Run(tc.name, func(b *testing.B) {

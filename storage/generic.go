@@ -455,10 +455,18 @@ func smallestNValuesAfter(values []string, n int, after string) []string {
 // limit greater than zero keeps only the first limit of them. It does not
 // modify values.
 func valuesGreaterThan(values []string, after string, limit int) []string {
-	var out []string
-	if limit > 0 {
-		out = make([]string, 0, min(limit, len(values)))
+	n := limit
+	if n <= 0 {
+		// Counting first costs less than the append growth, which allocates
+		// about five times the result for a large slice.
+		n = 0
+		for _, v := range values {
+			if v > after {
+				n++
+			}
+		}
 	}
+	out := make([]string, 0, min(n, len(values)))
 	for _, v := range values {
 		if v > after {
 			out = append(out, v)

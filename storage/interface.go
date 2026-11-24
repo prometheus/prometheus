@@ -361,9 +361,11 @@ type LabelHints struct {
 
 	// StartAfter, when non-empty, restricts label values to those lexically
 	// greater than StartAfter, and Limit and LimitSmallest then count only
-	// those values. The TSDB IndexReader implementations honour it. Other
-	// readers, and label name reads, may ignore it while they honour Limit,
-	// so only set it when the reader is known to honour it.
+	// those values. The TSDB IndexReader implementations honour it, and
+	// tsdb.IndexReader requires an implementation that applies Limit to
+	// also apply StartAfter. Other readers, and label name reads, can ignore
+	// it and still apply Limit from the first value, so only set it when the
+	// reader is known to honour it.
 	StartAfter string
 }
 
@@ -375,8 +377,9 @@ func (h *LabelHints) AllowsEarlyStop() bool {
 
 // ApplyLimit drops the values at or before StartAfter, then reduces values to
 // at most Limit entries. It keeps the lexically smallest values when
-// LimitSmallest is set, and otherwise the leading ones. A nil receiver, an
-// empty StartAfter and a Limit of zero or less leave values unchanged.
+// LimitSmallest is set, and otherwise the leading ones. A nil receiver leaves
+// values unchanged, and so does an empty StartAfter with a Limit of zero or
+// less.
 //
 // The limited result set is returned, along with a bool which indicates if the result
 // has re-used the same input slice or if a newly allocated slice has been created.
