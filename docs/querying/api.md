@@ -818,9 +818,12 @@ curl -g 'http://localhost:9090/api/v1/search/label_values?cursor=<next_cursor>'
 
 A cursor holds every parameter of the search that returned it, including the
 resolved `start` and `end`, so it is only valid for that search and on the same
-endpoint. The pages do not come from one snapshot of the data: a value that
-appears after the server returned a page, and that sorts before the last result
-of that page, is not on a later page. A request that sends `cursor` with any
+endpoint. The pages do not come from one snapshot of the data. The cursor keeps
+the resolved `start` and `end` of the first page. The in-memory head still
+returns every value it holds when its data overlaps that range. A value that
+appears after a page and sorts after its last result can be on a later page. A
+value that appears after a page and sorts before its last result is not on a
+later page. A request that sends `cursor` with any
 other parameter fails with HTTP 400. The cursor is opaque and unsigned: the
 server parses each field again with the same validation as a fresh request, so
 a cursor fails if the operator lowered `--web.search.max-limit` below its
