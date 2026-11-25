@@ -210,6 +210,12 @@ func captureLogsToTLog(t testing.TB, r io.Reader) {
 	}
 }
 
+// gracefulShutdownTimeout bounds how long commandWithLogging waits for the
+// process to exit after SIGTERM. It must exceed the default
+// --storage.remote.flush-deadline (1m), which Prometheus may spend flushing
+// remote write queues on shutdown.
+const gracefulShutdownTimeout = 2 * time.Minute
+
 func commandWithLogging(t testing.TB, logProcessor func(testing.TB, io.Reader), name string, args ...string) *exec.Cmd {
 	if logProcessor == nil {
 		logProcessor = captureLogsToTLog
@@ -237,18 +243,40 @@ func commandWithLogging(t testing.TB, logProcessor func(testing.TB, io.Reader), 
 	}()
 
 	t.Cleanup(func() {
+		// Close the writers and wait for the log processors on every path, so
+		// that all output reaches the test log before the test completes.
+		defer func() {
+			stdoutWriter.Close()
+			stderrWriter.Close()
+			wg.Wait()
+		}()
+
 		// Terminate the process gracefully, as that's the expected shutdown path.
 		// Prometheus must handle this signal cleanly.
 		if runtime.GOOS != "windows" {
-			require.NoError(t, cmd.Process.Signal(syscall.SIGTERM))
-			require.NoError(t, cmd.Wait())
+			if err := cmd.Process.Signal(syscall.SIGTERM); err != nil {
+				// The process may already be exiting, for example because the test
+				// sent it os.Interrupt. Its exit status decides.
+				t.Logf("sending SIGTERM: %v", err)
+			}
+			done := make(chan error, 1)
+			go func() { done <- cmd.Wait() }()
+			select {
+			case err := <-done:
+				if err != nil {
+					t.Errorf("process did not exit cleanly after SIGTERM: %v", err)
+				}
+			case <-time.After(gracefulShutdownTimeout):
+				// SIGQUIT makes the Go runtime write all goroutine stacks to stderr,
+				// which ends up in the test log, and exit.
+				t.Errorf("process did not exit within %v of SIGTERM, sending SIGQUIT", gracefulShutdownTimeout)
+				cmd.Process.Signal(syscall.SIGQUIT)
+				<-done
+			}
 		} else {
-			require.NoError(t, cmd.Process.Kill())
+			cmd.Process.Kill()
 			cmd.Wait()
 		}
-		require.NoError(t, stdoutWriter.Close())
-		require.NoError(t, stderrWriter.Close())
-		wg.Wait()
 	})
 	return cmd
 }
