@@ -409,6 +409,21 @@ func (ls Labels) Range(f func(l Label)) {
 	}
 }
 
+type labelIterator struct {
+	ls  Labels
+	pos int
+}
+
+func (it *labelIterator) next() (Label, bool) {
+	if it.pos == len(it.ls.data) {
+		return Label{}, false
+	}
+	var l Label
+	l.Name, it.pos = decodeString(it.ls.data, it.pos)
+	l.Value, it.pos = decodeString(it.ls.data, it.pos)
+	return l, true
+}
+
 // Validate calls f on each label. If f returns a non-nil error, then it returns that error cancelling the iteration.
 func (ls Labels) Validate(f func(l Label) error) error {
 	for i := 0; i < len(ls.data); {

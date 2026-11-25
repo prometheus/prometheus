@@ -5433,6 +5433,13 @@ func TestMutateSampleLabelsTargetMerge(t *testing.T) {
 		"__name__", "ignored", "A", "target", "a", "target", "c", "target",
 		"e", "target", "f", "target", "y", "", "z", "target", "zzz", "target",
 	)}
+	large := labels.NewScratchBuilder(target.labels.Len() + 25)
+	target.labels.Range(func(l labels.Label) { large.Add(l.Name, l.Value) })
+	for i := range 25 {
+		large.Add(fmt.Sprintf("pod_label_%02d", i), "value")
+	}
+	large.Sort()
+	target.labels = large.Labels()
 	lset := labels.FromStrings("__name__", "metric", "a", "", "b", "b", "c", "c",
 		"d", "d", "exported_c", "already_exported", "m", "m", "y", "y", "z", "z", "zz", "tail")
 	for _, tc := range []struct {
@@ -5446,29 +5453,27 @@ func TestMutateSampleLabelsTargetMerge(t *testing.T) {
 			"e", "target", "exported_c", "already_exported", "f", "target", "m", "m", "y", "y", "z", "z", "zz", "tail", "zzz", "target")},
 	} {
 		t.Run(fmt.Sprintf("honor=%v", tc.honor), func(t *testing.T) {
-			mutate, _ := newTestSampleMutators(t, target, tc.honor, false, nil)
-			require.Equal(t, tc.want.String(), mutate(lset).String())
+			wantLabels := labels.NewBuilder(tc.want)
+			for i := range 25 {
+				wantLabels.Set(fmt.Sprintf("pod_label_%02d", i), "value")
+			}
+			mutate, mutateMeta := newTestSampleMutators(t, target, tc.honor, false, nil)
+			require.Equal(t, wantLabels.Labels().String(), mutate(lset).String())
 			duplicate := labels.FromStrings("__name__", "metric", "a", "", "a", "second")
-			wantDuplicate := labels.NewBuilder(labels.FromStrings("A", "target", "__name__", "metric", "c", "target", "e", "target", "f", "target", "z", "target", "zzz", "target"))
-			if !tc.honor {
-				wantDuplicate.Set("a", "target")
+			wantDuplicate := labels.NewBuilder(target.labels)
+			wantDuplicate.Set("__name__", "metric")
+			if tc.honor {
+				wantDuplicate.Del("a")
 			}
 			require.Equal(t, wantDuplicate.Labels().String(), mutate(duplicate).String())
 			meta := metadata.Metadata{Type: model.MetricTypeCounter, Unit: "seconds", Help: "help"}
-			large := labels.NewBuilder(target.labels)
-			for i := range 25 {
-				large.Set(fmt.Sprintf("pod_label_%02d", i), "value")
-			}
-			largeTarget := &Target{labels: large.Labels()}
-			largeMutate, largeMeta := newTestSampleMutators(t, largeTarget, tc.honor, false, nil)
-			got, gotMeta := largeMeta(lset, meta)
-			require.Equal(t, largeMutate(lset).String(), got.String())
+			got, gotMeta := mutateMeta(lset, meta)
+			require.Equal(t, wantLabels.Labels().String(), got.String())
 			require.Equal(t, meta, gotMeta)
-			require.Equal(t, "value", got.Get("pod_label_24"))
 			if tc.honor {
-				exposed := labels.FromStrings("A", "metric", "__name__", "metric", "a", "metric", "c", "metric",
-					"e", "metric", "f", "metric", "y", "metric", "z", "metric", "zzz", "metric")
-				require.Equal(t, exposed.String(), mutate(exposed).String())
+				exposed := labels.NewBuilder(target.labels)
+				target.labels.Range(func(l labels.Label) { exposed.Set(l.Name, "metric") })
+				require.Equal(t, exposed.Labels().String(), mutate(exposed.Labels()).String())
 			}
 
 			// A target label mapped onto the same destination as an exposed label
