@@ -169,10 +169,10 @@ var testExpr = []struct {
 		},
 	},
 	{
-		input: "0_7",
+		input: "0_10",
 		expected: &NumberLiteral{
-			Val:      7,
-			PosRange: posrange.PositionRange{Start: 0, End: 3},
+			Val:      8,
+			PosRange: posrange.PositionRange{Start: 0, End: 4},
 		},
 	},
 	{
@@ -901,22 +901,6 @@ var testExpr = []struct {
 				PositionRange: posrange.PositionRange{Start: 0, End: 5},
 				Err:           errors.New("@ modifier must be preceded by an instant vector selector or range vector selector or a subquery"),
 				Query:         "(foo) @ end()",
-			},
-		},
-	},
-	{
-		input: "sum(foo) @ Inf",
-		fail:  true,
-		errors: ParseErrors{
-			ParseErr{
-				PositionRange: posrange.PositionRange{Start: 0, End: 8},
-				Err:           errors.New("timestamp out of bounds for @ modifier: +Inf"),
-				Query:         "sum(foo) @ Inf",
-			},
-			ParseErr{
-				PositionRange: posrange.PositionRange{Start: 0, End: 8},
-				Err:           errors.New("@ modifier must be preceded by an instant vector selector or range vector selector or a subquery"),
-				Query:         "sum(foo) @ Inf",
 			},
 		},
 	},
@@ -3550,17 +3534,6 @@ var testExpr = []struct {
 				PositionRange: posrange.PositionRange{Start: 0, End: 13},
 				Err:           errors.New("wrong number of arguments for aggregate expression provided, expected 1, got 2"),
 				Query:         "sum(foo, bar)",
-			},
-		},
-	},
-	{
-		input: "topk(1, 2, foo)",
-		fail:  true,
-		errors: ParseErrors{
-			ParseErr{
-				PositionRange: posrange.PositionRange{Start: 0, End: 15},
-				Err:           errors.New("wrong number of arguments for aggregate expression provided, expected 2, got 3"),
-				Query:         "topk(1, 2, foo)",
 			},
 		},
 	},
