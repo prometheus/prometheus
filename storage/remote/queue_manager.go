@@ -2477,7 +2477,11 @@ func isStaleTimeSeries(d *timeSeries) bool {
 
 // sparseExemplarLinearThreshold is the maximum number of exemplars in a batch
 // for which reverse linear scanning with labels.Equal is used instead of
-// hashing every live series into seriesIdx.
+// hashing every live series into seriesIdx. The value 4 sits at the conservative
+// worst-case break-even, where series share a long equal-length label prefix and
+// exemplars are detached (flipping around 4-5 exemplars). Typical mixed-metric
+// batches break even around 24+ exemplars, so using 4 avoids full-batch hashing
+// for occasional exemplars without regressing worst-case batches.
 const sparseExemplarLinearThreshold = 4
 
 type exemplarTarget struct {
