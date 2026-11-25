@@ -2486,7 +2486,11 @@ type exemplarTarget struct {
 }
 
 // findExemplarTargetLinear scans batch in reverse and returns the pendingData index of the
-// latest non-stale sample or histogram TimeSeries matching seriesLabels, or -1 if none exists.
+// last non-stale sample or histogram TimeSeries matching seriesLabels, or -1 if none exists.
+// Items are enqueued into batch in WAL order, so the last live entry is typically the most
+// recent scrape (though batch order rather than timestamp ordering is used). Scanning in
+// reverse lets us return on the first match while selecting the same last live entry as the
+// forward-overwrite pass that builds seriesIdx.
 func findExemplarTargetLinear(batch []timeSeries, nSeriesWithData int, seriesLabels labels.Labels) int {
 	dataIdx := nSeriesWithData
 	for i := len(batch) - 1; i >= 0; i-- {
@@ -2501,7 +2505,7 @@ func findExemplarTargetLinear(batch []timeSeries, nSeriesWithData int, seriesLab
 	return -1
 }
 
-// findExemplarTargetIndex returns the pendingData index of the latest non-stale
+// findExemplarTargetIndex returns the pendingData index of the last non-stale
 // sample or histogram TimeSeries in batch matching seriesLabels, or -1 if none exists.
 // It matches on post-relabel seriesLabels rather than WAL HeadSeriesRef because
 // convert_nhcb_to_classic expands one ref into multiple _bucket/_count/_sum series,
