@@ -146,8 +146,11 @@ func (c *PrometheusConverter) createAttributes(
 		// bypassing buildLabelName below, so it has to be a valid label name
 		// on its own. A blank one in particular breaks the labels.Labels
 		// invariants, and panics in Labels.Get with the dedupelabels build
-		// before this function returns.
-		if settings.AllowUTF8 {
+		// before this function returns. A blank key is checked here under
+		// every strategy, because buildLabelName rejects it with an error
+		// that does not identify the input as the cause, which answers the
+		// request with 500 rather than 400.
+		if settings.AllowUTF8 || key == "" {
 			if attrErr = validateLabelName(key); attrErr != nil {
 				return false
 			}

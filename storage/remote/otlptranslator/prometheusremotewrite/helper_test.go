@@ -520,6 +520,11 @@ func TestPrometheusConverter_createAttributes(t *testing.T) {
 			expectedError: `invalid label name ""`,
 		},
 		{
+			name:          "Empty attribute key is rejected when UTF-8 is not allowed",
+			attrs:         emptyNameAttrs,
+			expectedError: `invalid label name ""`,
+		},
+		{
 			name:          "Attribute key that is not valid UTF-8 is rejected when UTF-8 is allowed",
 			attrs:         invalidNameAttrs,
 			allowUTF8:     true,

@@ -436,6 +436,13 @@ func TestOTLPWriteHandler(t *testing.T) {
 				expected: `invalid label name ""`,
 			},
 			{
+				name:     "empty attribute key with the default strategy",
+				strategy: otlptranslator.UnderscoreEscapingWithSuffixes,
+				key:      "",
+				value:    "v",
+				expected: `invalid label name ""`,
+			},
+			{
 				name:     "attribute key that is not valid UTF-8",
 				strategy: otlptranslator.NoTranslation,
 				key:      "bad\xff\xfename",
