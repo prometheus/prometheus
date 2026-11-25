@@ -424,12 +424,7 @@ type SearchHints struct {
 	// after it in OrderBy order: greater values for OrderByValueAsc, smaller
 	// values for OrderByValueDesc. ResumeAfter itself is excluded. Limit
 	// counts only the values after ResumeAfter. It is ignored for
-	// OrderByScoreDesc.
-	//
-	// Searchers that predate this field ignore it, so callers that need
-	// correct pages must also drop values at or before ResumeAfter. Such a
-	// Searcher applies Limit from the first value, so the page that remains
-	// can be short even when more values follow it.
+	// OrderByScoreDesc. Every Searcher must apply it, see Searcher.
 	ResumeAfter string
 }
 
@@ -449,6 +444,9 @@ type SearchResult struct {
 //
 // For a given Value and SearchHints.Filter, Score must be deterministic
 // and identical across Searcher implementations.
+//
+// Every implementation must apply SearchHints.ResumeAfter, because the
+// search API pages with it and does not check the results again.
 type Searcher interface {
 	// SearchLabelNames returns an iterator over label names matching the search criteria.
 	// Results include relevance scores based on the Filter.

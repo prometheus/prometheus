@@ -66,7 +66,6 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/httputil"
 	"github.com/prometheus/prometheus/util/searchexpr"
 )
@@ -107,7 +106,6 @@ var (
 	errSearchCursorTooLarge   = fmt.Errorf("next_cursor omitted: the cursor for this search exceeds %d bytes; narrow match[], search[] or search_expr to paginate", maxSearchCursorBytes)
 	errSearchCursorNotUTF8    = errors.New("next_cursor omitted: a matcher, search term, search expression, label or result of this search is not valid UTF-8")
 	errSearchCursorEmptyValue = errors.New("next_cursor omitted: the last result of this page is an empty string")
-	errSearchResumeIgnored    = errors.New("a storage backend ignored the cursor position; this page may be incomplete")
 )
 
 // fuzzAlgorithms is the canonical list of supported fuzzy matching algorithms,
@@ -571,43 +569,6 @@ func allValidUTF8(ss []string) bool {
 		}
 	}
 	return true
-}
-
-// resumeAfterSearchResultSet drops the leading values at or before
-// resumeAfter. It guards against a Searcher that ignores
-// SearchHints.ResumeAfter, and adds a warning when it drops a value, because
-// that Searcher applied the limit from the first value.
-type resumeAfterSearchResultSet struct {
-	storage.SearchResultSet
-	resumeAfter string
-	desc        bool
-	past        bool
-	dropped     bool
-}
-
-func (s *resumeAfterSearchResultSet) Next() bool {
-	for s.SearchResultSet.Next() {
-		if s.past {
-			return true
-		}
-		v := s.At().Value
-		if (s.desc && v < s.resumeAfter) || (!s.desc && v > s.resumeAfter) {
-			s.past = true
-			return true
-		}
-		s.dropped = true
-	}
-	return false
-}
-
-func (s *resumeAfterSearchResultSet) Warnings() annotations.Annotations {
-	ws := s.SearchResultSet.Warnings()
-	if !s.dropped {
-		return ws
-	}
-	out := annotations.New()
-	out.Merge(ws)
-	return out.Add(errSearchResumeIgnored)
 }
 
 func parseSearchBoolParam(r *http.Request, name string, defaultValue bool) (bool, *apiError) {
@@ -1115,19 +1076,6 @@ type searchRequest struct {
 	cursor *searchCursor
 }
 
-// resumeResults wraps rs with the cursor backstop when the request resumes
-// a previous page.
-func (req *searchRequest) resumeResults(rs storage.SearchResultSet) storage.SearchResultSet {
-	if req.sp.resumeAfter == "" {
-		return rs
-	}
-	return &resumeAfterSearchResultSet{
-		SearchResultSet: rs,
-		resumeAfter:     req.sp.resumeAfter,
-		desc:            req.hints.OrderBy == storage.OrderByValueDesc,
-	}
-}
-
 // newSearchRequest handles the setup shared by all search endpoints: CORS headers,
 // feature-gate checks, form parsing, common parameter parsing, sort_by
 // validation, querier acquisition, and search hint construction. On success a
@@ -1271,7 +1219,7 @@ func (api *API) searchMetricNames(w http.ResponseWriter, r *http.Request) {
 	if req.cursor != nil {
 		req.cursor.IncludeMetadata = includeMetadata
 	}
-	searchResults := req.resumeResults(searchLabelValues(ctx, req.searcher, labels.MetricName, req.sp.matcherSets, req.hints))
+	searchResults := searchLabelValues(ctx, req.searcher, labels.MetricName, req.sp.matcherSets, req.hints)
 	streamSearchResults(ctx, api, w, searchResults, req.sp, req.cursor, func(sr storage.SearchResult) searchMetricNameResult {
 		result := searchMetricNameResult{Name: sr.Value}
 		if req.sp.includeScore {
@@ -1302,7 +1250,7 @@ func (api *API) searchLabelNames(w http.ResponseWriter, r *http.Request) {
 	defer req.q.Close()
 
 	ctx := r.Context()
-	searchResults := req.resumeResults(searchLabelNames(ctx, req.searcher, req.sp.matcherSets, req.hints))
+	searchResults := searchLabelNames(ctx, req.searcher, req.sp.matcherSets, req.hints)
 	streamSearchResults(ctx, api, w, searchResults, req.sp, req.cursor, func(sr storage.SearchResult) searchLabelNameResult {
 		result := searchLabelNameResult{Name: sr.Value}
 		if req.sp.includeScore {
@@ -1331,7 +1279,7 @@ func (api *API) searchLabelValues(w http.ResponseWriter, r *http.Request) {
 		req.cursor.Label = labelName
 	}
 	ctx := r.Context()
-	searchResults := req.resumeResults(searchLabelValues(ctx, req.searcher, labelName, req.sp.matcherSets, req.hints))
+	searchResults := searchLabelValues(ctx, req.searcher, labelName, req.sp.matcherSets, req.hints)
 	streamSearchResults(ctx, api, w, searchResults, req.sp, req.cursor, func(sr storage.SearchResult) searchLabelValueResult {
 		result := searchLabelValueResult{Value: sr.Value}
 		if req.sp.includeScore {

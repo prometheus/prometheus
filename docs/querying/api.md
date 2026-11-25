@@ -831,9 +831,7 @@ a cursor fails if the operator lowered `--web.search.max-limit` below its
 length, send the cursor in the body of a POST request. If the cursor for a
 search would be longer, the search holds text that is not valid UTF-8, or the
 last result of the page is an empty string, the trailer has no `next_cursor`
-and has a warning instead. If a storage backend ignores the cursor position,
-the page has a warning: it can then be incomplete, and `has_more` can be
-`false` even though more results exist. `sort_by=score` has no cursor:
+and has a warning instead. `sort_by=score` has no cursor:
 to get more results, raise `limit` (subject to `--web.search.max-limit`) or
 narrow the request via `match[]`.
 
