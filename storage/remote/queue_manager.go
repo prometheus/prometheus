@@ -485,9 +485,11 @@ type QueueManager struct {
 
 	clientMtx   sync.RWMutex
 	storeClient WriteClient
-	protoMsg    remoteapi.WriteMessageType
-	mode        remoteapi.WriteMode
-	compr       compression.Type
+	// Fixed for the lifetime of the queue manager: a protobuf_message change
+	// in the config creates a new QueueManager (see WriteStorage.ApplyConfig).
+	protoMsg remoteapi.WriteMessageType
+	mode     remoteapi.WriteMode
+	compr    compression.Type
 
 	seriesMtx        sync.Mutex // Covers seriesLabels, seriesMetadata, droppedSeries, the NHCB fields and builder.
 	seriesLabels     map[chunks.HeadSeriesRef]labels.Labels
@@ -1992,36 +1994,10 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 		}
 	}()
 
-	shardNum := strconv.Itoa(shardID)
-	symbolTable := writev2.NewSymbolTable()
-
 	// Send batches of at most MaxSamplesPerSend samples to the remote storage.
 	// If we have fewer samples than that, flush them out after a deadline anyways.
-	var (
-		maxCount = s.qm.cfg.MaxSamplesPerSend
-
-		pBuf    = proto.NewBuffer(nil)
-		pBufRaw []byte
-		encBuf  = compression.NewSyncEncodeBuffer()
-	)
-	// TODO(@tpaschalis) Should we also raise the max if we have WAL metadata?
-	if s.qm.sendExemplars {
-		maxCount += int(float64(maxCount) * 0.1)
-	}
-
-	// TODO: Dry all of this, we should make an interface/generic for the timeseries type.
 	batchQueue := queue.Chan()
-	pendingData := make([]prompb.TimeSeries, maxCount)
-	for i := range pendingData {
-		pendingData[i].Samples = []prompb.Sample{{}}
-		if s.qm.sendExemplars {
-			pendingData[i].Exemplars = []prompb.Exemplar{{}}
-		}
-	}
-	pendingDataV2 := make([]writev2.TimeSeries, maxCount)
-	for i := range pendingDataV2 {
-		pendingDataV2[i].Samples = []writev2.Sample{{}}
-	}
+	sendBatch := s.newBatchSender(strconv.Itoa(shardID))
 
 	timer := time.NewTimer(time.Duration(s.qm.cfg.BatchSendDeadline))
 	stop := func() {
@@ -2033,27 +2009,6 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 		}
 	}
 	defer stop()
-
-	sendBatch := func(batch []timeSeries, protoMsg remoteapi.WriteMessageType, compr compression.Type, timer bool) {
-		switch protoMsg {
-		case remoteapi.WriteV1MessageType:
-			nPendingSamples, nPendingExemplars, nPendingHistograms := populateTimeSeries(batch, pendingData, s.qm.sendExemplars, s.qm.sendNativeHistograms)
-			n := nPendingSamples + nPendingExemplars + nPendingHistograms
-			if timer {
-				s.qm.logger.Debug("runShard timer ticked, sending buffered data", "samples", nPendingSamples,
-					"exemplars", nPendingExemplars, "shard", shardNum, "histograms", nPendingHistograms)
-			}
-			_ = s.sendSamples(ctx, pendingData[:n], nPendingSamples, nPendingExemplars, nPendingHistograms, pBuf, encBuf, compr)
-		case remoteapi.WriteV2MessageType:
-			nPendingSamples, nPendingExemplars, nPendingHistograms, nUnexpectedMetadata := populateV2TimeSeries(&symbolTable, batch, pendingDataV2, s.qm.sendExemplars, s.qm.sendNativeHistograms, s.qm.enableTypeAndUnitLabels)
-			n := nPendingSamples + nPendingExemplars + nPendingHistograms
-			if nUnexpectedMetadata > 0 {
-				s.qm.logger.Warn("unexpected metadata sType in populateV2TimeSeries", "count", nUnexpectedMetadata)
-			}
-			_ = s.sendV2Samples(ctx, pendingDataV2[:n], symbolTable.Symbols(), nPendingSamples, nPendingExemplars, nPendingHistograms, &pBufRaw, encBuf, compr)
-			symbolTable.Reset()
-		}
-	}
 
 	for {
 		select {
@@ -2079,7 +2034,7 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 				return
 			}
 
-			sendBatch(batch, s.qm.protoMsg, s.qm.compr, false)
+			sendBatch(ctx, batch, false)
 			// TODO(bwplotka): Previously the return was between popular and send.
 			// Consider this when DRY-ing https://github.com/prometheus/prometheus/issues/14409
 			queue.ReturnForReuse(batch)
@@ -2090,11 +2045,66 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 		case <-timer.C:
 			batch := queue.Batch()
 			if len(batch) > 0 {
-				sendBatch(batch, s.qm.protoMsg, s.qm.compr, true)
+				sendBatch(ctx, batch, true)
 			}
 			queue.ReturnForReuse(batch)
 			timer.Reset(time.Duration(s.qm.cfg.BatchSendDeadline))
 		}
+	}
+}
+
+// newBatchSender allocates the pending buffers for the configured protocol and
+// returns a function that fills them from a batch and sends it to the remote
+// storage. The buffers are reused across calls, so the returned function must
+// not be called concurrently.
+func (s *shards) newBatchSender(shardNum string) func(ctx context.Context, batch []timeSeries, timer bool) {
+	maxCount := s.qm.cfg.MaxSamplesPerSend
+	// TODO(@tpaschalis) Should we also raise the max if we have WAL metadata?
+	if s.qm.sendExemplars {
+		maxCount += int(float64(maxCount) * 0.1)
+	}
+	encBuf := compression.NewSyncEncodeBuffer()
+
+	// TODO: Dry all of this, we should make an interface/generic for the timeseries type.
+	// The protocol is fixed for the lifetime of the queue manager.
+	switch s.qm.protoMsg {
+	case remoteapi.WriteV1MessageType:
+		pBuf := proto.NewBuffer(nil)
+		pendingData := make([]prompb.TimeSeries, maxCount)
+		for i := range pendingData {
+			pendingData[i].Samples = []prompb.Sample{{}}
+			if s.qm.sendExemplars {
+				pendingData[i].Exemplars = []prompb.Exemplar{{}}
+			}
+		}
+		return func(ctx context.Context, batch []timeSeries, timer bool) {
+			nPendingSamples, nPendingExemplars, nPendingHistograms := populateTimeSeries(batch, pendingData, s.qm.sendExemplars, s.qm.sendNativeHistograms)
+			n := nPendingSamples + nPendingExemplars + nPendingHistograms
+			if timer {
+				s.qm.logger.Debug("runShard timer ticked, sending buffered data", "samples", nPendingSamples,
+					"exemplars", nPendingExemplars, "shard", shardNum, "histograms", nPendingHistograms)
+			}
+			_ = s.sendSamples(ctx, pendingData[:n], nPendingSamples, nPendingExemplars, nPendingHistograms, pBuf, encBuf, s.qm.compr)
+		}
+	case remoteapi.WriteV2MessageType:
+		var pBufRaw []byte
+		symbolTable := writev2.NewSymbolTable()
+		pendingDataV2 := make([]writev2.TimeSeries, maxCount)
+		for i := range pendingDataV2 {
+			pendingDataV2[i].Samples = []writev2.Sample{{}}
+		}
+		return func(ctx context.Context, batch []timeSeries, _ bool) {
+			nPendingSamples, nPendingExemplars, nPendingHistograms, nUnexpectedMetadata := populateV2TimeSeries(&symbolTable, batch, pendingDataV2, s.qm.sendExemplars, s.qm.sendNativeHistograms, s.qm.enableTypeAndUnitLabels)
+			n := nPendingSamples + nPendingExemplars + nPendingHistograms
+			if nUnexpectedMetadata > 0 {
+				s.qm.logger.Warn("unexpected metadata sType in populateV2TimeSeries", "count", nUnexpectedMetadata)
+			}
+			_ = s.sendV2Samples(ctx, pendingDataV2[:n], symbolTable.Symbols(), nPendingSamples, nPendingExemplars, nPendingHistograms, &pBufRaw, encBuf, s.qm.compr)
+			symbolTable.Reset()
+		}
+	default:
+		// Unreachable: config validation rejects any other message type.
+		panic(fmt.Sprintf("unknown remote write protobuf message type %q", s.qm.protoMsg))
 	}
 }
 
