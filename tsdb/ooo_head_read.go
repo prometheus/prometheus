@@ -402,6 +402,62 @@ func NewOOOCompactionHead(ctx context.Context, head *Head) (*OOOCompactionHead, 
 	return ch, nil
 }
 
+// newOOOHeadReadView returns a read-only view of the out-of-order head as a
+// BlockReader.
+//
+// Unlike NewOOOCompactionHead it does not modify the head: it does not m-map the
+// in-memory OOO chunks and does not cut a new WBL segment. The view also includes
+// the chunks that are still in memory, so it sees every OOO sample that queries
+// see. It must only be used while the OOO data cannot be truncated, for example
+// while holding db.cmtx; callers must not use it for compaction.
+func newOOOHeadReadView(ctx context.Context, head *Head) (*OOOCompactionHead, error) {
+	ch := &OOOCompactionHead{
+		head:       head,
+		chunkRange: head.chunkRange.Load(),
+		mint:       math.MaxInt64,
+		maxt:       math.MinInt64,
+	}
+
+	hr := headIndexReader{head: head, mint: ch.mint, maxt: ch.maxt}
+	n, v := index.AllPostingsKey()
+	p, err := hr.Postings(ctx, n, v)
+	if err != nil {
+		return nil, err
+	}
+	p = hr.SortedPostings(p)
+
+	for p.Next() {
+		seriesRef := p.At()
+		ms := head.series.getByID(chunks.HeadSeriesRef(seriesRef))
+		if ms == nil {
+			continue
+		}
+
+		ms.Lock()
+		if ms.ooo != nil {
+			hasOOOChunks := false
+			if c := ms.ooo.oooHeadChunk; c != nil && len(c.chunk.samples) > 0 {
+				hasOOOChunks = true
+				ch.mint = min(ch.mint, c.minTime)
+				ch.maxt = max(ch.maxt, c.maxTime)
+			}
+			for _, c := range ms.ooo.oooMmappedChunks {
+				hasOOOChunks = true
+				ch.mint = min(ch.mint, c.minTime)
+				ch.maxt = max(ch.maxt, c.maxTime)
+			}
+			if hasOOOChunks {
+				ch.postings = append(ch.postings, seriesRef)
+			}
+		}
+		ms.Unlock()
+	}
+	if err := p.Err(); err != nil {
+		return nil, err
+	}
+	return ch, nil
+}
+
 // mmapOOOSeriesChunk m-maps OOO chunks for a single series during compaction head creation.
 // It uses deferred unlocking so that the series lock is released even if
 // mmapCurrentOOOHeadChunk panics (e.g. via handleChunkWriteError), preventing
