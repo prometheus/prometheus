@@ -5486,6 +5486,29 @@ func TestMutateSampleLabelsTargetMerge(t *testing.T) {
 			}
 			mapped, _ := newTestSampleMutators(t, target, tc.honor, false, []*relabel.Config{&rc})
 			require.Equal(t, want, mapped(lset).Get("mapped"))
+
+			t.Run("drop", func(t *testing.T) {
+				rc := relabel.DefaultRelabelConfig
+				rc.Action = relabel.Drop
+				drop, dropMeta := newTestSampleMutators(t, target, tc.honor, false, []*relabel.Config{&rc})
+				require.True(t, drop(lset).IsEmpty())
+				got, gotMeta := dropMeta(lset, meta)
+				require.True(t, got.IsEmpty())
+				require.Equal(t, metadata.Metadata{}, gotMeta)
+			})
+
+			t.Run("metadata", func(t *testing.T) {
+				rc := relabel.DefaultRelabelConfig
+				rc.TargetLabel, rc.Replacement = model.MetricUnitLabel, "bytes"
+				_, mutateMeta := newTestSampleMutators(t, target, tc.honor, false, []*relabel.Config{&rc})
+				_, gotMeta := mutateMeta(lset, meta)
+				require.Equal(t, metadata.Metadata{Type: model.MetricTypeCounter, Unit: "bytes", Help: "help"}, gotMeta)
+
+				_, mutateMeta = newTestSampleMutators(t, target, tc.honor, true, []*relabel.Config{&rc})
+				got, _ := mutateMeta(lset, meta)
+				require.Equal(t, string(model.MetricTypeCounter), got.Get(model.MetricTypeLabel))
+				require.Equal(t, "bytes", got.Get(model.MetricUnitLabel))
+			})
 		})
 	}
 }
