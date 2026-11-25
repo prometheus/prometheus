@@ -38,6 +38,7 @@ import (
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/pool"
 	"github.com/prometheus/prometheus/util/teststorage"
@@ -379,4 +380,19 @@ func applyDefaultSynctestConfig(t *testing.T, scrapeManager *Manager, interval t
 	})
 
 	scrapeManager.reload()
+}
+
+// newTestSampleMutators uses the production scrape-loop setup without starting it.
+func newTestSampleMutators(t testing.TB, target *Target, honor, typeAndUnit bool, rc []*relabel.Config) (labelsMutator, labelsAndMetadataMutator) {
+	cfg := config.DefaultScrapeConfig
+	cfg.HonorLabels, cfg.MetricRelabelConfigs = honor, rc
+	sl := newScrapeLoop(scrapeLoopOptions{
+		target: target, cache: newScrapeCache(nil),
+		sp: &scrapePool{
+			ctx: t.Context(), logger: promslog.NewNopLogger(), config: &cfg,
+			options: &Options{EnableMetadataRelabeling: true, EnableTypeAndUnitLabels: typeAndUnit},
+		},
+	})
+	sl.cancel()
+	return sl.sampleMutator, sl.sampleMutatorWithMetadata
 }
