@@ -36,6 +36,7 @@ import (
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -168,9 +169,12 @@ func mockServer(code int, body string) (*httptest.Server, func() *http.Request) 
 func TestCheckSDFile(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
-		name string
-		file string
-		err  string
+		name        string
+		file        string
+		input       string
+		want        []*targetgroup.Group
+		err         string
+		errContains string
 	}{
 		{
 			name: "good .yml",
@@ -192,18 +196,101 @@ func TestCheckSDFile(t *testing.T) {
 		{
 			name: "bad format",
 			file: "./testdata/bad-sd-file-format.yml",
-			err:  "yaml: unmarshal errors:\n  line 1: field targats not found in type struct { Targets []string \"yaml:\\\"targets\\\"\"; Labels model.LabelSet \"yaml:\\\"labels\\\"\" }",
+			err:  "yaml: construct errors: line 1: field targats not found in type struct { Targets []string \"yaml:\\\"targets\\\"\"; Labels model.LabelSet \"yaml:\\\"labels\\\"\" }",
+		},
+		{
+			name: "empty YAML",
+		},
+		{
+			name:  "comment-only YAML",
+			input: "# No target groups.\n",
+		},
+		{
+			name:  "null YAML",
+			input: "null\n",
+		},
+		{
+			name:        "null target group",
+			input:       "- null\n",
+			errContains: "nil target group item found",
+		},
+		{
+			name:  "null targets and labels",
+			input: "- targets: null\n  labels: null\n",
+			want:  []*targetgroup.Group{{Targets: []model.LabelSet{}}},
+		},
+		{
+			name:        "duplicate targets",
+			input:       "- targets: []\n  targets: []\n",
+			errContains: "targets",
+		},
+		{
+			name:        "duplicate label",
+			input:       "- labels: {job: first, job: second}\n",
+			errContains: "job",
+		},
+		{
+			name:  "first document only",
+			input: "- targets: [localhost:9090]\n---\nunknown: ignored\n",
+			want: []*targetgroup.Group{{
+				Targets: []model.LabelSet{{model.AddressLabel: "localhost:9090"}},
+			}},
+		},
+		{
+			name:  "malformed trailing document ignored",
+			input: "- targets: [localhost:9090]\n---\n[unterminated\n",
+			want: []*targetgroup.Group{{
+				Targets: []model.LabelSet{{model.AddressLabel: "localhost:9090"}},
+			}},
+		},
+		{
+			name: "aliases and merge keys",
+			input: `- targets: &targets [localhost:9090]
+  labels: &labels {job: node, switch: on}
+- targets: *targets
+  labels: {<<: *labels, zone: west}
+`,
+			want: []*targetgroup.Group{
+				{
+					Targets: []model.LabelSet{{model.AddressLabel: "localhost:9090"}},
+					Labels:  model.LabelSet{"job": "node", "switch": "on"},
+				},
+				{
+					Targets: []model.LabelSet{{model.AddressLabel: "localhost:9090"}},
+					Labels:  model.LabelSet{"job": "node", "switch": "on", "zone": "west"},
+				},
+			},
+		},
+		{
+			name: "merge overriding a label",
+			input: `- labels: &labels {job: node}
+- labels: {<<: *labels, job: other}
+`,
+			// Preserve v2's rejection of an override after a merged label.
+			errContains: "job",
 		},
 	}
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			_, err := checkSDFile(test.file)
+			filename := test.file
+			if filename == "" {
+				filename = filepath.Join(t.TempDir(), "targets.yml")
+				require.NoError(t, os.WriteFile(filename, []byte(test.input), 0o600))
+			}
+			got, err := checkSDFile(filename)
 			if test.err != "" {
 				require.EqualErrorf(t, err, test.err, "Expected error %q, got %q", test.err, err.Error())
 				return
 			}
+			if test.errContains != "" {
+				require.ErrorContains(t, err, test.errContains)
+				return
+			}
 			require.NoError(t, err)
+			if test.file == "" {
+				require.Equal(t, test.want, got)
+			}
 		})
 	}
 }

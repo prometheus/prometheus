@@ -33,7 +33,6 @@ import (
 	"github.com/nsf/jsondiff"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
-	"go.yaml.in/yaml/v2"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -92,7 +91,7 @@ func ruleUnitTest(filename string, queryOpts promqltest.LazyLoaderOpts, p parser
 	}
 
 	var unitTestInp unitTestFile
-	if err := yaml.UnmarshalStrict(b, &unitTestInp); err != nil {
+	if err := loadYAML(b, &unitTestInp); err != nil {
 		ts.Abort(err)
 		return []error{err}
 	}
