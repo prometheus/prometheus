@@ -94,6 +94,12 @@ func TestDisplayHistogram(t *testing.T) {
 				"[130, 139]: 0 \n" +
 				"[140, 149]: 1 " + strings.Repeat("#", 50) + "\n\n",
 		},
+		{
+			name:  "zero",
+			datas: []int{0},
+			want: "samples per float chunk (min/avg/max): 0/0/0\n" +
+				"[0, 9]: 1 " + strings.Repeat("#", 100) + "\n\n",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			oldStdout := os.Stdout
