@@ -543,13 +543,16 @@ func BenchmarkCommitMetadata(b *testing.B) {
 				}
 			}
 
+			a := &headAppenderBase{head: &Head{}}
+			require.LessOrEqual(b, uint64(b.N), uint64(seriesPendingCommitMask))
 			batch := &appendBatch{
 				metadata:       make([]record.RefMetadata, numSeries),
 				metadataSeries: make([]*memSeries, numSeries),
 			}
 			for i := range numSeries {
 				fam := i % numFamilies
-				batch.metadataSeries[i] = &memSeries{ref: chunks.HeadSeriesRef(i + 1)}
+				// Reserve all iterations up front to time only committing metadata.
+				batch.metadataSeries[i] = &memSeries{ref: chunks.HeadSeriesRef(i + 1), state: uint32(b.N)}
 				batch.metadata[i] = record.RefMetadata{
 					Ref:  chunks.HeadSeriesRef(i + 1),
 					Type: uint8(record.Counter),
@@ -560,8 +563,12 @@ func BenchmarkCommitMetadata(b *testing.B) {
 
 			b.ReportAllocs()
 			b.ResetTimer()
-			for b.Loop() {
-				commitMetadata(batch)
+			for range b.N {
+				a.commitMetadata(batch)
+			}
+			b.StopTimer()
+			for _, s := range batch.metadataSeries {
+				require.Zero(b, s.pendingCommitCount())
 			}
 		})
 	}

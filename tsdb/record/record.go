@@ -927,11 +927,22 @@ type Encoder struct {
 }
 
 // Series appends the encoded series to b and returns the resulting slice.
-func (*Encoder) Series(series []RefSeries, b []byte) []byte {
+func (e *Encoder) Series(series []RefSeries, b []byte) []byte {
+	return e.SeriesFromFunc(len(series), func(i int) RefSeries {
+		return series[i]
+	}, b)
+}
+
+// SeriesFromFunc appends a single WAL record of type Series to b and returns the
+// resulting slice. The record contains n entries, each with a series reference
+// and labels supplied by seriesAt(i), called once per index in order from 0 to n-1.
+// The function and returned labels are not retained.
+func (*Encoder) SeriesFromFunc(n int, seriesAt func(int) RefSeries, b []byte) []byte {
 	buf := encoding.Encbuf{B: b}
 	buf.PutByte(byte(Series))
 
-	for _, s := range series {
+	for i := range n {
+		s := seriesAt(i)
 		buf.PutBE64(uint64(s.Ref))
 		EncodeLabels(&buf, s.Labels)
 	}

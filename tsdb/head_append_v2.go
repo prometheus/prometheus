@@ -103,18 +103,18 @@ func (h *Head) appenderV2() *headAppenderV2 {
 	appendID, cleanupAppendIDsBelow := h.iso.newAppendID(minValidTime) // Every appender gets an ID that is cleared upon commit/rollback.
 	return &headAppenderV2{
 		headAppenderBase: headAppenderBase{
-			head:                  h,
-			minValidTime:          minValidTime,
-			headMaxt:              h.MaxTime(),
-			oooTimeWindow:         h.opts.OutOfOrderTimeWindow.Load(),
-			seriesRefs:            h.getRefSeriesBuffer(),
-			series:                h.getSeriesBuffer(),
-			typesInBatch:          h.getTypeMap(),
-			appendID:              appendID,
-			cleanupAppendIDsBelow: cleanupAppendIDsBelow,
-			storeST:               h.opts.EnableSTStorage.Load(),
-			useXOR2:               h.opts.UseXOR2FloatEncoding(),
-			useHistogramST:        h.opts.EnableHistogramSTEncoding.Load(),
+			head:                   h,
+			minValidTime:           minValidTime,
+			headMaxt:               h.MaxTime(),
+			oooTimeWindow:          h.opts.OutOfOrderTimeWindow.Load(),
+			seriesRecordCandidates: h.getSeriesRecordCandidateBuffer(),
+			series:                 h.getSeriesBuffer(),
+			typesInBatch:           h.getTypeMap(),
+			appendID:               appendID,
+			cleanupAppendIDsBelow:  cleanupAppendIDsBelow,
+			storeST:                h.opts.EnableSTStorage.Load(),
+			useXOR2:                h.opts.UseXOR2FloatEncoding(),
+			useHistogramST:         h.opts.EnableHistogramSTEncoding.Load(),
 		},
 	}
 }
@@ -229,6 +229,12 @@ func (a *headAppenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t i
 	if a.head.opts.EnableMetadataWALRecords && !opts.Metadata.IsEmpty() {
 		s.Lock()
 		metaChanged := metadata.IsZeroHandle(s.meta) || !s.meta.Value().Equals(opts.Metadata)
+		if metaChanged {
+			// Keep the series until the metadata record is committed or rolled back.
+			s.markPendingCommit()
+			// No need to call trackSeriesRecord here; the sample append above already
+			// tracks any required WAL series record.
+		}
 		s.Unlock()
 		if metaChanged {
 			b := a.getCurrentBatch(stNone, s.ref)
@@ -283,6 +289,7 @@ func (a *headAppenderV2) appendFloat(s *memSeries, st, t int64, v float64, fastR
 	}
 	if err == nil {
 		s.markPendingCommit()
+		a.trackSeriesRecord(s, s.lset)
 	}
 	s.Unlock()
 	if delta > 0 {
@@ -314,6 +321,7 @@ func (a *headAppenderV2) appendHistogram(s *memSeries, st, t int64, h *histogram
 	}
 	if err == nil {
 		s.markPendingCommit()
+		a.trackSeriesRecord(s, s.lset)
 	}
 	s.Unlock()
 	if delta > 0 {
@@ -349,6 +357,7 @@ func (a *headAppenderV2) appendFloatHistogram(s *memSeries, st, t int64, fh *his
 	}
 	if err == nil {
 		s.markPendingCommit()
+		a.trackSeriesRecord(s, s.lset)
 	}
 	s.Unlock()
 	if delta > 0 {
