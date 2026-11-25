@@ -45,6 +45,10 @@ const (
 	// point defines +Inf as an explicit bound; its le="+Inf" series is taken
 	// from count instead.
 	WarningCategoryHistogramPlusInfBound WarningCategory = "histogram_plus_inf_bound"
+	// WarningCategoryHistogramScaleTooLow is set when an exponential histogram
+	// data point has a scale below the lowest native histogram schema, -4, and
+	// is dropped.
+	WarningCategoryHistogramScaleTooLow WarningCategory = "histogram_scale_too_low"
 	// WarningCategoryOther is the fallback for any warning that has not been
 	// assigned a category. It keeps the label space bounded.
 	WarningCategoryOther WarningCategory = "other"
