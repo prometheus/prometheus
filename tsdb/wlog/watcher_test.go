@@ -968,3 +968,70 @@ func TestWatcher_TailOlderSamples(t *testing.T) {
 		})
 	}
 }
+
+type blockingSeriesWriter struct {
+	*writeToMock
+	stored  chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func (w *blockingSeriesWriter) StoreSeries(series []record.RefSeries, index int) {
+	w.writeToMock.StoreSeries(series, index)
+	w.once.Do(func() {
+		close(w.stored)
+		<-w.release
+	})
+}
+
+func TestWatcher_RetryDoesNotDropUnreadLiveOlderSamples(t *testing.T) {
+	dir := t.TempDir()
+	walDir := filepath.Join(dir, "wal")
+	wal, err := NewSize(nil, nil, walDir, 32*1024, compression.None)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, wal.Close()) })
+
+	enc := record.Encoder{}
+	require.NoError(t, wal.Log(enc.Series([]record.RefSeries{{
+		Ref:    1,
+		Labels: labels.FromStrings("__name__", "temperature"),
+	}}, nil)))
+	_, err = wal.NextSegment()
+	require.NoError(t, err)
+
+	writer := &blockingSeriesWriter{
+		writeToMock: newWriteToMock(0),
+		stored:      make(chan struct{}),
+		release:     make(chan struct{}),
+	}
+	watcher := NewWatcher(wMetrics, nil, nil, t.Name(), writer, dir, false, false, false, nil)
+	watcher.SetMetrics()
+	watcher.SetStartTime(time.Now())
+
+	firstRun := make(chan error, 1)
+	go func() { firstRun <- watcher.Run() }()
+	<-writer.stored
+
+	// Run has snapshotted segment 1 and is still reading segment 0.
+	_, err = wal.NextSegment()
+	require.NoError(t, err)
+	live := record.RefSample{Ref: 1, T: timestamp.FromTime(time.Now().Add(-time.Hour)), V: 5}
+	require.NoError(t, wal.Log(enc.Samples([]record.RefSample{live}, nil)))
+	_, err = wal.NextSegment()
+	require.NoError(t, err)
+
+	// Simulate truncation while retaining the sample in segment 2.
+	require.NoError(t, os.Remove(SegmentName(walDir, 1)))
+	close(writer.release)
+	require.Error(t, <-firstRun)
+	require.NoError(t, os.Remove(SegmentName(walDir, 0)))
+
+	// Repeat the retry's start-time reset and stop after reading segment 2.
+	watcher.SetStartTime(time.Now())
+	watcher.MaxSegment = 2
+	require.NoError(t, watcher.Run())
+
+	writer.mu.Lock()
+	defer writer.mu.Unlock()
+	require.Equal(t, []record.RefSample{live}, writer.samplesAppended)
+}

@@ -105,6 +105,7 @@ type Watcher struct {
 	sendSamples    bool
 	replaySegment  int
 	replayOffset   int64
+	replaySnapshot bool
 
 	recordsReadMetric       *prometheus.CounterVec
 	recordDecodeFailsMetric prometheus.Counter
@@ -307,12 +308,18 @@ func (w *Watcher) Run() error {
 	}
 
 	// Snapshot the end of the WAL before replay. Records added after that
-	// position are live even if their sample timestamps precede startup.
-	w.replaySegment, w.replayOffset = lastSegment, 0
-	if lastSegment >= 0 {
-		w.replayOffset, err = getSegmentSize(w.walDir, lastSegment)
-		if err != nil {
-			return fmt.Errorf("getting size of WAL segment %d: %w", lastSegment, err)
+	// position are live even if their sample timestamps precede startup. Keep
+	// the first snapshot across retries (loop reruns Run after a WAL read
+	// error): re-snapshotting would mark records written but never read as
+	// historical and drop them.
+	if !w.replaySnapshot {
+		w.replaySnapshot = true
+		w.replaySegment, w.replayOffset = lastSegment, 0
+		if lastSegment >= 0 {
+			w.replayOffset, err = getSegmentSize(w.walDir, lastSegment)
+			if err != nil {
+				return fmt.Errorf("getting size of WAL segment %d: %w", lastSegment, err)
+			}
 		}
 	}
 
@@ -355,7 +362,11 @@ func (w *Watcher) Run() error {
 		// On start, after reading the existing WAL for series records, we have a pointer to what is the latest segment.
 		// On subsequent calls to this function, currentSegment will have been incremented and we should open that segment.
 		w.logger.Debug("Processing segment", "currentSegment", currentSegment)
-		if err := w.watch(currentSegment, currentSegment < lastSegment); err != nil && !errors.Is(err, ErrIgnorable) {
+		// Segments entirely before the replay boundary only need series
+		// records. Later ones can hold live records written since the
+		// snapshot (e.g. before a retried Run), so read those in full even
+		// mid-replay.
+		if err := w.watch(currentSegment, currentSegment < lastSegment && currentSegment < w.replaySegment); err != nil && !errors.Is(err, ErrIgnorable) {
 			return err
 		}
 
@@ -552,6 +563,11 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, onlySeries bool) er
 		var err error
 		rec := r.Record()
 		isLive := segmentNum > w.replaySegment || (segmentNum == w.replaySegment && r.Offset() > w.replayOffset)
+		if isLive {
+			// Advance the live boundary with the record so a retried Run
+			// neither re-sends delivered records nor drops unread ones.
+			w.replaySegment, w.replayOffset = segmentNum, r.Offset()
+		}
 		w.recordsReadMetric.WithLabelValues(dec.Type(rec).String()).Inc()
 
 		switch dec.Type(rec) {
