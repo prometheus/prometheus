@@ -119,6 +119,11 @@ func TestPrometheusConverter_createAttributes(t *testing.T) {
 	invalidNameAttrs.PutStr("metric\xff\xfeattr", "metric value")
 	invalidValueAttrs := pcommon.NewMap()
 	invalidValueAttrs.PutStr("metric.attr", "metric\xff\xfevalue")
+	// A __name__ attribute is always overwritten by the metric name passed in
+	// extras, as it is for target_info, so its own value never reaches a series.
+	nameAttrs := pcommon.NewMap()
+	nameAttrs.PutStr("metric-attr", "metric value")
+	nameAttrs.PutStr(model.MetricNameLabel, "")
 	invalidResource := pcommon.NewResource()
 	invalidResource.Attributes().PutStr("service.name", "service name")
 	invalidResource.Attributes().PutStr("resource.attr", "resource\xff\xfevalue")
@@ -523,6 +528,16 @@ func TestPrometheusConverter_createAttributes(t *testing.T) {
 			name:          "Empty attribute key is rejected when UTF-8 is not allowed",
 			attrs:         emptyNameAttrs,
 			expectedError: `invalid label name ""`,
+		},
+		{
+			name:  "Attribute named __name__ is overwritten by the metric name",
+			attrs: nameAttrs,
+			expectedLabels: labels.FromStrings(
+				"__name__", "test_metric",
+				"instance", "service ID",
+				"job", "service name",
+				"metric_attr", "metric value",
+			),
 		},
 		{
 			name:          "Attribute key that is not valid UTF-8 is rejected when UTF-8 is allowed",

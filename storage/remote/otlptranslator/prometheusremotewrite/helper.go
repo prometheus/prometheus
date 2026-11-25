@@ -80,16 +80,23 @@ func validateLabelName(name string) error {
 
 // validateLabelValue returns an error if value cannot be stored as the value of
 // the label name. No path in this package sanitizes values, so every value that
-// reaches the builder has to be checked.
+// reaches the builder has to be checked. The value of __name__ is checked with
+// validateMetricName instead, and only where the final name is set: a __name__
+// attribute is always overwritten by the metric name, so applying the metric
+// name rules to the attribute value would reject input that produces a valid
+// series.
 func validateLabelValue(name, value string) error {
-	if name == model.MetricNameLabel {
-		if !model.UTF8Validation.IsValidMetricName(value) {
-			return fmt.Errorf("%w: invalid metric name %q", ErrInvalidLabels, value)
-		}
-		return nil
-	}
 	if !model.LabelValue(value).IsValid() {
 		return fmt.Errorf("%w: invalid value %q for label %q", ErrInvalidLabels, value, name)
+	}
+	return nil
+}
+
+// validateMetricName returns an error if name cannot be stored as the value of
+// the __name__ label.
+func validateMetricName(name string) error {
+	if !model.UTF8Validation.IsValidMetricName(name) {
+		return fmt.Errorf("%w: invalid metric name %q", ErrInvalidLabels, name)
 	}
 	return nil
 }
@@ -261,7 +268,11 @@ func (c *PrometheusConverter) createAttributes(
 				return labels.EmptyLabels(), err
 			}
 		}
-		if err := validateLabelValue(name, extras[i+1]); err != nil {
+		if name == model.MetricNameLabel {
+			if err := validateMetricName(extras[i+1]); err != nil {
+				return labels.EmptyLabels(), err
+			}
+		} else if err := validateLabelValue(name, extras[i+1]); err != nil {
 			return labels.EmptyLabels(), err
 		}
 		c.builder.Set(name, extras[i+1])
