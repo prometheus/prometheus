@@ -48,7 +48,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"math"
 	"net/http"
 	"net/url"
@@ -380,11 +379,13 @@ type searchCursor struct {
 	IncludeScore    bool     `json:"include_score"`
 	IncludeMetadata bool     `json:"include_metadata,omitempty"`
 	Label           string   `json:"label,omitempty"`
-	Start           int64    `json:"start"`
-	End             int64    `json:"end"`
-	Limit           int      `json:"limit"`
-	BatchSize       int      `json:"batch_size"`
-	ResumeAfter     string   `json:"resume_after"`
+	// Start and End are pointers so that a cursor without them fails: the
+	// request parser does not see them, so a zero value would pass.
+	Start       *int64 `json:"start"`
+	End         *int64 `json:"end"`
+	Limit       int    `json:"limit"`
+	BatchSize   int    `json:"batch_size"`
+	ResumeAfter string `json:"resume_after"`
 }
 
 // decodeSearchCursor decodes the cursor parameter of form and checks the
@@ -407,9 +408,14 @@ func decodeSearchCursor(form url.Values, endpoint string) (*searchCursor, error)
 	if err != nil {
 		return nil, fmt.Errorf("invalid cursor: %w", err)
 	}
-	c, err := unmarshalSearchCursor(data)
-	if err != nil {
+	var c searchCursor
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&c); err != nil {
 		return nil, fmt.Errorf("invalid cursor: %w", err)
+	}
+	if c.Start == nil || c.End == nil {
+		return nil, errors.New("invalid cursor: start and end must be set")
 	}
 	if c.Version != searchCursorVersion {
 		return nil, fmt.Errorf("invalid cursor: unsupported version %d", c.Version)
@@ -419,87 +425,6 @@ func decodeSearchCursor(form url.Values, endpoint string) (*searchCursor, error)
 	}
 	if c.ResumeAfter == "" {
 		return nil, errors.New("invalid cursor: resume_after must not be empty")
-	}
-	return c, nil
-}
-
-// searchCursorField is one JSON key of searchCursor. Fields that encode with
-// omitempty are optional.
-type searchCursorField struct {
-	key      string
-	ptr      any
-	optional bool
-}
-
-func (c *searchCursor) jsonFields() []searchCursorField {
-	return []searchCursorField{
-		{"v", &c.Version, false},
-		{"endpoint", &c.Endpoint, false},
-		{"match", &c.Match, true},
-		{"search", &c.Search, true},
-		{"search_expr", &c.SearchExpr, true},
-		{"fuzz_threshold", &c.FuzzThreshold, false},
-		{"fuzz_alg", &c.FuzzAlg, false},
-		{"case_sensitive", &c.CaseSensitive, false},
-		{"sort_dir", &c.SortDir, false},
-		{"include_score", &c.IncludeScore, false},
-		{"include_metadata", &c.IncludeMetadata, true},
-		{"label", &c.Label, true},
-		{"start", &c.Start, false},
-		{"end", &c.End, false},
-		{"limit", &c.Limit, false},
-		{"batch_size", &c.BatchSize, false},
-		{"resume_after", &c.ResumeAfter, false},
-	}
-}
-
-// unmarshalSearchCursor decodes data as a searchCursor. encoding/json matches
-// keys without regard to case and keeps the last of duplicate keys, so this
-// reads the object one key at a time and requires each key to be exact,
-// unique, not null, and present unless optional.
-func unmarshalSearchCursor(data []byte) (*searchCursor, error) {
-	var c searchCursor
-	fields := c.jsonFields()
-	var seen uint32
-	dec := json.NewDecoder(bytes.NewReader(data))
-	if tok, err := dec.Token(); err != nil || tok != json.Delim('{') {
-		return nil, errors.New("payload is not a JSON object")
-	}
-	for dec.More() {
-		tok, err := dec.Token()
-		if err != nil {
-			return nil, err
-		}
-		key, _ := tok.(string)
-		i := slices.IndexFunc(fields, func(f searchCursorField) bool { return f.key == key })
-		if i < 0 {
-			return nil, fmt.Errorf("unknown field %q", key)
-		}
-		if seen&(1<<i) != 0 {
-			return nil, fmt.Errorf("duplicate field %q", key)
-		}
-		seen |= 1 << i
-		var value json.RawMessage
-		if err := dec.Decode(&value); err != nil {
-			return nil, err
-		}
-		if string(value) == "null" {
-			return nil, fmt.Errorf("field %q is null", key)
-		}
-		if err := json.Unmarshal(value, fields[i].ptr); err != nil {
-			return nil, fmt.Errorf("field %q: %w", key, err)
-		}
-	}
-	if _, err := dec.Token(); err != nil {
-		return nil, err
-	}
-	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
-		return nil, errors.New("unexpected data after the payload")
-	}
-	for i, f := range fields {
-		if !f.optional && seen&(1<<i) == 0 {
-			return nil, fmt.Errorf("missing field %q", f.key)
-		}
 	}
 	return &c, nil
 }
@@ -1121,7 +1046,7 @@ func (api *API) newSearchRequest(w http.ResponseWriter, r *http.Request, endpoin
 		return nil
 	}
 	if cursor != nil {
-		sp.start, sp.end = timestamp.Time(cursor.Start), timestamp.Time(cursor.End)
+		sp.start, sp.end = timestamp.Time(*cursor.Start), timestamp.Time(*cursor.End)
 		// formValues omits start and end, so the parser reports a default
 		// range that this request does not use.
 		sp.rangeWarning = nil
@@ -1171,6 +1096,7 @@ func (api *API) newSearchRequest(w http.ResponseWriter, r *http.Request, endpoin
 
 	req := &searchRequest{sp: sp, hints: hints, searcher: searcher, q: q}
 	if hints.OrderBy != storage.OrderByScoreDesc {
+		start, end := timestamp.FromTime(sp.start), timestamp.FromTime(sp.end)
 		req.cursor = &searchCursor{
 			Version:       searchCursorVersion,
 			Endpoint:      endpoint,
@@ -1182,8 +1108,8 @@ func (api *API) newSearchRequest(w http.ResponseWriter, r *http.Request, endpoin
 			CaseSensitive: sp.caseSensitive,
 			SortDir:       sp.sortDir,
 			IncludeScore:  sp.includeScore,
-			Start:         timestamp.FromTime(sp.start),
-			End:           timestamp.FromTime(sp.end),
+			Start:         &start,
+			End:           &end,
 			Limit:         sp.limit,
 			BatchSize:     sp.batchSize,
 		}

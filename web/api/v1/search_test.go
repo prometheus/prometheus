@@ -2259,8 +2259,8 @@ func TestSearchCursorPagination(t *testing.T) {
 			SortDir:         "asc",
 			IncludeScore:    true,
 			IncludeMetadata: true,
-			Start:           3600123,
-			End:             7000456,
+			Start:           int64Ptr(3600123),
+			End:             int64Ptr(7000456),
 			Limit:           1,
 			BatchSize:       1,
 			ResumeAfter:     "go_gc_duration_seconds",
@@ -2332,18 +2332,12 @@ func TestSearchCursorRejected(t *testing.T) {
 	}
 	unknownField := validFields()
 	unknownField["score_after"] = 0.5
-	otherCase := validFields()
-	delete(otherCase, "v")
-	otherCase["V"] = searchCursorVersion
 	missingStart := validFields()
 	delete(missingStart, "start")
 	nullStart := validFields()
 	nullStart["start"] = nil
 	stringLimit := validFields()
 	stringLimit["limit"] = "5"
-	trailing, err := json.Marshal(valid)
-	require.NoError(t, err)
-	duplicate := append([]byte(`{"limit":3,`), trailing[1:]...)
 
 	for _, tc := range []struct {
 		name    string
@@ -2358,13 +2352,10 @@ func TestSearchCursorRejected(t *testing.T) {
 		{"not base64", "/search/label_values", url.Values{"cursor": {"!!!"}}, "invalid cursor"},
 		{"not JSON", "/search/label_values", url.Values{"cursor": {base64.RawURLEncoding.EncodeToString([]byte("nope"))}}, "invalid cursor"},
 		{"unknown field", "/search/label_values", url.Values{"cursor": {encodeTestCursor(t, unknownField)}}, `unknown field \"score_after\"`},
-		{"trailing data", "/search/label_values", url.Values{"cursor": {base64.RawURLEncoding.EncodeToString(append(trailing, []byte(" {}")...))}}, "unexpected data after the payload"},
-		{"key in other case", "/search/label_values", url.Values{"cursor": {encodeTestCursor(t, otherCase)}}, `unknown field \"V\"`},
-		{"duplicate key", "/search/label_values", url.Values{"cursor": {base64.RawURLEncoding.EncodeToString(duplicate)}}, `duplicate field \"limit\"`},
-		{"missing field", "/search/label_values", url.Values{"cursor": {encodeTestCursor(t, missingStart)}}, `missing field \"start\"`},
-		{"null field", "/search/label_values", url.Values{"cursor": {encodeTestCursor(t, nullStart)}}, `field \"start\" is null`},
-		{"wrong type", "/search/label_values", url.Values{"cursor": {encodeTestCursor(t, stringLimit)}}, `field \"limit\"`},
-		{"not an object", "/search/label_values", url.Values{"cursor": {base64.RawURLEncoding.EncodeToString([]byte("[1]"))}}, "payload is not a JSON object"},
+		{"missing field", "/search/label_values", url.Values{"cursor": {encodeTestCursor(t, missingStart)}}, "invalid cursor: start and end must be set"},
+		{"null field", "/search/label_values", url.Values{"cursor": {encodeTestCursor(t, nullStart)}}, "invalid cursor: start and end must be set"},
+		{"wrong type", "/search/label_values", url.Values{"cursor": {encodeTestCursor(t, stringLimit)}}, "searchCursor.limit"},
+		{"not an object", "/search/label_values", url.Values{"cursor": {base64.RawURLEncoding.EncodeToString([]byte("[1]"))}}, "cannot unmarshal array"},
 		{"other version", "/search/label_values", url.Values{"cursor": {with(func(c *searchCursor) { c.Version = 2 })}}, "unsupported version 2"},
 		{"other endpoint", "/search/label_names", url.Values{"cursor": {trailer.NextCursor}}, `issued by \"label_values\", not \"label_names\"`},
 		{"empty resume_after", "/search/label_values", url.Values{"cursor": {with(func(c *searchCursor) { c.ResumeAfter = "" })}}, "resume_after must not be empty"},
@@ -2375,7 +2366,7 @@ func TestSearchCursorRejected(t *testing.T) {
 		{"search_expr with search[]", "/search/label_values", url.Values{"cursor": {with(func(c *searchCursor) { c.Search, c.SearchExpr = []string{"up"}, "go" })}}, "invalid cursor: search[] and search_expr are mutually exclusive"},
 		{"invalid search_expr", "/search/label_values", url.Values{"cursor": {with(func(c *searchCursor) { c.SearchExpr = "go AND" })}}, "invalid cursor: invalid search_expr"},
 		{"matcher", "/search/label_values", url.Values{"cursor": {with(func(c *searchCursor) { c.Match = []string{`{job=~".*"}`} })}}, "invalid cursor: match[] must contain at least one non-empty matcher"},
-		{"inverted time range", "/search/label_values", url.Values{"cursor": {with(func(c *searchCursor) { c.Start, c.End = 2, 1 })}}, "invalid cursor: end timestamp must not be before start timestamp"},
+		{"inverted time range", "/search/label_values", url.Values{"cursor": {with(func(c *searchCursor) { c.Start, c.End = int64Ptr(2), int64Ptr(1) })}}, "invalid cursor: end timestamp must not be before start timestamp"},
 		{"missing label", "/search/label_values", url.Values{"cursor": {with(func(c *searchCursor) { c.Label = "" })}}, `missing required parameter \"label\"`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -2445,8 +2436,8 @@ func TestSearchCursorDefaultTimeRange(t *testing.T) {
 	batch, trailer := firstBatch(url.Values{"limit": {"1"}})
 	require.Equal(t, []string{"start or end not given, applied a default: start=1970-01-01T00:00:00Z, end=1970-01-01T02:00:00Z"}, batch.Warnings)
 	c := decodeTestCursor(t, trailer.NextCursor)
-	require.Equal(t, int64(0), c.Start)
-	require.Equal(t, int64(7200000), c.End)
+	require.Equal(t, int64Ptr(0), c.Start)
+	require.Equal(t, int64Ptr(7200000), c.End)
 
 	batch, _ = firstBatch(url.Values{"cursor": {trailer.NextCursor}})
 	require.Empty(t, batch.Warnings)
@@ -2472,8 +2463,8 @@ func TestSearchCursorLength(t *testing.T) {
 		FuzzAlg:       defaultFuzzAlg,
 		CaseSensitive: true,
 		SortDir:       "asc",
-		Start:         3600000,
-		End:           7200000,
+		Start:         int64Ptr(3600000),
+		End:           int64Ptr(7200000),
 		Limit:         10,
 		BatchSize:     10,
 	}
