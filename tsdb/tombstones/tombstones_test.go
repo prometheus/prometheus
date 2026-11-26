@@ -14,8 +14,12 @@
 package tombstones
 
 import (
+	"encoding/binary"
 	"math"
 	"math/rand"
+	"os"
+	"path/filepath"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -25,6 +29,7 @@ import (
 	"go.uber.org/goleak"
 
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/encoding"
 )
 
 func TestMain(m *testing.M) {
@@ -286,4 +291,57 @@ func TestMemTombstonesConcurrency(t *testing.T) {
 		wg.Done()
 	}()
 	wg.Wait()
+}
+
+func TestReadTombstonesTruncated(t *testing.T) {
+	const minSize = tombstonesHeaderSize + tombstonesCRCSize
+
+	t.Run("shorter than header plus crc", func(t *testing.T) {
+		var buf [minSize - 1]byte
+		binary.BigEndian.PutUint32(buf[:4], MagicTombstone)
+		for size := range minSize {
+			t.Run("size_"+strconv.Itoa(size), func(t *testing.T) {
+				dir := t.TempDir()
+				require.NoError(t, os.WriteFile(filepath.Join(dir, TombstonesFilename), buf[:size], 0o600))
+				tr, n, err := ReadTombstones(dir)
+				require.ErrorIs(t, err, encoding.ErrInvalidSize)
+				require.Nil(t, tr)
+				require.Zero(t, n)
+			})
+		}
+	})
+
+	t.Run("minimal valid empty file", func(t *testing.T) {
+		dir := t.TempDir()
+		written, err := WriteFile(promslog.NewNopLogger(), dir, NewMemTombstones())
+		require.NoError(t, err)
+		require.Equal(t, int64(minSize), written)
+		tr, n, err := ReadTombstones(dir)
+		require.NoError(t, err)
+		require.Equal(t, written, n)
+		require.Zero(t, tr.Total())
+	})
+
+	t.Run("all prefixes of non-empty file", func(t *testing.T) {
+		srcDir := t.TempDir()
+		stones := NewMemTombstones()
+		stones.AddInterval(storage.SeriesRef(1), Interval{Mint: 100, Maxt: 200})
+		stones.AddInterval(storage.SeriesRef(42), Interval{Mint: 300, Maxt: 400})
+		_, err := WriteFile(promslog.NewNopLogger(), srcDir, stones)
+		require.NoError(t, err)
+		raw, err := os.ReadFile(filepath.Join(srcDir, TombstonesFilename))
+		require.NoError(t, err)
+
+		for size := range len(raw) {
+			dir := t.TempDir()
+			require.NoError(t, os.WriteFile(filepath.Join(dir, TombstonesFilename), raw[:size], 0o600))
+			tr, n, err := ReadTombstones(dir)
+			require.Error(t, err, "prefix length %d", size)
+			if size < minSize {
+				require.ErrorIs(t, err, encoding.ErrInvalidSize)
+			}
+			require.Nil(t, tr)
+			require.Zero(t, n)
+		}
+	})
 }
