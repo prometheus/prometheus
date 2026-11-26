@@ -544,7 +544,8 @@ func TestMetadataGCBeforeReservation(t *testing.T) {
 			defer func() { _ = a.Rollback() }()
 			_, err = a.UpdateMetadata(oldRef, lbls, metadata.Metadata{Help: "Late metadata."})
 			require.ErrorContains(t, err, "unknown series")
-			require.NoError(t, a.Rollback())
+			// Commit to expose any metadata mistakenly queued before the error.
+			require.NoError(t, a.Commit())
 			wantSeries := uint64(0)
 			if replacement {
 				wantSeries = 1
