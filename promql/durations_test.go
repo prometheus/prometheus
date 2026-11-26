@@ -313,3 +313,29 @@ func TestCalculateDuration(t *testing.T) {
 		})
 	}
 }
+
+
+func TestDurationVisitorMillisecondRounding(t *testing.T) {
+	p := parser.NewParser(parser.Options{EnableExperimentalFunctions: true})
+	cases := []struct {
+		query string
+		want  time.Duration
+	}{
+		{query: "m offset (1s1ms)", want: 1001 * time.Millisecond},
+		{query: "m offset (1s + 1ms)", want: 1001 * time.Millisecond},
+		{query: "m offset (-1s1ms)", want: -1001 * time.Millisecond},
+		{query: "m offset (2s500ms)", want: 2500 * time.Millisecond},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.query, func(t *testing.T) {
+			expr, err := p.ParseExpr(tc.query)
+			require.NoError(t, err)
+			require.NoError(t, parser.Walk(&durationVisitor{}, expr, nil))
+
+			vs, ok := expr.(*parser.VectorSelector)
+			require.True(t, ok)
+			require.Equal(t, tc.want, vs.OriginalOffset)
+		})
+	}
+}
