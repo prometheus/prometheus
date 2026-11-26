@@ -195,7 +195,7 @@ func ReadTombstones(dir string) (Reader, int64, error) {
 		return nil, 0, err
 	}
 
-	if len(b) < tombstonesHeaderSize {
+	if len(b) < tombstonesHeaderSize+tombstonesCRCSize {
 		return nil, 0, fmt.Errorf("tombstones header: %w", encoding.ErrInvalidSize)
 	}
 
