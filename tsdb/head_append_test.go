@@ -98,12 +98,29 @@ func TestNewSeriesRecordPrecedesSamplesInWAL(t *testing.T) {
 }
 
 func TestRollbackDoesNotWriteWAL(t *testing.T) {
-	for _, version := range []int{1, 2} {
+	for name, tc := range map[string]struct {
+		version      int
+		withMetadata bool
+	}{
+		"v1": {version: 1},
+		"v2": {version: 2},
+		// Rollback must also release the reservation taken for AppenderV2 metadata.
+		"v2_with_metadata": {version: 2, withMetadata: true},
+	} {
 		for _, compress := range []compression.Type{compression.None, compression.Snappy, compression.Zstd} {
-			t.Run(fmt.Sprintf("v%d/compress=%s", version, compress), func(t *testing.T) {
-				h, wal := newTestHead(t, 1000, compress, false)
-				app, appendSample := newWALSeriesRecordTestAppender(t, h, version)
-				_, err := appendSample(0, labels.FromStrings("a", "b"), 1, 2)
+			t.Run(fmt.Sprintf("%s/compress=%s", name, compress), func(t *testing.T) {
+				opts := newTestHeadDefaultOptions(1000, false)
+				opts.EnableMetadataWALRecords = tc.withMetadata
+				h, wal := newTestHeadWithOptions(t, compress, opts)
+				app, appendSample := newWALSeriesRecordTestAppender(t, h, tc.version)
+				var err error
+				if tc.withMetadata {
+					_, err = app.(storage.AppenderV2).Append(0, labels.FromStrings("a", "b"), 0, 1, 2, nil, nil, storage.AOptions{
+						Metadata: metadata.Metadata{Help: "Test metadata."},
+					})
+				} else {
+					_, err = appendSample(0, labels.FromStrings("a", "b"), 1, 2)
+				}
 				require.NoError(t, err)
 				require.NoError(t, app.Rollback())
 				require.Empty(t, readTestWAL(t, wal.Dir()))
@@ -374,50 +391,60 @@ func TestWALSeriesRecordDuringSeriesPublication(t *testing.T) {
 }
 
 func TestWALSeriesRecordAfterSeriesRemoval(t *testing.T) {
-	for _, removal := range []string{"eviction", "gc"} {
-		t.Run(removal, func(t *testing.T) {
-			opts := newTestHeadDefaultOptions(10000, false)
-			opts.EnableMetadataWALRecords = true
-			h, wal := newTestHeadWithOptions(t, compression.None, opts)
-			h.initTime(0)
-			lset := labels.FromStrings("name", "removed")
-			creator, borrower := h.Appender(t.Context()), h.Appender(t.Context())
-			ref, err := creator.Append(0, lset, 200, 1)
-			require.NoError(t, err)
-			_, err = borrower.UpdateMetadata(ref, lset, metadata.Metadata{Help: "Pending metadata."})
-			require.NoError(t, err)
-			require.NoError(t, wal.Close())
-			require.Error(t, creator.Commit())
-			h.wal, err = wlog.New(nil, nil, filepath.Join(t.TempDir(), "wal"), compression.None)
-			require.NoError(t, err)
-			remove := func(mint int64) {
-				if removal == "gc" {
-					require.NoError(t, h.Truncate(mint))
-					return
-				}
-				_, err := h.gcSeries([]storage.SeriesRef{ref}, math.MaxInt64, func(*memSeries) bool { return true })
+	for _, version := range []int{1, 2} {
+		for name, useGC := range map[string]bool{"eviction": false, "gc": true} {
+			t.Run(fmt.Sprintf("v%d/%s", version, name), func(t *testing.T) {
+				opts := newTestHeadDefaultOptions(10000, false)
+				opts.EnableMetadataWALRecords = true
+				h, wal := newTestHeadWithOptions(t, compression.None, opts)
+				h.initTime(0)
+				lset := labels.FromStrings("name", "removed")
+				firstAppender, appendFirstSample := newWALSeriesRecordTestAppender(t, h, version)
+				secondAppender, _ := newWALSeriesRecordTestAppender(t, h, version)
+				ref, err := appendFirstSample(0, lset, 200, 1)
 				require.NoError(t, err)
-			}
-			remove(160)
-			require.NotNil(t, h.series.getByID(chunks.HeadSeriesRef(ref)), "queued metadata must prevent removal")
-			require.NoError(t, borrower.Rollback())
-			remove(161)
-			require.Nil(t, h.series.getByID(chunks.HeadSeriesRef(ref)), "rollback must release the metadata reservation")
-			replacement := h.Appender(t.Context())
-			newRef, err := replacement.Append(0, lset, 300, 3)
-			require.NoError(t, err)
-			require.NotEqual(t, ref, newRef)
-			require.NoError(t, replacement.Commit())
-			var refs []chunks.HeadSeriesRef
-			for _, rec := range readTestWAL(t, h.wal.Dir()) {
-				if series, ok := rec.([]record.RefSeries); ok {
-					for _, s := range series {
-						refs = append(refs, s.Ref)
+				meta := metadata.Metadata{Help: "Pending metadata."}
+				if version == 1 {
+					_, err = secondAppender.(storage.Appender).UpdateMetadata(ref, lset, meta)
+				} else {
+					// AppenderV2 queues metadata together with a sample.
+					_, err = secondAppender.(storage.AppenderV2).Append(ref, lset, 0, 100, 1, nil, nil, storage.AOptions{Metadata: meta})
+				}
+				require.NoError(t, err)
+				require.NoError(t, wal.Close())
+				require.Error(t, firstAppender.Commit())
+				h.wal, err = wlog.New(nil, nil, filepath.Join(t.TempDir(), "wal"), compression.None)
+				require.NoError(t, err)
+				remove := func(mint int64) {
+					if useGC {
+						require.NoError(t, h.Truncate(mint))
+						return
+					}
+					_, err := h.gcSeries([]storage.SeriesRef{ref}, math.MaxInt64, func(*memSeries) bool { return true })
+					require.NoError(t, err)
+				}
+				remove(160)
+				require.NotNil(t, h.series.getByID(chunks.HeadSeriesRef(ref)), "pending data must prevent removal")
+				require.NoError(t, secondAppender.Rollback())
+				remove(161)
+				require.Nil(t, h.series.getByID(chunks.HeadSeriesRef(ref)), "rollback must release all reservations")
+				replacement, appendReplacement := newWALSeriesRecordTestAppender(t, h, version)
+				newRef, err := appendReplacement(0, lset, 300, 3)
+				require.NoError(t, err)
+				require.NotEqual(t, ref, newRef)
+				require.NoError(t, replacement.Commit())
+				var refs []chunks.HeadSeriesRef
+				for _, rec := range readTestWAL(t, h.wal.Dir()) {
+					if series, ok := rec.([]record.RefSeries); ok {
+						for _, s := range series {
+							refs = append(refs, s.Ref)
+						}
 					}
 				}
-			}
-			require.Equal(t, []chunks.HeadSeriesRef{chunks.HeadSeriesRef(newRef)}, refs, "rollback must not log borrowed series")
-		})
+				require.Equal(t, []chunks.HeadSeriesRef{chunks.HeadSeriesRef(newRef)}, refs, "only the replacement series record should be logged")
+				require.Zero(t, prom_testutil.ToFloat64(h.metrics.pendingCommitUnderflow))
+			})
+		}
 	}
 }
 
