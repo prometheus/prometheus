@@ -17,6 +17,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -33,6 +34,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/alecthomas/units"
@@ -401,7 +403,7 @@ func New(logger *slog.Logger, o *Options) *Handler {
 		},
 		o.Flags,
 		api_v1.GlobalURLOptions{
-			ListenAddress: o.ListenAddresses[0],
+			ListenAddress: globalURLListenAddress(o.ListenAddresses),
 			Host:          o.ExternalURL.Host,
 			Scheme:        o.ExternalURL.Scheme,
 		},
@@ -722,7 +724,56 @@ func (h *Handler) Reload() <-chan chan error {
 	return h.reloadCh
 }
 
-// Listeners creates the TCP listeners for web requests.
+// UnixSocketPrefix is the prefix of a listen address that denotes a Unix
+// domain socket, for example "unix:///run/prometheus/prometheus.sock".
+const UnixSocketPrefix = "unix://"
+
+// SplitListenAddress returns the network and the network address to pass to
+// net.Listen for the given listen address. An address prefixed with
+// UnixSocketPrefix denotes a Unix domain socket at the path following the
+// prefix. Any other address denotes a TCP host:port.
+func SplitListenAddress(address string) (network, addr string) {
+	if socketPath, ok := strings.CutPrefix(address, UnixSocketPrefix); ok {
+		return "unix", socketPath
+	}
+	return "tcp", address
+}
+
+// globalURLListenAddress returns the listen address used to tell whether a
+// local target is Prometheus itself: the first TCP listen address, or the
+// first listen address if Prometheus only listens on Unix domain sockets.
+func globalURLListenAddress(addresses []string) string {
+	for _, address := range addresses {
+		if network, _ := SplitListenAddress(address); network == "tcp" {
+			return address
+		}
+	}
+	return addresses[0]
+}
+
+// removeStaleUnixSocket removes the Unix domain socket file at socketPath if nothing
+// is listening on it any more. Such a file is left behind when a previous
+// process exited without closing its listener, and would make listening on
+// the same path fail. Anything else at socketPath is left alone, so that listening
+// fails instead: a file that is not a socket, a symbolic link, and a socket
+// that still accepts connections or cannot be probed.
+func removeStaleUnixSocket(socketPath string) error {
+	fi, err := os.Lstat(socketPath)
+	if err != nil || fi.Mode()&os.ModeSocket == 0 {
+		return nil
+	}
+	conn, err := net.DialTimeout("unix", socketPath, time.Second)
+	if err == nil {
+		conn.Close()
+		return nil
+	}
+	if !errors.Is(err, syscall.ECONNREFUSED) {
+		return nil
+	}
+	return os.Remove(socketPath)
+}
+
+// Listeners creates the TCP and Unix domain socket listeners for web requests.
 func (h *Handler) Listeners() ([]net.Listener, error) {
 	var listeners []net.Listener
 	sem := netconnlimit.NewSharedSemaphore(h.options.MaxConnections)
@@ -736,11 +787,23 @@ func (h *Handler) Listeners() ([]net.Listener, error) {
 	return listeners, nil
 }
 
-// Listener creates the TCP listener for web requests.
+// Listener creates the TCP or Unix domain socket listener for web requests,
+// depending on the format of address as described in SplitListenAddress.
 func (h *Handler) Listener(address string, sem chan struct{}) (net.Listener, error) {
+	network, addr := SplitListenAddress(address)
+	if network == "unix" && addr == "" {
+		return nil, fmt.Errorf("listen address %q: missing Unix domain socket path", address)
+	}
+
+	if network == "unix" {
+		if err := removeStaleUnixSocket(addr); err != nil {
+			return nil, fmt.Errorf("listen address %q: remove stale Unix domain socket: %w", address, err)
+		}
+	}
+
 	h.logger.Info("Start listening for connections", "address", address)
 
-	listener, err := net.Listen("tcp", address)
+	listener, err := net.Listen(network, addr)
 	if err != nil {
 		return listener, err
 	}

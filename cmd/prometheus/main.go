@@ -454,7 +454,7 @@ func main() {
 	a.Flag("config.auto-reload-interval", "Specifies the interval for checking and automatically reloading the Prometheus configuration file upon detecting changes. Only used when --config.auto-reload is set.").
 		Default("30s").SetValue(&cfg.autoReloadInterval)
 
-	a.Flag("web.listen-address", "Address to listen on for UI, API, and telemetry. Can be repeated.").
+	a.Flag("web.listen-address", "Address to listen on for UI, API, and telemetry. Can be repeated. Use unix:///path/to/socket to listen on a Unix domain socket; if the first address is a Unix domain socket, --web.external-url must be set.").
 		Default("0.0.0.0:9090").StringsVar(&cfg.web.ListenAddresses)
 
 	a.Flag("auto-gomaxprocs", "Automatically set GOMAXPROCS to match Linux container CPU quota").
@@ -1866,6 +1866,10 @@ func compileCORSRegexString(s string) (*regexp.Regexp, error) {
 // inferred URL is set to https if webConfigFile configures TLS.
 func computeExternalURL(u, listenAddr, webConfigFile string) (*url.URL, error) {
 	if u == "" {
+		if network, _ := web.SplitListenAddress(listenAddr); network == "unix" {
+			// A Unix domain socket path cannot be turned into a meaningful URL.
+			return nil, fmt.Errorf("--web.external-url must be set when the first --web.listen-address %q is a Unix domain socket", listenAddr)
+		}
 		hostname, err := os.Hostname()
 		if err != nil {
 			return nil, err

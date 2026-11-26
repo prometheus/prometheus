@@ -14,7 +14,7 @@ The Prometheus monitoring server
 | <code class="text-nowrap">--config.file</code> | Prometheus configuration file path. | `prometheus.yml` |
 | <code class="text-nowrap">--config.auto-reload</code> | Enable automatic configuration file reloading. See also --config.auto-reload-interval. | `false` |
 | <code class="text-nowrap">--config.auto-reload-interval</code> | Specifies the interval for checking and automatically reloading the Prometheus configuration file upon detecting changes. Only used when --config.auto-reload is set. | `30s` |
-| <code class="text-nowrap">--web.listen-address</code> <code class="text-nowrap">...</code> | Address to listen on for UI, API, and telemetry. Can be repeated. | `0.0.0.0:9090` |
+| <code class="text-nowrap">--web.listen-address</code> <code class="text-nowrap">...</code> | Address to listen on for UI, API, and telemetry. Can be repeated. Use unix:///path/to/socket to listen on a Unix domain socket; if the first address is a Unix domain socket, --web.external-url must be set. | `0.0.0.0:9090` |
 | <code class="text-nowrap">--auto-gomaxprocs</code> | Automatically set GOMAXPROCS to match Linux container CPU quota | `true` |
 | <code class="text-nowrap">--auto-gomemlimit</code> | Automatically set GOMEMLIMIT to match Linux container or system memory limit | `true` |
 | <code class="text-nowrap">--auto-gomemlimit.ratio</code> | The ratio of reserved GOMEMLIMIT memory to the detected maximum container or system memory | `0.9` |
