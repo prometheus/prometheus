@@ -1748,8 +1748,15 @@ type TargetDiscovery struct {
 	DroppedTargetCounts map[string]int   `json:"droppedTargetCounts"`
 }
 
+// unixSocketPrefix is the prefix of a listen address that denotes a Unix
+// domain socket. It matches web.UnixSocketPrefix, which cannot be imported here.
+const unixSocketPrefix = "unix://"
+
 // GlobalURLOptions contains fields used for deriving the global URL for local targets.
 type GlobalURLOptions struct {
+	// ListenAddress is a TCP host:port Prometheus listens on, or a listen
+	// address prefixed with "unix://" if Prometheus only listens on Unix
+	// domain sockets.
 	ListenAddress string
 	Host          string
 	Scheme        string
@@ -1771,6 +1778,17 @@ func sanitizeSplitHostPort(input string) (string, string, error) {
 	return host, port, err
 }
 
+// listenPort returns the port of a TCP listen address. It reports false for
+// a Unix domain socket listen address, which has no port that a target could
+// share.
+func listenPort(address string) (string, bool, error) {
+	if strings.HasPrefix(address, unixSocketPrefix) {
+		return "", false, nil
+	}
+	_, port, err := net.SplitHostPort(address)
+	return port, true, err
+}
+
 func getGlobalURL(u *url.URL, opts GlobalURLOptions) (*url.URL, error) {
 	host, port, err := sanitizeSplitHostPort(u.Host)
 	if err != nil {
@@ -1779,12 +1797,12 @@ func getGlobalURL(u *url.URL, opts GlobalURLOptions) (*url.URL, error) {
 
 	for _, lhr := range LocalhostRepresentations {
 		if host == lhr {
-			_, ownPort, err := net.SplitHostPort(opts.ListenAddress)
+			ownPort, listensOnTCP, err := listenPort(opts.ListenAddress)
 			if err != nil {
 				return u, err
 			}
 
-			if port == ownPort {
+			if listensOnTCP && port == ownPort {
 				// Only in the case where the target is on localhost and its port is
 				// the same as the one we're listening on, we know for sure that
 				// we're monitoring our own process and that we need to change the
