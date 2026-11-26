@@ -20,6 +20,106 @@ import { ValueType } from '../types';
 describe('promql operations', () => {
   const testCases = [
     {
+      expr: ':node_memory_MemAvailable_bytes',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [] as Diagnostic[],
+    },
+    {
+      expr: 'sum by (a:b) (:温度)',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [] as Diagnostic[],
+    },
+    {
+      expr: 'foo + on (a:b) group_left (:label) bar',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [] as Diagnostic[],
+    },
+    {
+      expr: 'foo{service.name="api"}',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [] as Diagnostic[],
+    },
+    {
+      expr: 'sum by (service.name, équipe) (rate(http.server.requests[5m]))',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [] as Diagnostic[],
+    },
+    {
+      expr: '温度{場所="東京"}',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [] as Diagnostic[],
+    },
+    {
+      expr: '𐐀{𐐀="x"}',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [] as Diagnostic[],
+    },
+    {
+      expr: 'requests_total + on (service.name) group_left (équipe) service_info',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [] as Diagnostic[],
+    },
+    {
+      expr: 'foo > bool.5',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [] as Diagnostic[],
+    },
+    {
+      expr: 'topK',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [] as Diagnostic[],
+    },
+    {
+      expr: 'Inf.total + Inf',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [] as Diagnostic[],
+    },
+    {
+      expr: '5 bitand 3',
+      expectedValueType: ValueType.scalar,
+      expectedDiag: [] as Diagnostic[],
+    },
+    {
+      expr: 'status bitand 64',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [] as Diagnostic[],
+    },
+    {
+      expr: 'status bitand on(instance) group_left(model) mask',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [] as Diagnostic[],
+    },
+    {
+      expr: '5 bitor 3',
+      expectedValueType: ValueType.scalar,
+      expectedDiag: [] as Diagnostic[],
+    },
+    {
+      expr: 'status bitor 64',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [] as Diagnostic[],
+    },
+    {
+      expr: 'status bitor on(instance) group_left(model) mask',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [] as Diagnostic[],
+    },
+    {
+      expr: '5 bitxor 3',
+      expectedValueType: ValueType.scalar,
+      expectedDiag: [] as Diagnostic[],
+    },
+    {
+      expr: 'status bitxor 64',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [] as Diagnostic[],
+    },
+    {
+      expr: 'status bitxor on(instance) group_left(model) mask',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [] as Diagnostic[],
+    },
+    {
       expr: '1',
       expectedValueType: ValueType.scalar,
       expectedDiag: [] as Diagnostic[],
@@ -814,6 +914,69 @@ describe('promql operations', () => {
           from: 0,
           to: 17,
           message: 'expected 0 argument(s) in call to "time", got 1',
+          severity: 'error',
+        },
+      ],
+    },
+    {
+      expr: 'vector(pi())',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [],
+    },
+    {
+      expr: 'histogram_quantile(pi() / 4, rate(some_metric[5m]))',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [],
+    },
+    {
+      expr: 'sum(pi())',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [
+        {
+          from: 4,
+          to: 8,
+          message: 'expected type vector in aggregation expression, got scalar',
+          severity: 'error',
+        },
+      ],
+    },
+    {
+      expr: 'cosh(1)',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [
+        {
+          from: 5,
+          to: 6,
+          message: 'expected type vector in call to function "cosh", got scalar',
+          severity: 'error',
+        },
+      ],
+    },
+    {
+      expr: 'sinh(1)',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [
+        {
+          from: 5,
+          to: 6,
+          message: 'expected type vector in call to function "sinh", got scalar',
+          severity: 'error',
+        },
+      ],
+    },
+    {
+      expr: 'histogram_quantiles(some_metric, "quantile", 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.99)',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [],
+    },
+    {
+      expr: 'histogram_quantiles(some_metric, "quantile", 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.99, 0.999)',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [
+        {
+          from: 0,
+          to: 102,
+          message: 'expected at most 12 argument(s) in call to "histogram_quantiles", got 13',
           severity: 'error',
         },
       ],

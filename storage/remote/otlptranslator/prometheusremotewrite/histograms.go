@@ -32,8 +32,6 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
-const defaultZeroThreshold = 1e-128
-
 // addExponentialHistogramDataPoints adds OTel exponential histogram data points to the corresponding time series
 // as native histogram samples.
 func (c *PrometheusConverter) addExponentialHistogramDataPoints(
@@ -129,14 +127,12 @@ func exponentialToNativeHistogram(p pmetric.ExponentialHistogramDataPoint, tempo
 	h := &histogram.Histogram{
 		CounterResetHint: resetHint,
 		Schema:           scale,
-		// TODO use zero_threshold, if set, see
-		// https://github.com/open-telemetry/opentelemetry-proto/pull/441
-		ZeroThreshold:   defaultZeroThreshold,
-		ZeroCount:       p.ZeroCount(),
-		PositiveSpans:   pSpans,
-		PositiveBuckets: pDeltas,
-		NegativeSpans:   nSpans,
-		NegativeBuckets: nDeltas,
+		ZeroThreshold:    p.ZeroThreshold(),
+		ZeroCount:        p.ZeroCount(),
+		PositiveSpans:    pSpans,
+		PositiveBuckets:  pDeltas,
+		NegativeSpans:    nSpans,
+		NegativeBuckets:  nDeltas,
 	}
 
 	if p.Flags().NoRecordedValue() {

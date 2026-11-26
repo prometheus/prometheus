@@ -43,10 +43,12 @@ var parserPool = sync.Pool{
 
 // Options holds the configuration for the PromQL parser.
 type Options struct {
+	// EnableUnquotedUTF8Names allows the printer to emit unquoted Unicode letters and dots in names.
+	// Parsing accepts these names regardless of this option.
+	EnableUnquotedUTF8Names bool
+
 	EnableExperimentalFunctions bool
 	EnableBinopFillModifiers    bool
-	// EnableUnquotedUTF8Names allows Unicode letters and non-leading dots in unquoted names.
-	EnableUnquotedUTF8Names bool
 	// Functions is the set of functions the parser accepts, keyed by name.
 	// If nil, the default set in the package-level Functions variable is
 	// used. Otherwise it replaces the default set: to extend the default set,
@@ -205,9 +207,8 @@ func newParser(input string, opts Options) *parser {
 
 	// Clear lexer struct before reusing.
 	p.lex = Lexer{
-		input:             input,
-		state:             lexStatements,
-		unquotedUTF8Names: opts.EnableUnquotedUTF8Names,
+		input: input,
+		state: lexStatements,
 	}
 
 	return p
@@ -873,7 +874,13 @@ func (p *parser) checkAST(node Node) (typ ValueType) {
 			if vs, ok := n.Args[1].(*VectorSelector); ok && vs.Name != "" {
 				p.addParseErrf(n.Args[1].PositionRange(), "expected label selectors only, got vector selector instead")
 			} else if ok {
-				// Set Vector Selector flag to bypass empty matcher check
+				// Omitting the data label selector adds all data labels, so require at
+				// least one matcher rather than accepting the equivalent {}.
+				if len(vs.LabelMatchers) == 0 {
+					p.addParseErrf(vs.PositionRange(), "data label selector must contain at least one label matcher")
+				}
+				// Unlike in a regular vector selector, the matchers may all match the
+				// empty string, e.g. {data=~".*"}.
 				vs.BypassEmptyMatcherCheck = true
 			} else {
 				p.addParseErrf(n.Args[1].PositionRange(), "expected label selectors only")

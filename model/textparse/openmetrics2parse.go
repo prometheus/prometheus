@@ -1462,6 +1462,9 @@ func (p *openMetrics2Parser) buildClassicHistogramPending(
 	if err != nil {
 		return nil, fmt.Errorf("invalid %s: %w", countKey, err)
 	}
+	if countVal < 0 {
+		return nil, fmt.Errorf("%s must not be negative, got %v", countKey, countVal)
+	}
 	pending = append(pending, p.appendPendingSeriesBytes(countSuffix, "", 0, countVal))
 
 	sv, ok := cf.get(sumField)
@@ -1487,16 +1490,23 @@ func (p *openMetrics2Parser) buildClassicHistogramPending(
 		return pending, nil
 	}
 	hasPosInf := false
+	var prevCount float64
 	for b, err := range parseBuckets(yoloString(bv)) {
 		if err != nil {
 			return nil, fmt.Errorf("invalid bucket: %w", err)
 		}
-		// Classic bucket values are counters for a histogram, which the spec
-		// forbids from being negative. A gauge histogram's bucket values are
-		// gauges, where the spec only discourages it.
-		if b.count < 0 && p.mtype != model.MetricTypeGaugeHistogram {
+		// Classic bucket values must not be negative, must be cumulative, and
+		// the +Inf bucket value must equal count/gcount.
+		if b.count < 0 {
 			return nil, fmt.Errorf("invalid bucket: value must not be negative, got %v", b.count)
 		}
+		if b.count < prevCount || (math.IsNaN(prevCount) && !math.IsNaN(b.count)) {
+			return nil, fmt.Errorf("classic histogram bucket values must be cumulative, got %v after %v", b.count, prevCount)
+		}
+		if math.IsInf(b.lef, 1) && b.count != countVal && !(math.IsNaN(b.count) && math.IsNaN(countVal)) {
+			return nil, fmt.Errorf("classic histogram +Inf bucket value (%v) must equal %s (%v)", b.count, countKey, countVal)
+		}
+		prevCount = b.count
 		if math.IsInf(b.lef, 1) {
 			hasPosInf = true
 		}
@@ -1619,12 +1629,21 @@ func (p *openMetrics2Parser) buildSummaryPending(cf compositeFields) ([]pendingE
 	if err != nil {
 		return nil, fmt.Errorf("invalid count: %w", err)
 	}
+	if math.IsNaN(v) || v < 0 {
+		return nil, fmt.Errorf("count must not be negative or NaN, got %v", v)
+	}
+	if v != math.Trunc(v) || math.IsInf(v, 0) {
+		return nil, fmt.Errorf("count must be an integer, got %v", v)
+	}
 	pending = append(pending, p.appendPendingSeriesBytes("_count", "", 0, v))
 
 	sv := cf.fields[compFieldSum]
 	v, err = strconv.ParseFloat(yoloString(sv), 64)
 	if err != nil {
 		return nil, fmt.Errorf("invalid sum: %w", err)
+	}
+	if math.IsNaN(v) {
+		return nil, fmt.Errorf("sum must not be NaN, got %v", v)
 	}
 	pending = append(pending, p.appendPendingSeriesBytes("_sum", "", 0, v))
 
@@ -1644,6 +1663,9 @@ func (p *openMetrics2Parser) buildSummaryPending(cf compositeFields) ([]pendingE
 // without constructing labels.Labels. Labels() reconstructs the label set
 // lazily from the appended bytes on a scrape series cache miss.
 func (p *openMetrics2Parser) appendPendingSeriesBytes(suffix, injectKey string, injectVal, val float64) pendingEntry {
+	if math.IsNaN(val) {
+		val = math.Float64frombits(value.NormalNaN)
+	}
 	start := len(p.seriesBuf)
 	p.seriesBuf = append(p.seriesBuf, p.l.b[p.offsets[0]:p.offsets[1]]...)
 	p.seriesBuf = append(p.seriesBuf, suffix...)
@@ -1780,6 +1802,9 @@ func parseQuantiles(s string) iter.Seq2[quantileEntry, error] {
 			if err != nil {
 				yield(quantileEntry{}, fmt.Errorf("invalid quantile value %q: %w", after, err))
 				return
+			}
+			if math.IsNaN(val) {
+				val = math.Float64frombits(value.NormalNaN)
 			}
 			qf, err := strconv.ParseFloat(q, 64)
 			if err != nil {

@@ -20,6 +20,8 @@ import (
 	"math"
 	"math/rand"
 	"runtime"
+	"strconv"
+	"strings"
 	"testing"
 	"unsafe"
 
@@ -51,9 +53,42 @@ func TestRecord_EncodeDecode(t *testing.T) {
 			Labels: labels.FromStrings("xyz", "def", "foo", "bar"),
 		},
 	}
-	decSeries, err := dec.Series(enc.Series(series, nil), nil)
-	require.NoError(t, err)
-	testutil.RequireEqual(t, series, decSeries)
+	for _, tc := range []struct {
+		name   string
+		series []RefSeries
+	}{
+		{name: "empty"},
+		{name: "empty_labels", series: []RefSeries{{Ref: 0, Labels: labels.EmptyLabels()}}},
+		{name: "multiple", series: series},
+		{name: "large_record", series: []RefSeries{{Ref: math.MaxUint64, Labels: labels.FromStrings("name", strings.Repeat("x", 4096))}}},
+	} {
+		t.Run("series/"+tc.name, func(t *testing.T) {
+			for _, prefix := range [][]byte{nil, {0xaa, 0xbb, 0xcc}} {
+				for _, extraCapacity := range []int{0, 8192} {
+					t.Run(fmt.Sprintf("prefix=%d/capacity=%d", len(prefix), extraCapacity), func(t *testing.T) {
+						buf := make([]byte, len(prefix), len(prefix)+extraCapacity)
+						copy(buf, prefix)
+						calls := 0
+						got := enc.SeriesFromFunc(len(tc.series), func(i int) RefSeries {
+							require.Equal(t, calls, i, "the function must be called in order")
+							calls++
+							return tc.series[i]
+						}, buf)
+						require.Equal(t, len(tc.series), calls)
+						want := enc.Series(tc.series, append([]byte(nil), prefix...))
+						require.Equal(t, want, got, "both encoders must produce identical WAL bytes")
+						decoded, err := dec.Series(got[len(prefix):], nil)
+						require.NoError(t, err)
+						require.Len(t, decoded, len(tc.series))
+						for i, s := range tc.series {
+							require.Equal(t, s.Ref, decoded[i].Ref)
+							require.True(t, labels.Equal(s.Labels, decoded[i].Labels))
+						}
+					})
+				}
+			}
+		})
+	}
 
 	metadata := []RefMetadata{
 		{
@@ -1254,6 +1289,40 @@ type refsCreateFn func(labelCount, histograms, buckets int) ([]RefSeries, []RefS
 type recordsMaker struct {
 	name string
 	make refsCreateFn
+}
+
+// BenchmarkSeriesEncoding compares encoding from a slice or function using a reused output buffer.
+func BenchmarkSeriesEncoding(b *testing.B) {
+	for _, tc := range []struct{ series, extraLabelBytes int }{{1, 0}, {100, 0}, {1000, 0}, {1, 4096}} {
+		b.Run(fmt.Sprintf("series=%d/extra_label_bytes=%d", tc.series, tc.extraLabelBytes), func(b *testing.B) {
+			series := make([]RefSeries, tc.series)
+			for i := range series {
+				series[i] = RefSeries{
+					Ref:    chunks.HeadSeriesRef(i + 1),
+					Labels: labels.FromStrings("__name__", "requests_total", "instance", strconv.Itoa(i), "padding", strings.Repeat("x", tc.extraLabelBytes)),
+				}
+			}
+			b.Run("slice", func(b *testing.B) {
+				enc := Encoder{}
+				buf := enc.Series(series, nil)
+				b.ReportAllocs()
+				b.SetBytes(int64(len(buf)))
+				for b.Loop() {
+					buf = enc.Series(series, buf[:0])
+				}
+			})
+			b.Run("func", func(b *testing.B) {
+				enc := Encoder{}
+				seriesAt := func(i int) RefSeries { return series[i] }
+				buf := enc.SeriesFromFunc(len(series), seriesAt, nil)
+				b.ReportAllocs()
+				b.SetBytes(int64(len(buf)))
+				for b.Loop() {
+					buf = enc.SeriesFromFunc(len(series), seriesAt, buf[:0])
+				}
+			})
+		})
+	}
 }
 
 // BenchmarkWAL_HistogramEncoding measures efficiency of encoding classic

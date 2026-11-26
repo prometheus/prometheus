@@ -49,11 +49,11 @@ func TestDB_CostSamplingQueryable(t *testing.T) {
 				db := newTestDB(t, withDir(dir), withOpts(opts))
 				db.DisableCompactions()
 				if tc.head {
-					app := db.Appender(t.Context())
-					_, err := app.Append(0, labels.FromStrings(defaultLabelName, "0"), 80, 1)
+					app := db.AppenderV2(t.Context())
+					_, err := app.Append(0, labels.FromStrings(defaultLabelName, "0"), 0, 80, 1, nil, nil, storage.AOptions{})
 					require.NoError(t, err)
 					if tc.ooo {
-						_, err = app.Append(0, labels.FromStrings(defaultLabelName, "0"), 40, 2)
+						_, err = app.Append(0, labels.FromStrings(defaultLabelName, "0"), 0, 40, 2, nil, nil, storage.AOptions{})
 						require.NoError(t, err)
 					}
 					require.NoError(t, app.Commit())
@@ -87,11 +87,11 @@ func TestDB_CostSamplingQueryable(t *testing.T) {
 		opts := DefaultOptions()
 		opts.OutOfOrderTimeWindow = 1000
 		db := newTestDB(t, withOpts(opts))
-		app := db.Appender(t.Context())
+		app := db.AppenderV2(t.Context())
 		metric := labels.FromStrings(defaultLabelName, "0")
-		_, err := app.Append(0, metric, 20, 1)
+		_, err := app.Append(0, metric, 0, 20, 1, nil, nil, storage.AOptions{})
 		require.NoError(t, err)
-		_, err = app.Append(0, metric, 80, 2)
+		_, err = app.Append(0, metric, 0, 80, 2, nil, nil, storage.AOptions{})
 		require.NoError(t, err)
 		require.NoError(t, app.Commit())
 		source, supported := db.CostSamplingQueryable()
@@ -100,8 +100,8 @@ func TestDB_CostSamplingQueryable(t *testing.T) {
 		require.NoError(t, err)
 		defer func() { require.NoError(t, pinned.Close()) }()
 
-		app = db.Appender(t.Context())
-		_, err = app.Append(0, metric, 40, 3)
+		app = db.AppenderV2(t.Context())
+		_, err = app.Append(0, metric, 0, 40, 3, nil, nil, storage.AOptions{})
 		require.NoError(t, err)
 		require.NoError(t, app.Commit())
 		// The already-pinned reader retains its in-order path; later openings must

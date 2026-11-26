@@ -185,12 +185,34 @@ func (f *fanout) Close() error {
 	return errors.Join(errs...)
 }
 
+type immutableGetRefLabels interface {
+	ImmutableGetRefLabels() bool
+}
+
 // fanoutAppender implements Appender.
 type fanoutAppender struct {
 	logger *slog.Logger
 
 	primary     Appender
 	secondaries []Appender
+}
+
+var _ GetRef = &fanoutAppender{}
+
+// GetRef implements GetRef. It returns the reference and labels that the
+// primary holds for the series, if the primary implements GetRef.
+func (f *fanoutAppender) GetRef(lset labels.Labels, hash uint64) (SeriesRef, labels.Labels) {
+	if gr, ok := f.primary.(GetRef); ok {
+		return gr.GetRef(lset, hash)
+	}
+	return 0, labels.EmptyLabels()
+}
+
+// ImmutableGetRefLabels reports whether labels returned by the primary's GetRef
+// remain immutable for the lifetime of the series.
+func (f *fanoutAppender) ImmutableGetRefLabels() bool {
+	gr, ok := f.primary.(immutableGetRefLabels)
+	return ok && gr.ImmutableGetRefLabels()
 }
 
 // SetOptions propagates the hints to both primary and secondary appenders.
@@ -343,7 +365,36 @@ func (f *fanoutAppenderV2) Append(ref SeriesRef, l labels.Labels, st, t int64, v
 	return ref, partialErr.ToError()
 }
 
-var _ ExemplarAppenderV2 = &fanoutAppenderV2{}
+var _ GetRef = &fanoutAppenderV2{}
+
+// GetRef implements GetRef. It returns the reference and labels that the
+// primary holds for the series, if the primary implements GetRef.
+func (f *fanoutAppenderV2) GetRef(lset labels.Labels, hash uint64) (SeriesRef, labels.Labels) {
+	if gr, ok := f.primary.(GetRef); ok {
+		return gr.GetRef(lset, hash)
+	}
+	return 0, labels.EmptyLabels()
+}
+
+// ImmutableGetRefLabels reports whether labels returned by the primary's GetRef
+// remain immutable for the lifetime of the series.
+func (f *fanoutAppenderV2) ImmutableGetRefLabels() bool {
+	gr, ok := f.primary.(immutableGetRefLabels)
+	return ok && gr.ImmutableGetRefLabels()
+}
+
+var (
+	_ ExemplarAppenderV2  = &fanoutAppenderV2{}
+	_ CommitStatsReporter = &fanoutAppenderV2{}
+)
+
+// CommitStats returns the primary appender's commit stats, or zero stats if it does not report them.
+func (f *fanoutAppenderV2) CommitStats() CommitStats {
+	if s, ok := f.primary.(CommitStatsReporter); ok {
+		return s.CommitStats()
+	}
+	return CommitStats{}
+}
 
 // AppendExemplars implements ExemplarAppenderV2.
 // It dispatches the exemplars to the primary that is required to and all

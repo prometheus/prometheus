@@ -348,6 +348,16 @@ type LabelHints struct {
 	// LimitSmallest requires Limit and will select the lexically smallest N
 	// values of the full set.
 	LimitSmallest bool
+
+	// ValueFilter, if set, reports whether a label value can be part of the
+	// result. It is an optimization hint: a reader may call it to skip values
+	// before it does per-value postings work, or it may ignore it. The caller
+	// must still filter the values that the reader returns.
+	//
+	// Leave Limit at zero when ValueFilter is set. A reader that ignores
+	// ValueFilter applies Limit to the unfiltered values, so the caller can
+	// receive fewer matching values than exist.
+	ValueFilter func(value string) bool
 }
 
 // AllowsEarlyStop reports whether a read may stop as soon as it holds Limit
@@ -474,11 +484,16 @@ type Appender interface {
 	StartTimestampAppender
 }
 
-// GetRef is an extra interface on Appenders used by downstream projects
-// (e.g. Cortex) to avoid maintaining a parallel set of references.
+// GetRef is an extra interface on Appenders. Scraping uses it to keep the
+// labels the storage already holds instead of its own copy, and downstream
+// projects (e.g. Cortex) use it to avoid maintaining a parallel set of references.
+// Under -tags dedupelabels, storages that replace series labels on symbol table
+// rebuilds (such as tsdb.Head) are skipped unless the appender also implements
+// ImmutableGetRefLabels() bool returning true.
 type GetRef interface {
-	// GetRef returns a reference number that can be used to pass to AppenderV2.Append(),
-	// and a set of labels that will not cause another copy when passed to AppenderV2.Append().
+	// GetRef returns a reference number that can be used to pass to Appender.Append()
+	// or AppenderV2.Append(), and a set of labels that will not cause another copy
+	// when passed to Appender.Append() or AppenderV2.Append().
 	// 0 means the appender does not have a reference to this series.
 	// hash should be a hash of lset.
 	GetRef(lset labels.Labels, hash uint64) (SeriesRef, labels.Labels)

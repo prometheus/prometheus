@@ -431,6 +431,18 @@ var tests = []struct {
 				input:    "atan2",
 				expected: []Item{{ATAN2, 0, "atan2"}},
 			},
+			{
+				input:    "bitand",
+				expected: []Item{{BITAND, 0, "bitand"}},
+			},
+			{
+				input:    "bitor",
+				expected: []Item{{BITOR, 0, "bitor"}},
+			},
+			{
+				input:    "bitxor",
+				expected: []Item{{BITXOR, 0, "bitxor"}},
+			},
 		},
 	},
 	{
@@ -450,11 +462,17 @@ var tests = []struct {
 		name: "selectors",
 		tests: []testCase{
 			{
-				input: `台北`,
-				fail:  true,
+				input:    `台北`,
+				expected: []Item{{IDENTIFIER, 0, `台北`}},
 			}, {
 				input: `{台北='a'}`,
-				fail:  true,
+				expected: []Item{
+					{LEFT_BRACE, 0, `{`},
+					{IDENTIFIER, 1, `台北`},
+					{EQL, 7, `=`},
+					{STRING, 8, `'a'`},
+					{RIGHT_BRACE, 11, `}`},
+				},
 			}, {
 				input: `{0a='a'}`,
 				fail:  true,

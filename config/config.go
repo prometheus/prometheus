@@ -1528,6 +1528,9 @@ type RemoteWriteConfig struct {
 	// ProtobufMessage specifies the protobuf message to use against the remote
 	// receiver as specified in https://prometheus.io/docs/specs/remote_write_spec_2_0/
 	ProtobufMessage remoteapi.WriteMessageType `yaml:"protobuf_message,omitempty"`
+	// Mode specifies the optional Remote-Write 2.0 mode (e.g. "stateless", "stateless-st")
+	// as specified in https://prometheus.io/docs/specs/prw/remote_write_spec_2_0/#modes
+	Mode remoteapi.WriteMode `yaml:"mode,omitempty"`
 	// FailedRequestLogging enables debug logging of remote write V2 request on send error.
 	FailedRequestLogging bool `yaml:"failed_request_logging,omitempty"`
 
@@ -1574,6 +1577,23 @@ func (c *RemoteWriteConfig) UnmarshalYAML(unmarshal func(any) error) error {
 
 	if err := c.ProtobufMessage.Validate(); err != nil {
 		return fmt.Errorf("invalid protobuf_message value: %w", err)
+	}
+	c.Mode = c.Mode.Normalize()
+	if err := c.Mode.Validate(c.ProtobufMessage); err != nil {
+		return err
+	}
+	if c.Mode != remoteapi.WriteModeNone {
+		if c.ConvertNHCBToClassic {
+			return fmt.Errorf("convert_nhcb_to_classic cannot be enabled when remote_write mode is %q", c.Mode)
+		}
+		var raw map[string]any
+		if err := unmarshal(&raw); err != nil {
+			return err
+		}
+		if _, set := raw["send_native_histograms"]; set && !c.SendNativeHistograms {
+			return fmt.Errorf("send_native_histograms cannot be false when remote_write mode is %q", c.Mode)
+		}
+		c.SendNativeHistograms = true
 	}
 
 	// The UnmarshalYAML method of HTTPClientConfig is not being called because it's not a pointer.

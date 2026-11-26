@@ -23,7 +23,9 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 
@@ -132,15 +134,36 @@ func TestSetFeatureListOptions_MetadataWALRecords(t *testing.T) {
 	require.True(t, c.agent.EnableMetadataWALRecords)
 }
 
-func TestSetFeatureListOptions_UnquotedUTF8Names(t *testing.T) {
-	for _, enabled := range []bool{false, true} {
-		c := &flagConfig{}
-		if enabled {
-			c.featureList = []string{"promql-unquoted-utf8-names"}
-		}
-		require.NoError(t, c.setFeatureListOptions(promslog.NewNopLogger()))
-		require.Equal(t, enabled, c.parserOpts.EnableUnquotedUTF8Names)
+func TestSetFeatureListOptions_MetadataDefaultTimeRange(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		features  []string
+		flagValue model.Duration
+		want      time.Duration
+		wantErr   string
+	}{
+		{name: "disabled", flagValue: model.Duration(time.Hour)},
+		{name: "enabled", features: []string{"metadata-default-time-range"}, flagValue: model.Duration(30 * time.Minute), want: 30 * time.Minute},
+		{name: "enabled with zero range", features: []string{"metadata-default-time-range"}, wantErr: "--web.metadata.default-time-range must be greater than 0 when metadata-default-time-range is enabled; got 0s"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := &flagConfig{featureList: tc.features, metadataDefaultTimeRange: tc.flagValue}
+			err := c.setFeatureListOptions(promslog.NewNopLogger())
+			if tc.wantErr != "" {
+				require.EqualError(t, err, tc.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.want, c.web.MetadataDefaultTimeRange)
+		})
 	}
+}
+
+func TestSetFeatureListOptions_AutoRecordingMetadata(t *testing.T) {
+	c := &flagConfig{featureList: []string{"auto-recording-metadata"}}
+	require.NoError(t, c.setFeatureListOptions(promslog.NewNopLogger()))
+
+	require.True(t, c.enableAutoRecordingMetadata)
 }
 
 func TestSetFeatureListOptions_OTLPDeltaToCumulativeDeprecated(t *testing.T) {

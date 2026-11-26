@@ -37,6 +37,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/teststorage"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestPrometheusConverter_Reset(t *testing.T) {
@@ -951,18 +952,116 @@ func TestFromMetrics(t *testing.T) {
 		require.NotEmpty(t, metricSamples, "expected metric samples")
 		require.Equal(t, "promoted-value", metricSamples[0].L.Get("custom_promoted_attr"), "metric should have promoted resource attribute")
 	})
+
+	t.Run("target_info when resource only has identifying attributes", func(t *testing.T) {
+		for _, tc := range []struct {
+			name                              string
+			resourceAttrs                     map[string]string
+			keepIdentifyingResourceAttributes bool
+			expectedTargetInfo                labels.Labels
+		}{
+			{
+				name: "emitted when KeepIdentifyingResourceAttributes is true",
+				resourceAttrs: map[string]string{
+					"service.name":        "test-service",
+					"service.namespace":   "test-namespace",
+					"service.instance.id": "instance-1",
+				},
+				keepIdentifyingResourceAttributes: true,
+				expectedTargetInfo: labels.FromStrings(
+					"__name__", "target_info",
+					"instance", "instance-1",
+					"job", "test-namespace/test-service",
+					"service_instance_id", "instance-1",
+					"service_name", "test-service",
+					"service_namespace", "test-namespace",
+				),
+			},
+			{
+				name: "emitted with only service.name when KeepIdentifyingResourceAttributes is true",
+				resourceAttrs: map[string]string{
+					"service.name": "test-service",
+				},
+				keepIdentifyingResourceAttributes: true,
+				expectedTargetInfo: labels.FromStrings(
+					"__name__", "target_info",
+					"job", "test-service",
+					"service_name", "test-service",
+				),
+			},
+			{
+				name: "not emitted when KeepIdentifyingResourceAttributes is false",
+				resourceAttrs: map[string]string{
+					"service.name":        "test-service",
+					"service.namespace":   "test-namespace",
+					"service.instance.id": "instance-1",
+				},
+				keepIdentifyingResourceAttributes: false,
+				expectedTargetInfo:                labels.EmptyLabels(),
+			},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				request := pmetricotlp.NewExportRequest()
+				rm := request.Metrics().ResourceMetrics().AppendEmpty()
+
+				for k, v := range tc.resourceAttrs {
+					rm.Resource().Attributes().PutStr(k, v)
+				}
+
+				ts := pcommon.NewTimestampFromTime(time.Now())
+				scopeMetrics := rm.ScopeMetrics().AppendEmpty()
+				m := scopeMetrics.Metrics().AppendEmpty()
+				m.SetEmptyGauge()
+				m.SetName("test_gauge")
+				m.SetDescription("test gauge")
+				point := m.Gauge().DataPoints().AppendEmpty()
+				point.SetTimestamp(ts)
+				point.SetDoubleValue(1.0)
+
+				appTest := teststorage.NewAppendable()
+				app := appTest.AppenderV2(t.Context())
+				converter := NewPrometheusConverter(app)
+				annots, err := converter.FromMetrics(
+					context.Background(),
+					request.Metrics(),
+					Settings{
+						KeepIdentifyingResourceAttributes: tc.keepIdentifyingResourceAttributes,
+						LookbackDelta:                     defaultLookbackDelta,
+					},
+				)
+				require.NoError(t, err)
+				require.Empty(t, annots)
+				require.NoError(t, app.Commit())
+
+				var targetInfoSamples []sample
+				for _, s := range appTest.ResultSamples() {
+					if s.L.Get(labels.MetricName) == "target_info" {
+						targetInfoSamples = append(targetInfoSamples, s)
+					}
+				}
+
+				if tc.expectedTargetInfo.IsEmpty() {
+					require.Empty(t, targetInfoSamples)
+					return
+				}
+				require.Len(t, targetInfoSamples, 1)
+				testutil.RequireEqual(t, tc.expectedTargetInfo, targetInfoSamples[0].L)
+			})
+		}
+	})
 }
 
 func TestTemporality(t *testing.T) {
 	ts := time.Unix(100, 0)
 
 	tests := []struct {
-		name            string
-		allowDelta      bool
-		convertToNHCB   bool
-		inputSeries     []pmetric.Metric
-		expectedSamples []sample
-		expectedError   string
+		name             string
+		allowDelta       bool
+		convertToNHCB    bool
+		inputSeries      []pmetric.Metric
+		expectedSamples  []sample
+		expectedWarnings []string
+		expectedError    string
 	}{
 		{
 			name:       "all cumulative when delta not allowed",
@@ -1010,7 +1109,7 @@ func TestTemporality(t *testing.T) {
 			expectedSamples: []sample{
 				createPromFloatSeries("test_metric_1", ts, model.MetricTypeCounter),
 			},
-			expectedError: `invalid temporality and type combination for metric "test_metric_2"`,
+			expectedWarnings: []string{`invalid temporality and type combination for metric "test_metric_2"`},
 		},
 		{
 			name:       "unspecified temporality not allowed",
@@ -1022,7 +1121,7 @@ func TestTemporality(t *testing.T) {
 			expectedSamples: []sample{
 				createPromFloatSeries("test_metric_1", ts, model.MetricTypeCounter),
 			},
-			expectedError: `invalid temporality and type combination for metric "test_metric_2"`,
+			expectedWarnings: []string{`invalid temporality and type combination for metric "test_metric_2"`},
 		},
 		{
 			name:       "cumulative histogram",
@@ -1056,7 +1155,7 @@ func TestTemporality(t *testing.T) {
 			expectedSamples: []sample{
 				createPromNativeHistogramSeries("test_histogram_2", histogram.UnknownCounterReset, ts, model.MetricTypeHistogram),
 			},
-			expectedError: `invalid temporality and type combination for metric "test_histogram_1"`,
+			expectedWarnings: []string{`invalid temporality and type combination for metric "test_histogram_1"`},
 		},
 		{
 			name:          "cumulative histogram with buckets",
@@ -1093,7 +1192,7 @@ func TestTemporality(t *testing.T) {
 			expectedSamples: []sample{
 				createPromNHCBSeries("test_histogram_2", histogram.UnknownCounterReset, ts, model.MetricTypeHistogram),
 			},
-			expectedError: `invalid temporality and type combination for metric "test_histogram_1"`,
+			expectedWarnings: []string{`invalid temporality and type combination for metric "test_histogram_1"`},
 		},
 		{
 			name:          "delta histogram with buckets and convertToNHCB=false when not allowed",
@@ -1103,8 +1202,8 @@ func TestTemporality(t *testing.T) {
 				createOtelExplicitHistogram("test_histogram_1", pmetric.AggregationTemporalityDelta, ts),
 				createOtelExplicitHistogram("test_histogram_2", pmetric.AggregationTemporalityCumulative, ts),
 			},
-			expectedSamples: createPromClassicHistogramSeries("test_histogram_2", ts, model.MetricTypeHistogram),
-			expectedError:   `invalid temporality and type combination for metric "test_histogram_1"`,
+			expectedSamples:  createPromClassicHistogramSeries("test_histogram_2", ts, model.MetricTypeHistogram),
+			expectedWarnings: []string{`invalid temporality and type combination for metric "test_histogram_1"`},
 		},
 		{
 			name:          "delta histogram with buckets and convertToNHCB=false when allowed",
@@ -1162,12 +1261,14 @@ func TestTemporality(t *testing.T) {
 				ConvertHistogramsToNHCB: tc.convertToNHCB,
 			}
 
-			_, err := c.FromMetrics(context.Background(), metrics, settings)
+			annots, err := c.FromMetrics(context.Background(), metrics, settings)
 			if tc.expectedError != "" {
 				require.EqualError(t, err, tc.expectedError)
 			} else {
 				require.NoError(t, err)
 			}
+			ws, _ := annots.AsStrings("", 0, 0)
+			require.ElementsMatch(t, tc.expectedWarnings, ws)
 			require.NoError(t, app.Commit())
 			// Every expected native histogram here must be one the appender would
 			// accept; otherwise the expectation is unreachable.
@@ -1246,7 +1347,7 @@ func createPromNativeHistogramSeries(name string, hint histogram.CounterResetHin
 			Count:            1,
 			Sum:              5,
 			Schema:           0,
-			ZeroThreshold:    1e-128,
+			ZeroThreshold:    0,
 			ZeroCount:        0,
 			PositiveSpans:    []histogram.Span{{Offset: 1, Length: 1}},
 			PositiveBuckets:  []int64{1},

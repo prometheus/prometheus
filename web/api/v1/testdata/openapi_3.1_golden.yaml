@@ -1683,6 +1683,16 @@ paths:
                     example:
                         value:
                             - http_req
+                - name: search_expr
+                  in: query
+                  description: Boolean search expression matched against metric names. Supports AND, OR, NOT, parentheses and double-quoted terms. Mutually exclusive with search[].
+                  required: false
+                  explode: false
+                  schema:
+                    type: string
+                  examples:
+                    example:
+                        value: http AND NOT bucket
                 - name: fuzz_threshold
                   in: query
                   description: Fuzzy threshold in the range 0-100. A value of 0 is the lowest fuzzy threshold.
@@ -1834,7 +1844,7 @@ paths:
                                     summary: NDJSON stream of metric names
                                     value: |
                                         {"results":[{"name":"http_requests_total","type":"counter","help":"Total HTTP requests."}]}
-                                        {"status":"success","has_more":false}
+                                        {"status":"success","has_more":false,"returned":1}
                 default:
                     description: Error searching metric names.
                     content:
@@ -1882,7 +1892,7 @@ paths:
                                     summary: NDJSON stream of metric names
                                     value: |
                                         {"results":[{"name":"http_requests_total","type":"counter","help":"Total HTTP requests."}]}
-                                        {"status":"success","has_more":false}
+                                        {"status":"success","has_more":false,"returned":1}
                 default:
                     description: Error searching metric names via POST.
                     content:
@@ -1929,6 +1939,16 @@ paths:
                     example:
                         value:
                             - inst
+                - name: search_expr
+                  in: query
+                  description: Boolean search expression matched against label names. Supports AND, OR, NOT, parentheses and double-quoted terms. Mutually exclusive with search[].
+                  required: false
+                  explode: false
+                  schema:
+                    type: string
+                  examples:
+                    example:
+                        value: inst OR job
                 - name: fuzz_threshold
                   in: query
                   description: Fuzzy threshold in the range 0-100. A value of 0 is the lowest fuzzy threshold.
@@ -2070,7 +2090,7 @@ paths:
                                     summary: NDJSON stream of label names
                                     value: |
                                         {"results":[{"name":"instance"},{"name":"job"}]}
-                                        {"status":"success","has_more":false}
+                                        {"status":"success","has_more":false,"returned":2}
                 default:
                     description: Error searching label names.
                     content:
@@ -2119,7 +2139,7 @@ paths:
                                     summary: NDJSON stream of label names
                                     value: |
                                         {"results":[{"name":"instance"},{"name":"job"}]}
-                                        {"status":"success","has_more":false}
+                                        {"status":"success","has_more":false,"returned":2}
                 default:
                     description: Error searching label names via POST.
                     content:
@@ -2176,6 +2196,16 @@ paths:
                     example:
                         value:
                             - "909"
+                - name: search_expr
+                  in: query
+                  description: Boolean search expression matched against label values. Supports AND, OR, NOT, parentheses and double-quoted terms. Mutually exclusive with search[].
+                  required: false
+                  explode: false
+                  schema:
+                    type: string
+                  examples:
+                    example:
+                        value: 909 AND NOT 9091
                 - name: fuzz_threshold
                   in: query
                   description: Fuzzy threshold in the range 0-100. A value of 0 is the lowest fuzzy threshold.
@@ -2317,7 +2347,7 @@ paths:
                                     summary: NDJSON stream of label values
                                     value: |
                                         {"results":[{"value":"localhost:9090"},{"value":"localhost:9091"}]}
-                                        {"status":"success","has_more":true}
+                                        {"status":"success","has_more":true,"returned":2}
                 default:
                     description: Error searching label values.
                     content:
@@ -2367,7 +2397,7 @@ paths:
                                     summary: NDJSON stream of label values
                                     value: |
                                         {"results":[{"value":"localhost:9090"},{"value":"localhost:9091"}]}
-                                        {"status":"success","has_more":true}
+                                        {"status":"success","has_more":true,"returned":2}
                 default:
                     description: Error searching label values via POST.
                     content:
@@ -4904,6 +4934,10 @@ components:
                     description: 'Form field: One or more search terms matched against metric names (OR logic).'
                     example:
                         - http_req
+                search_expr:
+                    type: string
+                    description: 'Form field: Boolean search expression matched against metric names. Supports AND, OR, NOT, parentheses and double-quoted terms. Mutually exclusive with search[].'
+                    example: http AND NOT bucket
                 fuzz_threshold:
                     type: integer
                     format: int64
@@ -4980,6 +5014,10 @@ components:
                     description: 'Form field: One or more search terms matched against label names (OR logic).'
                     example:
                         - inst
+                search_expr:
+                    type: string
+                    description: 'Form field: Boolean search expression matched against label names. Supports AND, OR, NOT, parentheses and double-quoted terms. Mutually exclusive with search[].'
+                    example: inst OR job
                 fuzz_threshold:
                     type: integer
                     format: int64
@@ -5057,6 +5095,10 @@ components:
                     description: 'Form field: One or more search terms matched against label values (OR logic).'
                     example:
                         - "909"
+                search_expr:
+                    type: string
+                    description: 'Form field: Boolean search expression matched against label values. Supports AND, OR, NOT, parentheses and double-quoted terms. Mutually exclusive with search[].'
+                    example: 909 AND NOT 9091
                 fuzz_threshold:
                     type: integer
                     format: int64

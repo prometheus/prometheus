@@ -551,7 +551,7 @@ func TestEndpoints(t *testing.T) {
 
 		remote := remote.NewStorage(promslog.New(&promslogConfig), prometheus.DefaultRegisterer, func() (int64, error) {
 			return 0, nil
-		}, dbDir, 1*time.Second, nil, false)
+		}, dbDir, 1*time.Second, nil, false, false, false)
 		t.Cleanup(func() { _ = remote.Close() })
 
 		err = remote.ApplyConfig(&config.Config{
@@ -4434,6 +4434,110 @@ func TestRespondError(t *testing.T) {
 	h := resp.Header.Get("Content-Type")
 	require.Equal(t, "application/json", h, "Expected Content-Type %q but got %q", "application/json", h)
 	require.JSONEq(t, `{"status": "error", "data": "test", "errorType": "timeout", "error": "message"}`, string(body))
+}
+
+func TestMetadataDefaultTimeRange(t *testing.T) {
+	now := time.Unix(10000, 0).UTC()
+	var (
+		gotMint, gotMaxt int64
+		querierCalled    bool
+	)
+	queryable := searchTestQueryable{Queryable: storage.QueryableFunc(func(mint, maxt int64) (storage.Querier, error) {
+		gotMint, gotMaxt, querierCalled = mint, maxt, true
+		return storage.NoopQuerier(), nil
+	})}
+
+	for _, tc := range []struct {
+		name        string
+		defaultTR   time.Duration
+		params      url.Values
+		wantStart   time.Time
+		wantEnd     time.Time
+		wantWarning string
+	}{
+		{
+			name:      "disabled, no start or end",
+			params:    url.Values{},
+			wantStart: MinTime,
+			wantEnd:   MaxTime,
+		},
+		{
+			name:      "disabled, start only",
+			params:    url.Values{"start": {"9000"}},
+			wantStart: time.Unix(9000, 0),
+			wantEnd:   MaxTime,
+		},
+		{
+			name:        "enabled, no start or end",
+			defaultTR:   10 * time.Minute,
+			params:      url.Values{},
+			wantStart:   time.Unix(9400, 0),
+			wantEnd:     now,
+			wantWarning: "start or end not given, applied a default: start=1970-01-01T02:36:40Z, end=1970-01-01T02:46:40Z",
+		},
+		{
+			name:        "enabled, end only",
+			defaultTR:   10 * time.Minute,
+			params:      url.Values{"end": {"5000"}},
+			wantStart:   time.Unix(4400, 0),
+			wantEnd:     time.Unix(5000, 0),
+			wantWarning: "start or end not given, applied a default: start=1970-01-01T01:13:20Z, end=1970-01-01T01:23:20Z",
+		},
+		{
+			name:        "enabled, start only",
+			defaultTR:   10 * time.Minute,
+			params:      url.Values{"start": {"9000"}},
+			wantStart:   time.Unix(9000, 0),
+			wantEnd:     now,
+			wantWarning: "start or end not given, applied a default: start=1970-01-01T02:30:00Z, end=1970-01-01T02:46:40Z",
+		},
+		{
+			name:      "enabled, start and end",
+			defaultTR: 10 * time.Minute,
+			params:    url.Values{"start": {"1000"}, "end": {"2000"}},
+			wantStart: time.Unix(1000, 0),
+			wantEnd:   time.Unix(2000, 0),
+		},
+	} {
+		for _, endpoint := range []struct {
+			name string
+			call func(*API, *http.Request) apiFuncResult
+		}{
+			{"series", (*API).series},
+			{"label names", (*API).labelNames},
+			{"label values", func(api *API, r *http.Request) apiFuncResult {
+				return api.labelValues(r.WithContext(route.WithParam(r.Context(), "name", "job")))
+			}},
+		} {
+			t.Run(tc.name+"/"+endpoint.name, func(t *testing.T) {
+				gotMint, gotMaxt, querierCalled = 0, 0, false
+				api := &API{
+					Queryable:                queryable,
+					parser:                   testParser,
+					now:                      func() time.Time { return now },
+					metadataDefaultTimeRange: tc.defaultTR,
+				}
+				params := maps.Clone(tc.params)
+				params.Set("match[]", "up")
+				req := httptest.NewRequest(http.MethodGet, "/?"+params.Encode(), http.NoBody)
+
+				res := endpoint.call(api, req)
+				if res.finalizer != nil {
+					res.finalizer()
+				}
+				require.Nil(t, res.err)
+				require.True(t, querierCalled)
+				require.Equal(t, timestamp.FromTime(tc.wantStart), gotMint)
+				require.Equal(t, timestamp.FromTime(tc.wantEnd), gotMaxt)
+				if tc.wantWarning == "" {
+					require.Empty(t, res.warnings)
+				} else {
+					require.Len(t, res.warnings, 1)
+					require.Contains(t, res.warnings, tc.wantWarning)
+				}
+			})
+		}
+	}
 }
 
 func TestParseTimeParam(t *testing.T) {

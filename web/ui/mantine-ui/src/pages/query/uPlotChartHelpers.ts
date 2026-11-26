@@ -54,6 +54,8 @@ const formatYAxisTickValue = (y: number | null, precision = 2): string => {
 };
 
 const maxYAxisTickPrecision = 8;
+const seriesLineWidth = 1.5;
+const focusedSeriesLineWidth = 3;
 
 const hasDuplicateLabels = (labels: string[]): boolean =>
   new Set(labels).size !== labels.length;
@@ -448,13 +450,38 @@ export const getUPlotOptions = (
         filter: onlyDrawPointsForDisconnectedSamplesFilter,
       },
       label: formatSeries(r.metric),
-      width: 1.5,
+      width: seriesLineWidth,
       // @ts-expect-error - uPlot doesn't have a field for labels, but we just attach some anyway.
       labels: r.metric,
       stroke: getSeriesColor(idx, light),
     })),
   ],
   hooks: {
+    setSeries: [
+      (u, seriesIdx, opts: Parameters<uPlot["setSeries"]>[1]) => {
+        if (opts.focus === undefined) {
+          return;
+        }
+        let changed = false;
+        u.series.forEach((series, idx) => {
+          if (idx === 0) {
+            return;
+          }
+          const width =
+            opts.focus && idx === seriesIdx
+              ? focusedSeriesLineWidth
+              : seriesLineWidth;
+          if (series.width !== width) {
+            series.width = width;
+            changed = true;
+          }
+        });
+        // Reuse the existing paths and axes when only line widths change.
+        if (changed) {
+          u.redraw(false, false);
+        }
+      },
+    ],
     setSelect: [
       (self: uPlot) => {
         // Disallow sub-second zoom as this cause inconsistenices in the X axis in uPlot.
