@@ -461,25 +461,34 @@ func TestWALSeriesRecordsOverlappingBatches(t *testing.T) {
 				refs[i], err = creator.Append(0, labels.FromStrings("series", strconv.Itoa(i)), 200, 2)
 				require.NoError(t, err)
 			}
-			apps := make([]storage.AppenderTransaction, 2)
-			for i := range apps {
+			batches := [][]storage.SeriesRef{
+				refs[:2],
+				refs[1:],
+				// With only the shared ref, this appender can find all its series
+				// records already logged after waiting for walSeriesMtx.
+				refs[1:2],
+			}
+			apps := make([]storage.AppenderTransaction, len(batches))
+			for i, batch := range batches {
 				var appendSample func(storage.SeriesRef, labels.Labels, int64, float64) (storage.SeriesRef, error)
 				apps[i], appendSample = newWALSeriesRecordTestAppender(t, h, version)
-				for _, ref := range refs[i : i+2] {
+				for _, ref := range batch {
 					_, err := appendSample(ref, labels.EmptyLabels(), 100, 1)
 					require.NoError(t, err)
 				}
 			}
-			start := make(chan struct{})
 			var wg sync.WaitGroup
-			errs := make([]error, 2)
+			errs := make([]error, len(apps))
+			// Hold the series-record lock while starting the committers, yielding
+			// to each so they can wait for it before any series record is logged.
+			h.walSeriesMtx.Lock()
 			for i, app := range apps {
 				wg.Go(func() {
-					<-start
 					errs[i] = app.Commit()
 				})
+				runtime.Gosched()
 			}
-			close(start)
+			h.walSeriesMtx.Unlock()
 			wg.Wait()
 			for _, err := range errs {
 				require.NoError(t, err)
@@ -502,7 +511,7 @@ func TestWALSeriesRecordsOverlappingBatches(t *testing.T) {
 				}
 			}
 			require.Len(t, seen, 3)
-			require.Equal(t, 4, samples)
+			require.Equal(t, 5, samples)
 		})
 	}
 }
