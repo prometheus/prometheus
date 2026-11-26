@@ -21,6 +21,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -29,7 +30,10 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
 
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
+	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/util/compression"
 )
 
@@ -573,4 +577,163 @@ func TestUnregisterMetrics(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, wl.Close())
 	}
+}
+
+func TestWALRepair_RejectsMismatchedDir(t *testing.T) {
+	dir := t.TempDir()
+	logger := promslog.NewNopLogger()
+
+	w, err := NewSize(logger, nil, dir, pageSize, compression.None)
+	require.NoError(t, err)
+
+	var enc record.Encoder
+	var postCheckpointRecs [][]byte
+	for segIdx := range 4 {
+		rec := enc.Series([]record.RefSeries{
+			{Ref: chunks.HeadSeriesRef(segIdx + 1), Labels: labels.FromStrings("seg", strconv.Itoa(segIdx))},
+		}, nil)
+		require.NoError(t, w.Log(rec))
+		if segIdx >= 2 {
+			postCheckpointRecs = append(postCheckpointRecs, append([]byte(nil), rec...))
+		}
+		if segIdx < 3 {
+			_, err := w.NextSegmentSync()
+			require.NoError(t, err)
+		}
+	}
+
+	// Create checkpoint over segments 0..1 and truncate them so main WAL starts at segment 2.
+	_, err = Checkpoint(logger, w, 0, 1, func(chunks.HeadSeriesRef) bool { return true }, 0, false)
+	require.NoError(t, err)
+	require.NoError(t, w.Truncate(2))
+	require.NoError(t, w.Close())
+
+	cpDir, cpIdx, err := LastCheckpoint(dir)
+	require.NoError(t, err)
+	require.Equal(t, 1, cpIdx)
+
+	// Corrupt segment 0 inside the checkpoint directory.
+	cpSeg := SegmentName(cpDir, 0)
+	f, err := os.OpenFile(cpSeg, os.O_RDWR, 0o666)
+	require.NoError(t, err)
+	_, err = f.WriteAt([]byte{99}, 0)
+	require.NoError(t, err)
+	require.NoError(t, f.Close())
+
+	sr, err := NewSegmentsReader(cpDir)
+	require.NoError(t, err)
+	r := NewReader(sr)
+	for r.Next() {
+	}
+	cpErr := r.Err()
+	require.NoError(t, sr.Close())
+	require.Error(t, cpErr)
+
+	var cerr *CorruptionErr
+	require.ErrorAs(t, cpErr, &cerr)
+	require.Equal(t, cpDir, cerr.Dir)
+	require.Equal(t, 0, cerr.Segment)
+
+	// Passing a checkpoint CorruptionErr to the main WAL's Repair must fail without deleting
+	// or truncating higher-numbered main WAL segments.
+	w, err = NewSize(logger, nil, dir, pageSize, compression.None)
+	require.NoError(t, err)
+
+	err = w.Repair(cpErr)
+	require.Error(t, err)
+	require.ErrorContains(t, err, "does not match WAL directory")
+	require.NoError(t, w.Close())
+
+	first, last, err := Segments(dir)
+	require.NoError(t, err)
+	require.Equal(t, 2, first)
+	require.GreaterOrEqual(t, last, 3)
+
+	// All intact records in the main WAL segments must remain readable.
+	sr, err = NewSegmentsReader(dir)
+	require.NoError(t, err)
+	defer sr.Close()
+
+	r = NewReader(sr)
+	var gotRecs [][]byte
+	for r.Next() {
+		gotRecs = append(gotRecs, append([]byte(nil), r.Record()...))
+	}
+	require.NoError(t, r.Err())
+	require.Equal(t, postCheckpointRecs, gotRecs)
+}
+
+func TestWALReset(t *testing.T) {
+	dir := t.TempDir()
+	logger := promslog.NewNopLogger()
+
+	w, err := NewSize(logger, nil, dir, pageSize, compression.None)
+	require.NoError(t, err)
+
+	var enc record.Encoder
+	for i := range 3 {
+		b := enc.Series([]record.RefSeries{
+			{Ref: chunks.HeadSeriesRef(i + 1), Labels: labels.FromStrings("lbl", fmt.Sprintf("val%d", i))},
+		}, nil)
+		require.NoError(t, w.Log(b))
+		if i < 2 {
+			_, err := w.NextSegmentSync()
+			require.NoError(t, err)
+		}
+	}
+
+	_, err = Checkpoint(logger, w, 0, 0, func(chunks.HeadSeriesRef) bool { return true }, 1, false)
+	require.NoError(t, err)
+	require.NoError(t, w.Truncate(1))
+
+	_, _, err = LastCheckpoint(dir)
+	require.NoError(t, err)
+	segs, err := listSegments(w.Dir())
+	require.NoError(t, err)
+	require.Len(t, segs, 2)
+
+	require.NoError(t, w.Reset())
+
+	segs, err = listSegments(w.Dir())
+	require.NoError(t, err)
+	require.Len(t, segs, 1)
+	require.Equal(t, 0, segs[0].index)
+
+	_, _, err = LastCheckpoint(dir)
+	require.ErrorIs(t, err, record.ErrNotFound)
+
+	sr, err := NewSegmentsReader(dir)
+	require.NoError(t, err)
+	r := NewReader(sr)
+	for r.Next() {
+		t.Fatal("expected no records after reset")
+	}
+	require.NoError(t, r.Err())
+	require.NoError(t, sr.Close())
+
+	// Write a record after reset, reopen, and verify it persists cleanly.
+	b := enc.Series([]record.RefSeries{
+		{Ref: 1, Labels: labels.FromStrings("lbl", "sentinel")},
+	}, nil)
+	require.NoError(t, w.Log(b))
+	require.NoError(t, w.Close())
+
+	// Reset on a closed write log must return an error.
+	require.Error(t, w.Reset())
+
+	w, err = NewSize(logger, nil, dir, pageSize, compression.None)
+	require.NoError(t, err)
+	require.NoError(t, w.Close())
+
+	sr, err = NewSegmentsReader(dir)
+	require.NoError(t, err)
+	defer sr.Close()
+
+	count := 0
+	r = NewReader(sr)
+	for r.Next() {
+		count++
+	}
+	require.NoError(t, r.Err())
+	require.Equal(t, 1, count)
 }

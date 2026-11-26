@@ -1068,6 +1068,70 @@ func (cdm *ChunkDiskMapper) DeleteCorrupted(originalErr error) error {
 	return err
 }
 
+// Reset drains any pending async writes, closes and deletes all head chunk files
+// (including the active file), and resets in-memory mapper state to start fresh.
+// It must not be called concurrently with reads or writes.
+func (cdm *ChunkDiskMapper) Reset() error {
+	cdm.evtlPosMtx.Lock()
+	defer cdm.evtlPosMtx.Unlock()
+
+	if cdm.writeQueue != nil {
+		cdm.writeQueue.drain()
+	}
+
+	// Keep the same lock order as Close() and WriteChunk():
+	// evtlPosMtx -> writePathMtx -> readPathMtx.
+	cdm.writePathMtx.Lock()
+	defer cdm.writePathMtx.Unlock()
+	cdm.readPathMtx.Lock()
+	defer cdm.readPathMtx.Unlock()
+
+	if cdm.closed {
+		return ErrChunkDiskMapperClosed
+	}
+
+	var errs []error
+	if cdm.curFile != nil {
+		if err := cdm.curFile.Close(); err != nil {
+			errs = append(errs, err)
+		}
+		cdm.curFile = nil
+	}
+	cdm.curFileSequence = 0
+	cdm.curFileOffset.Store(0)
+	cdm.curFileMaxt = 0
+	cdm.chkWriter = nil
+	cdm.chunkBuffer.clear()
+	cdm.fileMaxtSet = false
+
+	seqs := make([]int, 0, len(cdm.mmappedChunkFiles))
+	for seq := range cdm.mmappedChunkFiles {
+		seqs = append(seqs, seq)
+	}
+	slices.Sort(seqs)
+
+	for _, seq := range seqs {
+		if closer, ok := cdm.closers[seq]; ok {
+			if err := closer.Close(); err != nil {
+				errs = append(errs, err)
+			}
+			delete(cdm.closers, seq)
+		}
+		delete(cdm.mmappedChunkFiles, seq)
+	}
+
+	for _, seq := range seqs {
+		if err := removeChunkFile(segmentFile(cdm.dir.Name(), seq)); err != nil && !errors.Is(err, os.ErrNotExist) {
+			errs = append(errs, err)
+		}
+	}
+
+	// Reset evtlPos so the next WriteChunk cuts a fresh file starting at sequence 1.
+	cdm.evtlPos = chunkPos{}
+
+	return errors.Join(errs...)
+}
+
 // Size returns the size of the chunk files.
 func (cdm *ChunkDiskMapper) Size() (int64, error) {
 	return fileutil.DirSize(cdm.dir.Name())

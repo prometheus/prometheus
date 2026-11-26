@@ -509,8 +509,14 @@ func (h *Head) resetInMemoryState() error {
 	h.iso = newIsolation(h.opts.IsolationDisabled)
 	h.oooIso = newOOOIsolation()
 	h.numSeries.Store(0)
+	h.numStaleSeries.Store(0)
 	h.numNativeHistogramSeries.Store(0)
 	h.numNativeHistogramBuckets.Store(0)
+	h.lastSeriesID.Store(0)
+	h.minOOOMmapRef.Store(0)
+	if h.metrics != nil {
+		h.metrics.chunks.Set(0)
+	}
 	h.exemplarMetrics = em
 	h.exemplars = es
 	h.postings = index.NewUnorderedMemPostings()
@@ -1029,10 +1035,13 @@ func (h *Head) Init(minValidTime int64) error {
 			}
 		}()
 
-		// A corrupted checkpoint is a hard error for now and requires user
-		// intervention. There's likely little data that can be recovered anyway.
+		// Wrap checkpoint load errors so callers can distinguish checkpoint
+		// corruption from main WAL corruption.
 		if err := h.loadWAL(wlog.NewReader(sr), syms, multiRef, mmappedChunks, oooMmappedChunks, lastMmapRef); err != nil {
-			return fmt.Errorf("backfill checkpoint: %w", err)
+			if cerr, ok := errors.AsType[*wlog.CorruptionErr](err); ok && cerr.Dir == "" {
+				cerr.Dir = dir
+			}
+			return &errLoadCheckpoint{err: err}
 		}
 		h.updateWALReplayStatusRead(startFrom)
 		startFrom++
@@ -1126,6 +1135,39 @@ func (h *Head) Init(minValidTime int64) error {
 		go h.runSeriesStateTicker()
 	}
 
+	return nil
+}
+
+// reset clears all on-disk and in-memory head state (WAL, WBL, mmapped head
+// chunks, chunk snapshots, series state file, and in-memory structures).
+// It must only be called during initialization before writes begin.
+func (h *Head) reset() error {
+	if h.wal != nil {
+		if err := h.wal.Reset(); err != nil {
+			return fmt.Errorf("reset WAL: %w", err)
+		}
+		if err := os.Remove(filepath.Join(h.wal.Dir(), seriesStateFilename)); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("remove series state file: %w", err)
+		}
+	}
+	if h.wbl != nil {
+		if err := h.wbl.Reset(); err != nil {
+			return fmt.Errorf("reset WBL: %w", err)
+		}
+	}
+	if h.chunkDiskMapper != nil {
+		if err := h.chunkDiskMapper.Reset(); err != nil {
+			return fmt.Errorf("reset head chunks: %w", err)
+		}
+	}
+	if h.opts.ChunkDirRoot != "" {
+		if err := DeleteChunkSnapshots(h.opts.ChunkDirRoot, math.MaxInt, math.MaxInt); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("delete chunk snapshots: %w", err)
+		}
+	}
+	if err := h.resetInMemoryState(); err != nil {
+		return fmt.Errorf("reset in-memory state: %w", err)
+	}
 	return nil
 }
 
