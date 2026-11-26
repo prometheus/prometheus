@@ -616,44 +616,54 @@ func BenchmarkHeadAppender_WALSeriesRecords(b *testing.B) {
 							app := h.Appender(b.Context())
 							for _, ref := range refs[worker] {
 								if _, err := app.Append(ref, labels.EmptyLabels(), ts, float64(ts)); err != nil {
-									b.Fatal(err)
+									b.Error(errors.Join(err, app.Rollback()))
+									return
 								}
 								if tc.metadata {
 									if _, err := app.UpdateMetadata(ref, labels.EmptyLabels(), meta); err != nil {
-										b.Fatal(err)
+										b.Error(errors.Join(err, app.Rollback()))
+										return
 									}
 								}
 							}
 							for n := range tc.newSeries {
 								lset := labels.FromStrings("worker", workerLabel, "new", strconv.FormatInt(ts*int64(tc.newSeries)+int64(n), 10))
 								if _, err := app.Append(0, lset, ts, float64(ts)); err != nil {
-									b.Fatal(err)
+									b.Error(errors.Join(err, app.Rollback()))
+									return
 								}
 							}
 							if err := app.Commit(); err != nil {
-								b.Fatal(err)
+								b.Error(err)
+								return
 							}
 						} else {
 							app := h.AppenderV2(b.Context())
 							for _, ref := range refs[worker] {
 								if _, err := app.Append(ref, labels.EmptyLabels(), 0, ts, float64(ts), nil, nil, storage.AOptions{Metadata: meta}); err != nil {
-									b.Fatal(err)
+									b.Error(errors.Join(err, app.Rollback()))
+									return
 								}
 							}
 							for n := range tc.newSeries {
 								lset := labels.FromStrings("worker", workerLabel, "new", strconv.FormatInt(ts*int64(tc.newSeries)+int64(n), 10))
 								if _, err := app.Append(0, lset, 0, ts, float64(ts), nil, nil, storage.AOptions{}); err != nil {
-									b.Fatal(err)
+									b.Error(errors.Join(err, app.Rollback()))
+									return
 								}
 							}
 							if err := app.Commit(); err != nil {
-								b.Fatal(err)
+								b.Error(err)
+								return
 							}
 						}
 						ts++
 					}
 				})
 				b.StopTimer()
+				if b.Failed() {
+					return
+				}
 				require.Equal(b, uint64(100*len(refs)+tc.newSeries*b.N), h.NumSeries())
 				require.Zero(b, prom_testutil.ToFloat64(h.metrics.pendingCommitUnderflow))
 				b.ReportMetric(float64(100+tc.newSeries), "sample_appends/op")
