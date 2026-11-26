@@ -1360,8 +1360,6 @@ duration_expr   : number_duration_literal
                         {
                         if nl, ok := $3.(*NumberLiteral); ok && nl.Val == 0 {
                                 yylex.(*parser).addParseErrf($2.PositionRange(), "division by zero")
-                                $$ = &NumberLiteral{Val: 0}
-                                break
                         }
                         $$ = &DurationExpr{Op: DIV, LHS: $1.(Expr), RHS: $3.(Expr)}
                         }
@@ -1369,8 +1367,6 @@ duration_expr   : number_duration_literal
                         {
                         if nl, ok := $3.(*NumberLiteral); ok && nl.Val == 0 {
                             yylex.(*parser).addParseErrf($2.PositionRange(), "modulo by zero")
-                            $$ = &NumberLiteral{Val: 0}
-                            break
                         }
                         $$ = &DurationExpr{Op: MOD, LHS: $1.(Expr), RHS: $3.(Expr)}
                         }

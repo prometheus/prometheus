@@ -2531,8 +2531,6 @@ yydefault:
 		{
 			if nl, ok := yyDollar[3].node.(*NumberLiteral); ok && nl.Val == 0 {
 				yylex.(*parser).addParseErrf(yyDollar[2].item.PositionRange(), "division by zero")
-				yyVAL.node = &NumberLiteral{Val: 0}
-				break
 			}
 			yyVAL.node = &DurationExpr{Op: DIV, LHS: yyDollar[1].node.(Expr), RHS: yyDollar[3].node.(Expr)}
 		}
@@ -2541,8 +2539,6 @@ yydefault:
 		{
 			if nl, ok := yyDollar[3].node.(*NumberLiteral); ok && nl.Val == 0 {
 				yylex.(*parser).addParseErrf(yyDollar[2].item.PositionRange(), "modulo by zero")
-				yyVAL.node = &NumberLiteral{Val: 0}
-				break
 			}
 			yyVAL.node = &DurationExpr{Op: MOD, LHS: yyDollar[1].node.(Expr), RHS: yyDollar[3].node.(Expr)}
 		}
