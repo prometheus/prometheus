@@ -115,6 +115,90 @@ func TestRollbackDoesNotWriteWAL(t *testing.T) {
 	}
 }
 
+func TestCommitLogsOnlyReferencedSeries(t *testing.T) {
+	for _, version := range []int{1, 2} {
+		for name, tc := range map[string]struct {
+			appendValidSample bool
+			appendExemplar    bool
+		}{
+			"rejected_only": {},
+			"mixed":         {appendValidSample: true},
+			// An accepted exemplar requires the series record even when its sample was rejected.
+			"rejected_with_exemplar": {appendExemplar: true},
+		} {
+			t.Run(fmt.Sprintf("v%d/%s", version, name), func(t *testing.T) {
+				opts := newTestHeadDefaultOptions(1000, false)
+				opts.OutOfOrderTimeWindow.Store(100)
+				h, wal := newTestHeadWithOptions(t, compression.None, opts)
+				appender, appendSample := newWALSeriesRecordTestAppender(t, h, version)
+				_, err := appendSample(0, labels.FromStrings("series", "existing"), 1000, 1)
+				require.NoError(t, err)
+				require.NoError(t, appender.Commit())
+				before := len(readTestWAL(t, wal.Dir()))
+				require.Equal(t, 2, before)
+
+				appender, appendSample = newWALSeriesRecordTestAppender(t, h, version)
+				rejectedLabels := labels.FromStrings("series", "rejected")
+				_, err = appendSample(0, rejectedLabels, 1, 1)
+				require.ErrorIs(t, err, storage.ErrTooOldSample)
+				require.Equal(t, uint64(2), h.NumSeries(), "the rejected sample must have created an empty series")
+				var ref storage.SeriesRef
+				recordLabels := labels.FromStrings("series", "valid")
+				if tc.appendValidSample {
+					ref, err = appendSample(0, recordLabels, 1000, 1)
+					require.NoError(t, err)
+				}
+				ex := exemplar.Exemplar{Labels: labels.FromStrings("trace_id", "test"), Value: 1, Ts: 1000, HasTs: true}
+				if tc.appendExemplar {
+					recordLabels = rejectedLabels
+					if version == 1 {
+						ref, err = appender.(storage.ExemplarAppender).AppendExemplar(0, rejectedLabels, ex)
+					} else {
+						ref, err = appender.(storage.ExemplarAppenderV2).AppendExemplars(0, rejectedLabels, []exemplar.Exemplar{ex})
+					}
+					require.NoError(t, err)
+				}
+				require.NoError(t, appender.Commit())
+				recs := readTestWAL(t, wal.Dir())[before:]
+				wantSeries := uint64(1)
+				if tc.appendValidSample || tc.appendExemplar {
+					require.Len(t, recs, 2)
+					require.IsType(t, []record.RefSeries{}, recs[0])
+					series := recs[0].([]record.RefSeries)
+					require.Len(t, series, 1)
+					require.Equal(t, chunks.HeadSeriesRef(ref), series[0].Ref)
+					require.True(t, labels.Equal(recordLabels, series[0].Labels))
+					switch rec := recs[1].(type) {
+					case []record.RefSample:
+						require.True(t, tc.appendValidSample, "unexpected sample record")
+						require.Equal(t, []record.RefSample{{Ref: chunks.HeadSeriesRef(ref), T: 1000, V: 1}}, rec)
+					case []record.RefExemplar:
+						require.True(t, tc.appendExemplar, "unexpected exemplar record")
+						require.Len(t, rec, 1)
+						require.Equal(t, chunks.HeadSeriesRef(ref), rec[0].Ref)
+						require.Equal(t, ex.Ts, rec[0].T)
+						require.Equal(t, ex.Value, rec[0].V)
+						require.True(t, labels.Equal(ex.Labels, rec[0].Labels))
+					default:
+						t.Fatalf("unexpected WAL record type: %T", rec)
+					}
+					wantSeries++
+				} else {
+					require.Empty(t, recs)
+				}
+				h.gc()
+				require.Equal(t, wantSeries, h.NumSeries(), "GC must remove series without samples or live exemplars")
+				if tc.appendExemplar {
+					// Expire the exemplar to verify that its reservation was released too.
+					require.NoError(t, h.Truncate(1001))
+					require.Zero(t, h.NumSeries())
+				}
+				require.Zero(t, prom_testutil.ToFloat64(h.metrics.pendingCommitUnderflow))
+			})
+		}
+	}
+}
+
 func TestWALSeriesRecordsBeforePayloads(t *testing.T) {
 	for _, version := range []int{1, 2} {
 		for _, rollback := range []bool{false, true} {
