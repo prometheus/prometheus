@@ -65,6 +65,7 @@ require (
 	github.com/pb33f/libopenapi v0.41.6
 	github.com/pb33f/libopenapi-validator v0.16.1
 	github.com/prometheus/alertmanager v0.34.1
+	github.com/prometheus/cfaccess v0.1.0
 	github.com/prometheus/client_golang v1.25.0
 	github.com/prometheus/client_golang/exp v0.0.0-20261028105007-0b2f01f00376
 	github.com/prometheus/client_model v0.6.3
@@ -111,18 +112,27 @@ require (
 )
 
 require (
+	github.com/cloudflare/cloudflared v0.0.0-20260306125340-d2a87e9b9345 // indirect
+	github.com/coreos/go-oidc/v3 v3.17.0 // indirect
+	github.com/cpuguy83/go-md2man/v2 v2.0.0 // indirect
+	github.com/go-jose/go-jose/v4 v4.1.4 // indirect
 	github.com/go-openapi/swag/pools v0.29.2 // indirect
 	github.com/gofrs/flock v0.13.1 // indirect
 	github.com/hashicorp/go-metrics v0.6.0 // indirect
 	github.com/maxatome/go-testdeep v1.14.0 // indirect
 	github.com/pb33f/jsonschema/v6 v6.0.3 // indirect
+	github.com/pkg/errors v0.9.1 // indirect
+	github.com/rs/zerolog v1.20.0 // indirect
+	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/sony/gobreaker/v2 v2.4.0 // indirect
+	github.com/urfave/cli/v2 v2.3.0 // indirect
 	github.com/youmark/pkcs8 v0.0.0-20240726163527-a2c0da244d78 // indirect
 	go.opentelemetry.io/collector/consumer/xconsumer v0.163.0 // indirect
 	go.opentelemetry.io/collector/pdata/pprofile v0.163.0 // indirect
 	go.opentelemetry.io/collector/pdata/xpdata v0.163.0 // indirect
 	go.opentelemetry.io/collector/processor/xprocessor v0.163.0 // indirect
 	go.opentelemetry.io/otel/log v1.47.0 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
 require (
