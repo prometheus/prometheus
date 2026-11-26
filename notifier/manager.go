@@ -127,17 +127,6 @@ func (n *Manager) ApplyConfig(conf *config.Config) error {
 	n.mtx.Lock()
 	defer n.mtx.Unlock()
 
-	n.opts.ExternalLabels = conf.GlobalConfig.ExternalLabels
-	n.opts.RelabelConfigs = conf.AlertingConfig.AlertRelabelConfigs
-	for i, rc := range n.opts.RelabelConfigs {
-		switch rc.NameValidationScheme {
-		case model.LegacyValidation, model.UTF8Validation:
-		default:
-			n.opts.RelabelConfigs[i].NameValidationScheme = conf.GlobalConfig.MetricNameValidationScheme
-		}
-	}
-
-	amSets := make(map[string]*alertmanagerSet)
 	// configToAlertmanagers maps alertmanager sets for each unique AlertmanagerConfig,
 	// helping to avoid dropping known alertmanagers and re-use them without waiting for SD updates when applying the config.
 	configToAlertmanagers := make(map[string]*alertmanagerSet, len(n.alertmanagers))
@@ -149,7 +138,15 @@ func (n *Manager) ApplyConfig(conf *config.Config) error {
 		configToAlertmanagers[hash] = oldAmSet
 	}
 
-	for k, cfg := range conf.AlertingConfig.AlertmanagerConfigs.ToMap() {
+	// Build and validate all new alertmanagerSets before mutating any existing state
+	// so a failed reload leaves active sendLoops and Manager options intact.
+	type preparedSet struct {
+		ams  *alertmanagerSet
+		hash string
+	}
+	amConfigs := conf.AlertingConfig.AlertmanagerConfigs.ToMap()
+	prepared := make(map[string]preparedSet, len(amConfigs))
+	for k, cfg := range amConfigs {
 		ams, err := newAlertmanagerSet(cfg, n.opts, n.logger, n.metrics)
 		if err != nil {
 			return err
@@ -160,7 +157,24 @@ func (n *Manager) ApplyConfig(conf *config.Config) error {
 			return err
 		}
 
-		if oldAmSet, ok := configToAlertmanagers[hash]; ok {
+		prepared[k] = preparedSet{ams: ams, hash: hash}
+	}
+
+	// Commit phase: all fallible operations have succeeded.
+	n.opts.ExternalLabels = conf.GlobalConfig.ExternalLabels
+	n.opts.RelabelConfigs = conf.AlertingConfig.AlertRelabelConfigs
+	for i, rc := range n.opts.RelabelConfigs {
+		switch rc.NameValidationScheme {
+		case model.LegacyValidation, model.UTF8Validation:
+		default:
+			n.opts.RelabelConfigs[i].NameValidationScheme = conf.GlobalConfig.MetricNameValidationScheme
+		}
+	}
+
+	amSets := make(map[string]*alertmanagerSet, len(prepared))
+	for k, p := range prepared {
+		ams := p.ams
+		if oldAmSet, ok := configToAlertmanagers[p.hash]; ok {
 			ams.ams = oldAmSet.ams
 			ams.droppedAms = oldAmSet.droppedAms
 			// Only transfer sendLoops to the first new config with this hash.

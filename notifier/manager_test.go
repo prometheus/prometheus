@@ -1621,6 +1621,97 @@ alerting:
 	}
 }
 
+// TestApplyConfigFailurePreservesExistingState verifies that a failed ApplyConfig
+// leaves existing alertmanagerSets, their sendLoops, and Manager options untouched,
+// and does not cause a nil-map panic on subsequent target reloads.
+func TestApplyConfigFailurePreservesExistingState(t *testing.T) {
+	n := NewManager(&Options{QueueCapacity: 10}, model.UTF8Validation, nil)
+	t.Cleanup(func() {
+		require.NoError(t, n.ApplyConfig(&config.Config{}))
+	})
+
+	validYAML := `
+global:
+  external_labels:
+    env: prod
+alerting:
+  alertmanagers:
+  - file_sd_configs:
+    - files:
+      - foo.json
+    path_prefix: /am0
+  - file_sd_configs:
+    - files:
+      - bar.json
+    path_prefix: /am1
+  - file_sd_configs:
+    - files:
+      - baz.json
+    path_prefix: /am2
+`
+	validCfg := &config.Config{}
+	require.NoError(t, yaml.UnmarshalStrict([]byte(validYAML), validCfg))
+	require.NoError(t, n.ApplyConfig(validCfg))
+
+	tgs := map[string][]*targetgroup.Group{
+		"config-0": {{Targets: []model.LabelSet{{"__address__": "am0:9093"}}}},
+		"config-1": {{Targets: []model.LabelSet{{"__address__": "am1:9093"}}}},
+		"config-2": {{Targets: []model.LabelSet{{"__address__": "am2:9093"}}}},
+	}
+	n.reload(tgs)
+
+	origLoops := make(map[string]*sendLoop, len(tgs))
+	for k := range tgs {
+		amSet := n.alertmanagers[k]
+		require.NotNil(t, amSet)
+		require.Len(t, amSet.sendLoops, 1)
+		for _, sl := range amSet.sendLoops {
+			origLoops[k] = sl
+		}
+	}
+
+	// Keep the valid configs, change external_labels, and add an Alertmanager config
+	// whose TLS CA file does not exist so newAlertmanagerSet fails during reload.
+	badYAML := validYAML + `  - tls_config:
+      ca_file: /nonexistent/ca.pem
+    file_sd_configs:
+    - files:
+      - broken.json
+`
+	badYAML = strings.Replace(badYAML, "env: prod", "env: broken", 1)
+	badCfg := &config.Config{}
+	require.NoError(t, yaml.UnmarshalStrict([]byte(badYAML), badCfg))
+
+	// Run multiple attempts to exercise random map iteration order in ToMap().
+	for range 10 {
+		require.Error(t, n.ApplyConfig(badCfg))
+	}
+
+	require.Equal(t, labels.FromStrings("env", "prod"), n.opts.ExternalLabels)
+	for k, orig := range origLoops {
+		amSet := n.alertmanagers[k]
+		require.NotNil(t, amSet)
+		require.NotNil(t, amSet.sendLoops, "sendLoops map for %s must not be wiped to nil on failed reload", k)
+		require.Len(t, amSet.sendLoops, 1)
+		for _, sl := range amSet.sendLoops {
+			require.Same(t, orig, sl)
+		}
+	}
+
+	// A subsequent target update adding a new target must not panic with nil map assignment.
+	updatedTgs := map[string][]*targetgroup.Group{
+		"config-0": {{Targets: []model.LabelSet{{"__address__": "am0:9093"}, {"__address__": "am0-new:9093"}}}},
+		"config-1": {{Targets: []model.LabelSet{{"__address__": "am1:9093"}, {"__address__": "am1-new:9093"}}}},
+		"config-2": {{Targets: []model.LabelSet{{"__address__": "am2:9093"}, {"__address__": "am2-new:9093"}}}},
+	}
+	require.NotPanics(t, func() {
+		n.reload(updatedTgs)
+	})
+	for k := range updatedTgs {
+		require.Len(t, n.alertmanagers[k].sendLoops, 2)
+	}
+}
+
 func newBlackHoleAlertmanager(stop <-chan struct{}) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		// Do nothing, wait to be canceled.
