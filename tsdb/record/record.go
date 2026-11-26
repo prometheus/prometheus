@@ -938,6 +938,22 @@ func (*Encoder) Series(series []RefSeries, b []byte) []byte {
 	return buf.Get()
 }
 
+// SeriesFromFunc appends a single WAL record of type Series to b and returns the
+// resulting slice. The record contains n entries, each with a series reference
+// and labels supplied by seriesAt(i), called once per index in order from 0 to n-1.
+// The function and returned labels are not retained.
+func (*Encoder) SeriesFromFunc(n int, seriesAt func(int) RefSeries, b []byte) []byte {
+	buf := encoding.Encbuf{B: b}
+	buf.PutByte(byte(Series))
+
+	for i := range n {
+		s := seriesAt(i)
+		buf.PutBE64(uint64(s.Ref))
+		EncodeLabels(&buf, s.Labels)
+	}
+	return buf.Get()
+}
+
 // MinValidTime appends the encoded min valid time record to b and returns the resulting
 // slice. It is only ever written into checkpoints, never into a live WAL segment.
 func (*Encoder) MinValidTime(mint int64, b []byte) []byte {

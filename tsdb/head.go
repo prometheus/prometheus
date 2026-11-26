@@ -96,16 +96,16 @@ type Head struct {
 	exemplars       ExemplarStorage
 	logger          *slog.Logger
 	// TODO(bwplotka): Consider using record.Pools that's reused with WAL watchers.
-	refSeriesPool       zeropool.Pool[[]record.RefSeries]
-	floatsPool          zeropool.Pool[[]record.RefSample]
-	exemplarsPool       zeropool.Pool[[]exemplarWithSeries]
-	histogramsPool      zeropool.Pool[[]record.RefHistogramSample]
-	floatHistogramsPool zeropool.Pool[[]record.RefFloatHistogramSample]
-	metadataPool        zeropool.Pool[[]record.RefMetadata]
-	seriesPool          zeropool.Pool[[]*memSeries]
-	typeMapPool         zeropool.Pool[map[chunks.HeadSeriesRef]sampleType]
-	bytesPool           zeropool.Pool[[]byte]
-	memChunkPool        sync.Pool
+	seriesRecordCandidatesPool zeropool.Pool[[]seriesRecordCandidate]
+	floatsPool                 zeropool.Pool[[]record.RefSample]
+	exemplarsPool              zeropool.Pool[[]exemplarWithSeries]
+	histogramsPool             zeropool.Pool[[]record.RefHistogramSample]
+	floatHistogramsPool        zeropool.Pool[[]record.RefFloatHistogramSample]
+	metadataPool               zeropool.Pool[[]record.RefMetadata]
+	seriesPool                 zeropool.Pool[[]*memSeries]
+	typeMapPool                zeropool.Pool[map[chunks.HeadSeriesRef]sampleType]
+	bytesPool                  zeropool.Pool[[]byte]
+	memChunkPool               sync.Pool
 
 	// These pools are only used during WAL/WBL replay and are reset at the end.
 	// NOTE: Adjust resetWLReplayResources() upon changes to the pools.
@@ -123,6 +123,10 @@ type Head struct {
 
 	walExpiriesMtx sync.Mutex
 	walExpiries    map[chunks.HeadSeriesRef]int64 // Series no longer in the head, and what time they must be kept until.
+
+	// walSeriesMtx serializes selecting and logging series records with their first data record.
+	// Lock order: walSeriesMtx, then the WAL's lock. Never take it while holding a series lock.
+	walSeriesMtx sync.Mutex
 
 	wblPinnedSeriesRefsMtx sync.Mutex
 	// Series references that the WBL uses. WAL replay maps each one onto a
@@ -167,7 +171,7 @@ type Head struct {
 	memTruncationInProcess atomic.Bool
 	memTruncationCallBack  func() // For testing purposes.
 	// TODO: find a better solution than this test hook in production code.
-	// testAfterSeriesLookup is invoked after getByID in appenders, before the
+	// testAfterSeriesLookup is invoked after a series lookup in appenders, before the
 	// series is locked. Tests use it to race GC against a resolved pointer.
 	testAfterSeriesLookup func(*memSeries)
 	// TODO: find a better solution than this test hook in production code.
@@ -2423,6 +2427,10 @@ func (h *Head) getOrCreateWithOptionalID(id chunks.HeadSeriesRef, hash uint64, l
 		shardHash = labels.StableHash(lset)
 	}
 	optimisticallyCreatedSeries := newMemSeries(lset, id, shardHash, h.opts.IsolationDisabled, pendingCommit)
+	// Restored series and series created without a WAL need no new WAL series record.
+	if !pendingCommit || h.wal == nil {
+		optimisticallyCreatedSeries.walState.Store(seriesWALLogged)
+	}
 
 	assignID := id == 0
 	for {
@@ -3182,7 +3190,7 @@ type memSeries struct {
 	// been explicitly enabled in TSDB.
 	shardHash uint64
 
-	// Everything after here should only be accessed with the lock held.
+	// Except for atomic fields, everything after here requires the lock.
 	sync.Mutex
 
 	lset labels.Labels // Locking required with -tags dedupelabels, not otherwise.
@@ -3193,6 +3201,11 @@ type memSeries struct {
 	lastExemplarTs int64
 	// Whether an exemplar timestamp has been recorded, including zero or negative timestamps.
 	hasExemplar bool
+	// Tracks the WAL series record's status before other records reference this series.
+	// seriesWALUnlogged: The series record still needs to be logged.
+	// seriesWALWriting: The WAL batch containing the series record is being prepared or written.
+	// seriesWALLogged: The series record was logged successfully or is not needed.
+	walState stdatomic.Uint32
 
 	// Immutable chunks on disk that have not yet gone into a block, in order of ascending time stamps.
 	// When compaction runs, chunks get moved into a block and all pointers are shifted like so:
