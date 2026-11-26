@@ -1188,3 +1188,49 @@ func TestFiringAlertResetToPendingOnHoldDurationIncrease(t *testing.T) {
 		}
 	}
 }
+
+func TestAlertingRuleLimitKeepsExistingState(t *testing.T) {
+	storage := promqltest.LoadedStorage(t, `
+		load 1m
+			metric{label="1"} 1
+			metric{label="2"} 1
+	`)
+	t.Cleanup(func() { _ = storage.Close() })
+
+	expr, _ := testParser.ParseExpr(`metric > 0`)
+	rule := NewAlertingRule(
+		"foo", expr, time.Minute, 0,
+		labels.FromStrings("test", "test"),
+		labels.EmptyLabels(), labels.EmptyLabels(), "",
+		true, promslog.NewNopLogger(),
+	)
+	ng := testEngine(t)
+	ctx := context.TODO()
+
+	// First evaluation: both alerts become pending (ActiveAt = t0).
+	_, err := rule.Eval(ctx, 0, time.Unix(0, 0), EngineQueryFunc(ng, storage), nil, 5)
+	require.NoError(t, err)
+	// Second evaluation after holdDuration: both alerts become firing.
+	_, err = rule.Eval(ctx, 0, time.Unix(120, 0), EngineQueryFunc(ng, storage), nil, 5)
+	require.NoError(t, err)
+	before := rule.ActiveAlerts()
+	require.Len(t, before, 2)
+	for _, a := range before {
+		require.Equal(t, StateFiring, a.State)
+		require.Equal(t, time.Unix(0, 0), a.ActiveAt)
+	}
+
+	// An evaluation exceeding the limit wipes the whole active map.
+	_, err = rule.Eval(ctx, 0, time.Unix(180, 0), EngineQueryFunc(ng, storage), nil, 1)
+	require.Error(t, err)
+
+	// The next normal evaluation must keep the existing firing state.
+	_, err = rule.Eval(ctx, 0, time.Unix(240, 0), EngineQueryFunc(ng, storage), nil, 5)
+	require.NoError(t, err)
+	after := rule.ActiveAlerts()
+	require.Len(t, after, 2)
+	for _, a := range after {
+		require.Equal(t, StateFiring, a.State, "existing firing alert must stay firing after a limit error")
+		require.Equal(t, time.Unix(0, 0), a.ActiveAt, "existing alert ActiveAt must not be reset")
+	}
+}
