@@ -31,6 +31,8 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/google/go-cmp/cmp"
 	remoteapi "github.com/prometheus/client_golang/exp/api/remote"
+	"github.com/prometheus/client_golang/prometheus"
+	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 
@@ -1235,6 +1237,60 @@ func TestCommitErr_V1Message(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, http.StatusInternalServerError, resp.StatusCode)
 	require.Equal(t, "commit error\n", string(body))
+}
+
+func TestRemoteWriteV1SamplesAppendedWithoutMetadataMetric(t *testing.T) {
+	payload, _, _, err := buildWriteRequest(nil, writeRequestFixture.Timeseries, nil, nil, nil, nil, "snappy")
+	require.NoError(t, err)
+
+	expectedSamples := 0
+	for _, ts := range writeRequestFixture.Timeseries {
+		expectedSamples += len(ts.Samples) + len(ts.Histograms)
+	}
+	require.Positive(t, expectedSamples)
+
+	for _, tc := range []struct {
+		name         string
+		commitErr    error
+		expectedCode int
+		expectedVal  int
+	}{
+		{
+			name:         "successful commit increments counter",
+			commitErr:    nil,
+			expectedCode: http.StatusNoContent,
+			expectedVal:  expectedSamples,
+		},
+		{
+			name:         "failed commit does not increment counter",
+			commitErr:    errors.New("commit error"),
+			expectedCode: http.StatusInternalServerError,
+			expectedVal:  0,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req, err := http.NewRequest(http.MethodPost, "", bytes.NewReader(payload))
+			require.NoError(t, err)
+
+			reg := prometheus.NewRegistry()
+			appendable := &mockAppendable{commitErr: tc.commitErr}
+			handler := NewWriteHandler(promslog.NewNopLogger(), reg, appendable, []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType}, false, false)
+
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, req)
+
+			resp := recorder.Result()
+			defer resp.Body.Close()
+			require.Equal(t, tc.expectedCode, resp.StatusCode)
+
+			expectedMetric := fmt.Sprintf(`
+# HELP prometheus_api_remote_write_without_metadata_appended_samples_total The total number of received remote write samples (and histogram samples) which were ingested without corresponding metadata.
+# TYPE prometheus_api_remote_write_without_metadata_appended_samples_total counter
+prometheus_api_remote_write_without_metadata_appended_samples_total %d
+`, tc.expectedVal)
+			require.NoError(t, prom_testutil.GatherAndCompare(reg, strings.NewReader(expectedMetric), "prometheus_api_remote_write_without_metadata_appended_samples_total"))
+		})
+	}
 }
 
 // Regression test for https://github.com/prometheus/prometheus/issues/17206
