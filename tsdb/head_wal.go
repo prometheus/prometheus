@@ -155,14 +155,9 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 				missingSeries[e.Ref] = struct{}{}
 				continue
 			}
-			// At the moment the only possible error here is out of order exemplars, which we shouldn't see when
-			// replaying the WAL, so lets just log the error if it's not that type.
-			err = h.exemplars.AddExemplar(ms.labels(), exemplar.Exemplar{Ts: e.T, Value: e.V, Labels: e.Labels})
+			err = h.exemplars.restoreExemplar(ms.labels(), exemplar.Exemplar{Ts: e.T, Value: e.V, Labels: e.Labels})
 			if err == nil {
 				ms.updateExemplarTimestamp(e.T)
-			}
-			if err != nil && errors.Is(err, storage.ErrOutOfOrderExemplar) {
-				h.logger.Warn("Unexpected error when replaying WAL on exemplar record", "err", err)
 			}
 		}
 		unknownSeriesRefs.merge(missingSeries)
@@ -1944,7 +1939,7 @@ Outer:
 					continue
 				}
 
-				if err := h.exemplars.AddExemplar(ms.labels(), exemplar.Exemplar{
+				if err := h.exemplars.restoreExemplar(ms.labels(), exemplar.Exemplar{
 					Labels: e.Labels,
 					Value:  e.V,
 					Ts:     e.T,

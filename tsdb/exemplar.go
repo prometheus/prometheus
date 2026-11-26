@@ -224,12 +224,14 @@ func (ce *CircularExemplarStorage) ValidateExemplar(l labels.Labels, e exemplar.
 	// Optimize by moving the lock to be per series (& benchmark it).
 	ce.lock.RLock()
 	defer ce.lock.RUnlock()
-	return ce.validateExemplar(ce.index[string(seriesLabels)], e, false)
+	return ce.validateExemplar(ce.index[string(seriesLabels)], e, false, true)
 }
 
 // Not thread safe. The appended parameters tells us whether this is an external validation, or internal
 // as a result of an AddExemplar call, in which case we should update any relevant metrics.
-func (ce *CircularExemplarStorage) validateExemplar(idx *indexEntry, e exemplar.Exemplar, appended bool) error {
+// The checkOrder parameter tells us whether to reject exemplars older than the newest one. Without it,
+// exemplars that break the order of exemplars with the same timestamp are reported as duplicates.
+func (ce *CircularExemplarStorage) validateExemplar(idx *indexEntry, e exemplar.Exemplar, appended, checkOrder bool) error {
 	if len(ce.exemplars) == 0 {
 		return storage.ErrExemplarsDisabled
 	}
@@ -263,24 +265,43 @@ func (ce *CircularExemplarStorage) validateExemplar(idx *indexEntry, e exemplar.
 	// so this is sufficient. For native histograms with multiple exemplars per series,
 	// we have another check below.
 	newestExemplar := ce.exemplars[idx.newest].exemplar
-	if newestExemplar.Equals(e) {
+	// The WAL and chunk snapshots do not record HasTs, so Equals ignores the
+	// timestamps of restored exemplars. Require equal timestamps when restoring,
+	// so that an exemplar is not dropped as a duplicate of an earlier one with
+	// the same labels and value.
+	if newestExemplar.Equals(e) && (checkOrder || newestExemplar.Ts == e.Ts) {
 		return storage.ErrDuplicateExemplar
 	}
 
-	// Reject exemplars older than the OOO time window relative to the newest exemplar.
 	// Exemplars with the same timestamp are ordered by value then label hash to detect
 	// duplicates without iterating through all stored exemplars, which would be too
 	// expensive under lock. Exemplars with equal timestamps but different values or
 	// labels are allowed to support multiple buckets of native histograms.
-	if (e.Ts < newestExemplar.Ts && e.Ts <= newestExemplar.Ts-ce.oooTimeWindowMillis) ||
-		(e.Ts == newestExemplar.Ts && e.Value < newestExemplar.Value) ||
-		(e.Ts == newestExemplar.Ts && e.Value == newestExemplar.Value && e.Labels.Hash() < newestExemplar.Labels.Hash()) {
+	sameTsOutOfOrder := sameTimestampOutOfOrder(newestExemplar, e)
+	if !checkOrder {
+		if sameTsOutOfOrder {
+			// Storing the exemplar would break the order that duplicate
+			// detection relies on, so treat it as a possible duplicate.
+			return storage.ErrDuplicateExemplar
+		}
+		return nil
+	}
+
+	// Reject exemplars older than the OOO time window relative to the newest exemplar.
+	if (e.Ts < newestExemplar.Ts && e.Ts <= newestExemplar.Ts-ce.oooTimeWindowMillis) || sameTsOutOfOrder {
 		if appended {
 			ce.metrics.outOfOrderExemplars.Inc()
 		}
 		return storage.ErrOutOfOrderExemplar
 	}
 	return nil
+}
+
+// sameTimestampOutOfOrder reports whether storing e after prev would break the
+// order of exemplars with the same timestamp, by value then label hash.
+func sameTimestampOutOfOrder(prev, e exemplar.Exemplar) bool {
+	return (e.Ts == prev.Ts && e.Value < prev.Value) ||
+		(e.Ts == prev.Ts && e.Value == prev.Value && e.Labels.Hash() < prev.Labels.Hash())
 }
 
 // SetOutOfOrderTimeWindow sets the out-of-order time window for exemplars in
@@ -387,6 +408,20 @@ func (ce *CircularExemplarStorage) shrink(l int64) (migrated int) {
 }
 
 func (ce *CircularExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemplar) error {
+	return ce.addExemplar(l, e, true)
+}
+
+// restoreExemplar adds an exemplar recovered from the WAL or a chunk snapshot.
+// Unlike AddExemplar, it accepts an exemplar older than the newest one of the
+// series: WAL checkpoints drop exemplars by timestamp, so the exemplars that
+// had displaced an older one from the buffer may not be recovered. This also
+// restores exemplars that a commit rejected as older after logging them to
+// the WAL.
+func (ce *CircularExemplarStorage) restoreExemplar(l labels.Labels, e exemplar.Exemplar) error {
+	return ce.addExemplar(l, e, false)
+}
+
+func (ce *CircularExemplarStorage) addExemplar(l labels.Labels, e exemplar.Exemplar, checkOrder bool) error {
 	// TODO(bwplotka): This lock can lock all scrapers, there might high contention on this on scale.
 	// Optimize by moving the lock to be per series (& benchmark it).
 	ce.lock.Lock()
@@ -400,7 +435,7 @@ func (ce *CircularExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemp
 	seriesLabels := l.Bytes(buf[:])
 
 	idx, indexExists := ce.index[string(seriesLabels)]
-	err := ce.validateExemplar(idx, e, true)
+	err := ce.validateExemplar(idx, e, true, checkOrder)
 	if err != nil {
 		if errors.Is(err, storage.ErrDuplicateExemplar) {
 			// Duplicate exemplar, noop.
@@ -417,12 +452,22 @@ func (ce *CircularExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemp
 		outOfOrder = e.Ts >= ce.exemplars[idx.oldest].exemplar.Ts && e.Ts < ce.exemplars[idx.newest].exemplar.Ts
 		if outOfOrder {
 			insertionIndex = ce.findInsertionIndex(e, idx)
-			if ce.exemplars[insertionIndex].exemplar.Ts == e.Ts {
-				// Assume duplicate exemplar, noop.
-				// Native histograms will exercise this code path a lot due to
-				// having multiple exemplars per series so checking the
-				// value and labels would be too expensive.
-				return nil
+			if prev := ce.exemplars[insertionIndex].exemplar; prev.Ts == e.Ts {
+				if checkOrder {
+					// Assume duplicate exemplar, noop.
+					// Native histograms will exercise this code path a lot due to
+					// having multiple exemplars per series so checking the
+					// value and labels would be too expensive.
+					return nil
+				}
+				// When restoring, exemplars that the live head appended after a
+				// newest exemplar with the same timestamp can land here, before a
+				// newer restored one. Check them against the last exemplar with
+				// that timestamp as validateExemplar checks against the newest
+				// one, instead of assuming duplicates.
+				if prev.Equals(e) || sameTimestampOutOfOrder(prev, e) {
+					return nil
+				}
 			}
 		}
 	}

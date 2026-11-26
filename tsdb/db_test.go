@@ -31,6 +31,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"sync"
@@ -1740,6 +1741,274 @@ func TestSeriesCompactionWithExemplarsPreservesWALSampleReferences(t *testing.T)
 					"still has gets a chance to replay or be truncated away")
 		})
 	}
+}
+
+func TestOpen_ExemplarAcceptedAfterDisplacementSurvivesCheckpoint(t *testing.T) {
+	first, second := sameTimestampExemplarsRejectedAtCommit(t, 1050)
+	larger := exemplar.Exemplar{Labels: labels.FromStrings("trace_id", "larger"), Value: 2, Ts: 1050}
+	for _, tc := range []struct {
+		name string
+		// Whether stale series compaction evicts the series after the displaced
+		// exemplar, so that the accepted ones belong to a recreated series.
+		recreate bool
+		capacity int64
+		// Exemplars appended with one sample after the displaced exemplar has
+		// left the buffer. Replay inserts them before the displaced one.
+		accepted []exemplar.Exemplar
+		// Exemplars appended after the accepted ones with the same sample,
+		// which the commit drops as duplicates or as out of order.
+		dropped []exemplar.Exemplar
+	}{
+		{name: "same series", capacity: 2, accepted: []exemplar.Exemplar{first}},
+		{name: "recreated series", recreate: true, capacity: 2, accepted: []exemplar.Exemplar{first}},
+		{name: "accepted exemplar overwrites displaced one", recreate: true, capacity: 1, accepted: []exemplar.Exemplar{first}},
+		{name: "exemplars accepted with the same timestamp", capacity: 3, accepted: []exemplar.Exemplar{first, larger}},
+		{name: "exemplars dropped with the same timestamp", capacity: 3, accepted: []exemplar.Exemplar{first}, dropped: []exemplar.Exemplar{first, second}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			const blockRange = 1000
+			opts := DefaultOptions()
+			opts.MinBlockDuration = blockRange
+			opts.MaxBlockDuration = blockRange
+			opts.EnableExemplarStorage = true
+			opts.MaxExemplars = tc.capacity
+			db := newTestDB(t, withOpts(opts))
+			db.DisableCompactions()
+
+			seriesLabels := labels.FromStrings("name", "exemplars")
+			matcher := labels.MustNewMatcher(labels.MatchEqual, "name", "exemplars")
+			// The displaced exemplar is newer than the accepted ones, which are only
+			// in order because the displaced one has left the buffer by then.
+			displaced := exemplar.Exemplar{Labels: labels.FromStrings("trace_id", "displaced"), Value: 1, Ts: 1100}
+			appendExemplar := func(db *DB, ref storage.SeriesRef, ls labels.Labels, sampleTs int64, es ...exemplar.Exemplar) storage.SeriesRef {
+				t.Helper()
+				app := db.AppenderV2(t.Context())
+				ref, err := app.Append(ref, ls, 0, sampleTs, 1, nil, nil, storage.AOptions{Exemplars: es})
+				require.NoError(t, err)
+				require.NoError(t, app.Commit())
+				return ref
+			}
+			requireExemplars := func(db *DB, want ...exemplar.Exemplar) {
+				t.Helper()
+				q, err := db.ExemplarQuerier(t.Context())
+				require.NoError(t, err)
+				result, err := q.Select(blockRange, 1200, []*labels.Matcher{matcher})
+				require.NoError(t, err)
+				testutil.RequireEqual(t, []exemplar.QueryResult{{SeriesLabels: seriesLabels, Exemplars: want}}, result)
+			}
+
+			firstRef := appendExemplar(db, 0, seriesLabels, 100, displaced)
+			ref := firstRef
+			if tc.recreate {
+				app := db.AppenderV2(t.Context())
+				_, err := app.Append(firstRef, seriesLabels, 0, 800, math.Float64frombits(value.StaleNaN), nil, nil, storage.AOptions{})
+				require.NoError(t, err)
+				// An unrelated sample raises the eviction expiry above the
+				// checkpoint cutoff, keeping the old WAL declaration.
+				_, err = app.Append(0, labels.FromStrings("name", "anchor"), 0, displaced.Ts, 1, nil, nil, storage.AOptions{})
+				require.NoError(t, err)
+				require.NoError(t, app.Commit())
+				require.Equal(t, displaced.Ts, db.Head().MaxTime())
+				require.NoError(t, db.CompactStaleHead())
+				require.Nil(t, db.Head().series.getByID(chunks.HeadSeriesRef(firstRef)))
+				ref = 0
+			}
+
+			// Fill the circular buffer to displace the first exemplar. All these
+			// entries fall below the checkpoint cutoff, while the displaced and
+			// accepted exemplars both remain eligible for replay.
+			other := labels.FromStrings("name", "other")
+			var otherRef storage.SeriesRef
+			for i := range tc.capacity {
+				e := exemplar.Exemplar{Labels: labels.FromStrings("trace_id", "other"), Value: float64(i), Ts: 850 + i}
+				otherRef = appendExemplar(db, otherRef, other, e.Ts, e)
+			}
+			// Only a recreated series gets a new ref.
+			acceptedRef := appendExemplar(db, ref, seriesLabels, first.Ts, slices.Concat(tc.accepted, tc.dropped)...)
+			require.Equal(t, tc.recreate, acceptedRef != firstRef)
+			requireExemplars(db, tc.accepted...)
+
+			// Roll the WAL so the records above are all in the checkpoint range.
+			_, last, err := wlog.Segments(db.head.wal.Dir())
+			require.NoError(t, err)
+			for range 6 {
+				_, err := db.head.wal.NextSegment()
+				require.NoError(t, err)
+			}
+			require.NoError(t, db.CompactHead(NewRangeHead(db.Head(), 0, blockRange-1)))
+			_, checkpoint, err := wlog.LastCheckpoint(db.head.wal.Dir())
+			require.NoError(t, err)
+			require.GreaterOrEqual(t, checkpoint, last)
+			require.NoError(t, db.Close())
+
+			want := append(slices.Clone(tc.accepted), displaced)
+			if tc.capacity == 1 {
+				// The accepted exemplar takes the only buffer entry.
+				want = want[:1]
+			}
+
+			// Only the second close can write a snapshot, so this open must
+			// replay the checkpoint.
+			opts.EnableMemorySnapshotOnShutdown = true
+			reopened := newTestDB(t, withDir(db.Dir()), withOpts(opts))
+			reopened.DisableCompactions()
+			requireExemplars(reopened, want...)
+			require.Zero(t, prom_testutil.ToFloat64(reopened.head.metrics.walReplayUnknownRefsTotal.WithLabelValues("exemplars")))
+
+			// The snapshot holds the displaced exemplar before the accepted one.
+			require.NoError(t, reopened.Close())
+			_, _, _, err = LastChunkSnapshot(db.Dir())
+			require.NoError(t, err)
+			restored := newTestDB(t, withDir(db.Dir()), withOpts(opts))
+			restored.DisableCompactions()
+			// A failed snapshot load falls back to WAL replay, which would
+			// hide an exemplar rejected by the snapshot load.
+			require.Zero(t, prom_testutil.ToFloat64(restored.head.metrics.snapshotReplayErrorTotal))
+			requireExemplars(restored, want...)
+		})
+	}
+}
+
+// sameTimestampExemplarsRejectedAtCommit returns two exemplars with timestamp
+// ts, such that committing a sample with both rejects the second one after the
+// WAL has logged it. Appenders sort the exemplars of a sample by
+// exemplar.Compare, which breaks ties by labels, while exemplar storage orders
+// exemplars with the same timestamp and value by label hash to detect
+// duplicates. The two orders disagree for the returned pair.
+func sameTimestampExemplarsRejectedAtCommit(t *testing.T, ts int64) (first, second exemplar.Exemplar) {
+	t.Helper()
+	// The label hash depends on the labels implementation, so search for such
+	// a pair instead of hard-coding one.
+	for i := range 100 {
+		first = exemplar.Exemplar{Labels: labels.FromStrings("trace_id", fmt.Sprintf("a%d", i)), Value: 1, Ts: ts}
+		second = exemplar.Exemplar{Labels: labels.FromStrings("trace_id", fmt.Sprintf("b%d", i)), Value: 1, Ts: ts}
+		if second.Labels.Hash() < first.Labels.Hash() {
+			break
+		}
+	}
+	require.Negative(t, exemplar.Compare(first, second))
+	require.Less(t, second.Labels.Hash(), first.Labels.Hash())
+	return first, second
+}
+
+func TestOpen_ExemplarRejectedAtCommit(t *testing.T) {
+	first, second := sameTimestampExemplarsRejectedAtCommit(t, 100)
+	newer := exemplar.Exemplar{Labels: labels.FromStrings("trace_id", "newer"), Value: 1, Ts: 1100}
+	older := exemplar.Exemplar{Labels: labels.FromStrings("trace_id", "older"), Value: 1, Ts: 1050}
+	// The older exemplar again, with a later timestamp.
+	later := exemplar.Exemplar{Labels: older.Labels, Value: older.Value, Ts: 1200}
+	for _, tc := range []struct {
+		name     string
+		capacity int64
+		// The exemplars of each sample appended, grouped by the commit that
+		// appends them.
+		commits [][][]exemplar.Exemplar
+		// The exemplars that the live head keeps.
+		want []exemplar.Exemplar
+	}{
+		{
+			// Restoring the second exemplar would break the order of exemplars with
+			// the same timestamp, so that the next append of the same exemplars
+			// stores the first one again.
+			name:     "same timestamp as an exemplar of the same sample",
+			capacity: 10,
+			commits:  [][][]exemplar.Exemplar{{{first, second}}},
+			want:     []exemplar.Exemplar{first},
+		},
+		{
+			// Replay restores the older exemplar, which takes the only buffer entry.
+			// The WAL does not record whether exemplars have their own timestamps,
+			// so replay must not take the later exemplar for a duplicate of it.
+			name:     "older than an exemplar of the same commit",
+			capacity: 1,
+			commits:  [][][]exemplar.Exemplar{{{newer}, {older}}, {{later}}},
+			want:     []exemplar.Exemplar{later},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			opts := DefaultOptions()
+			opts.EnableExemplarStorage = true
+			opts.MaxExemplars = tc.capacity
+			db := newTestDB(t, withOpts(opts))
+			db.DisableCompactions()
+
+			seriesLabels := labels.FromStrings("name", "histogram")
+			matcher := labels.MustNewMatcher(labels.MatchEqual, "name", "histogram")
+			requireExemplars := func(db *DB, want ...exemplar.Exemplar) {
+				t.Helper()
+				q, err := db.ExemplarQuerier(t.Context())
+				require.NoError(t, err)
+				result, err := q.Select(0, 2000, []*labels.Matcher{matcher})
+				require.NoError(t, err)
+				testutil.RequireEqual(t, []exemplar.QueryResult{{SeriesLabels: seriesLabels, Exemplars: want}}, result)
+			}
+
+			var ref storage.SeriesRef
+			sampleTs := int64(100)
+			for _, commit := range tc.commits {
+				app := db.AppenderV2(t.Context())
+				for _, es := range commit {
+					var err error
+					ref, err = app.Append(ref, seriesLabels, 0, sampleTs, 0, tsdbutil.GenerateTestHistogram(1), nil, storage.AOptions{Exemplars: es})
+					require.NoError(t, err)
+					sampleTs++
+				}
+				require.NoError(t, app.Commit())
+			}
+			requireExemplars(db, tc.want...)
+			require.NoError(t, db.Close())
+
+			reopened := newTestDB(t, withDir(db.Dir()), withOpts(opts))
+			reopened.DisableCompactions()
+			requireExemplars(reopened, tc.want...)
+		})
+	}
+}
+
+func TestOpen_ChunkSnapshotRestoresExemplarsAfterOutOfOrderWindowShrinks(t *testing.T) {
+	opts := DefaultOptions()
+	opts.EnableExemplarStorage = true
+	opts.MaxExemplars = 10
+	opts.OutOfOrderTimeWindow = 100
+	opts.EnableMemorySnapshotOnShutdown = true
+	db := newTestDB(t, withOpts(opts))
+	db.DisableCompactions()
+
+	seriesLabels := labels.FromStrings("name", "series")
+	matcher := labels.MustNewMatcher(labels.MatchEqual, "name", "series")
+	newer := exemplar.Exemplar{Labels: labels.FromStrings("trace_id", "newer"), Value: 1, Ts: 1050}
+	// Accepted within the out-of-order window, after the newer exemplar.
+	older := exemplar.Exemplar{Labels: labels.FromStrings("trace_id", "older"), Value: 1, Ts: 1000}
+	requireExemplars := func(db *DB, want ...exemplar.Exemplar) {
+		t.Helper()
+		q, err := db.ExemplarQuerier(t.Context())
+		require.NoError(t, err)
+		result, err := q.Select(0, 2000, []*labels.Matcher{matcher})
+		require.NoError(t, err)
+		testutil.RequireEqual(t, []exemplar.QueryResult{{SeriesLabels: seriesLabels, Exemplars: want}}, result)
+	}
+
+	var ref storage.SeriesRef
+	for i, e := range []exemplar.Exemplar{newer, older} {
+		app := db.AppenderV2(t.Context())
+		var err error
+		ref, err = app.Append(ref, seriesLabels, 0, newer.Ts+int64(i)*10, 1, nil, nil, storage.AOptions{Exemplars: []exemplar.Exemplar{e}})
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+	}
+	requireExemplars(db, older, newer)
+	require.NoError(t, db.Close())
+	_, _, _, err := LastChunkSnapshot(db.Dir())
+	require.NoError(t, err)
+
+	// The snapshot holds the older exemplar after the newer one, beyond the new window.
+	opts.OutOfOrderTimeWindow = 0
+	reopened := newTestDB(t, withDir(db.Dir()), withOpts(opts))
+	reopened.DisableCompactions()
+	// A failed snapshot load falls back to WAL replay, which would hide an
+	// exemplar rejected by the snapshot load.
+	require.Zero(t, prom_testutil.ToFloat64(reopened.head.metrics.snapshotReplayErrorTotal))
+	requireExemplars(reopened, older, newer)
 }
 
 func TestNoPanicOnTSDBOpenError(t *testing.T) {
