@@ -14,9 +14,12 @@
 package remote
 
 import (
+	"bytes"
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -27,6 +30,7 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	remoteapi "github.com/prometheus/client_golang/exp/api/remote"
+	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
@@ -1150,6 +1154,83 @@ func TestClientWriteModeContentType(t *testing.T) {
 			_, err = c.Store(t.Context(), []byte{}, 0)
 			require.NoError(t, err)
 			require.Equal(t, tc.expectedContentType, gotContentType)
+		})
+	}
+}
+
+func TestReadClientTruncatedChunkedResponse(t *testing.T) {
+	chks := buildTestChunks(t)
+	buf := &bytes.Buffer{}
+	cw := NewChunkedWriter(buf, &mockFlusher{})
+	for i := range 2 {
+		cSeries := prompb.ChunkedSeries{
+			Labels: []prompb.Label{{Name: "foo", Value: fmt.Sprintf("bar%d", i+1)}},
+			Chunks: []prompb.Chunk{chks[i]},
+		}
+		b, err := proto.Marshal(&prompb.ChunkedReadResponse{
+			ChunkedSeries: []*prompb.ChunkedSeries{&cSeries},
+			QueryIndex:    int64(i),
+		})
+		require.NoError(t, err)
+		_, err = cw.Write(b)
+		require.NoError(t, err)
+	}
+
+	raw := buf.Bytes()
+	frame1Size, n1 := binary.Uvarint(raw)
+	require.Positive(t, n1)
+	frame2Start := n1 + 4 + int(frame1Size)
+	frame2Size, n2 := binary.Uvarint(raw[frame2Start:])
+	require.Positive(t, n2)
+	require.Positive(t, frame2Size)
+
+	for _, tc := range []struct {
+		name   string
+		cutOff int
+	}{
+		{
+			name:   "after uvarint size before crc",
+			cutOff: frame2Start + n2,
+		},
+		{
+			name:   "after crc before payload",
+			cutOff: frame2Start + n2 + 4,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			writeErrCh := make(chan error, 1)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/x-streamed-protobuf; proto=prometheus.ChunkedReadResponse")
+				_, err := w.Write(raw[:tc.cutOff])
+				writeErrCh <- err
+			}))
+			t.Cleanup(server.Close)
+
+			u, err := url.Parse(server.URL)
+			require.NoError(t, err)
+
+			rc, err := NewReadClient("test-truncated", &ClientConfig{
+				URL:              &config_util.URL{URL: u},
+				Timeout:          model.Duration(5 * time.Second),
+				ChunkedReadLimit: config.DefaultChunkedReadLimit,
+			})
+			require.NoError(t, err)
+
+			ss, err := rc.Read(t.Context(), &prompb.Query{StartTimestampMs: 0, EndTimestampMs: 14000}, false)
+			require.NoError(t, err)
+
+			require.True(t, ss.Next())
+			require.NoError(t, ss.Err())
+			require.Equal(t, "bar1", ss.At().Labels().Get("foo"))
+
+			require.False(t, ss.Next())
+			require.ErrorIs(t, ss.Err(), io.ErrUnexpectedEOF)
+			require.NoError(t, <-writeErrCh)
+
+			client, ok := rc.(*Client)
+			require.True(t, ok)
+			require.Equal(t, float64(1), prom_testutil.ToFloat64(client.readQueriesTotal.WithLabelValues("chunked", "aborted_stream")))
+			require.Equal(t, float64(0), prom_testutil.ToFloat64(client.readQueriesTotal.WithLabelValues("chunked", "200")))
 		})
 	}
 }

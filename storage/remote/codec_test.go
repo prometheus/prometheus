@@ -16,6 +16,7 @@ package remote
 import (
 	"bytes"
 	"compress/gzip"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -1172,6 +1173,67 @@ func TestChunkedSeriesSet(t *testing.T) {
 		require.False(t, ss.Next(), "Next() should still return false after the series set is exhausted")
 		require.ErrorIs(t, ss.Err(), originalErr, "Err() should preserve the original error after the series set is exhausted")
 		require.Equal(t, 1, cancelCalls, "cancel should only be called once after the series set is exhausted")
+	})
+
+	t.Run("truncated second frame", func(t *testing.T) {
+		chks := buildTestChunks(t)
+		lbs1 := prompb.FromLabels(labels.FromStrings("foo", "bar1"), nil)
+		lbs2 := prompb.FromLabels(labels.FromStrings("foo", "bar2"), nil)
+		css := newMockChunkSeriesSet([]*prompb.ChunkedSeries{
+			{Labels: lbs1, Chunks: []prompb.Chunk{chks[0]}},
+			{Labels: lbs2, Chunks: []prompb.Chunk{chks[1]}},
+		})
+
+		buf := &bytes.Buffer{}
+		cw := NewChunkedWriter(buf, &mockFlusher{})
+		warnings, err := StreamChunkedReadResponses(cw, 0, css, nil, 1024, &sync.Pool{})
+		require.Empty(t, warnings)
+		require.NoError(t, err)
+
+		raw := buf.Bytes()
+		frame1Size, n1 := binary.Uvarint(raw)
+		require.Positive(t, n1)
+		frame2Start := n1 + 4 + int(frame1Size)
+		frame2Size, n2 := binary.Uvarint(raw[frame2Start:])
+		require.Positive(t, n2)
+		require.Positive(t, frame2Size)
+
+		for _, tc := range []struct {
+			name   string
+			cutOff int
+		}{
+			{
+				name:   "after uvarint size before crc",
+				cutOff: frame2Start + n2,
+			},
+			{
+				name:   "after crc before payload",
+				cutOff: frame2Start + n2 + 4,
+			},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				respBody := newOneShotCloser(bytes.NewReader(raw[:tc.cutOff]))
+				var cancelErr error
+				ss := NewChunkedSeriesSet(
+					NewChunkedReader(respBody, config.DefaultChunkedReadLimit, nil),
+					respBody,
+					0,
+					14000,
+					func(err error) {
+						cancelErr = err
+					},
+				)
+
+				require.True(t, ss.Next())
+				require.NoError(t, ss.Err())
+				require.Equal(t, "bar1", ss.At().Labels().Get("foo"))
+
+				require.False(t, ss.Next())
+				require.ErrorIs(t, ss.Err(), io.ErrUnexpectedEOF)
+				require.ErrorIs(t, cancelErr, io.ErrUnexpectedEOF)
+				require.True(t, respBody.(*oneShotCloser).closed)
+			})
+		}
 	})
 }
 
