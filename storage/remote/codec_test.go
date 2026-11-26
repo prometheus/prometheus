@@ -750,8 +750,12 @@ func TestMergeLabels(t *testing.T) {
 			primary:   []prompb.Label{{Name: "aaa", Value: "foo"}, {Name: "ccc", Value: "foo"}, {Name: "eee", Value: "foo"}},
 			secondary: []prompb.Label{{Name: "bbb", Value: "bar"}, {Name: "ccc", Value: "bar"}, {Name: "ddd", Value: "bar"}, {Name: "fff", Value: "bar"}},
 			expected: []prompb.Label{
-				{Name: "aaa", Value: "foo"}, {Name: "bbb", Value: "bar"}, {Name: "ccc", Value: "foo"},
-				{Name: "ddd", Value: "bar"}, {Name: "eee", Value: "foo"}, {Name: "fff", Value: "bar"},
+				{Name: "aaa", Value: "foo"},
+				{Name: "bbb", Value: "bar"},
+				{Name: "ccc", Value: "foo"},
+				{Name: "ddd", Value: "bar"},
+				{Name: "eee", Value: "foo"},
+				{Name: "fff", Value: "bar"},
 			},
 		},
 	} {
