@@ -42,6 +42,10 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 
@@ -2526,6 +2530,14 @@ func TestSendSamplesWithBackoffWithSampleAgeLimit(t *testing.T) {
 }
 
 func TestSendSamplesWithBackoffAgeFilteredPayloadMetrics(t *testing.T) {
+	previousProvider := otel.GetTracerProvider()
+	recorder := tracetest.NewSpanRecorder()
+	provider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
+	otel.SetTracerProvider(provider)
+	t.Cleanup(func() {
+		otel.SetTracerProvider(previousProvider)
+		require.NoError(t, provider.Shutdown(context.Background()))
+	})
 	for _, protoMsg := range []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType, remoteapi.WriteV2MessageType} {
 		for _, tc := range []struct {
 			name  string
@@ -2540,6 +2552,7 @@ func TestSendSamplesWithBackoffAgeFilteredPayloadMetrics(t *testing.T) {
 			{name: "multiple retries", limit: time.Second, ages: []time.Duration{2 * time.Second, 900 * time.Millisecond, 100 * time.Millisecond}, kept: [][]int{{1, 2}, {2}, {}}},
 		} {
 			t.Run(fmt.Sprintf("%s/%s", protoMsg, tc.name), func(t *testing.T) {
+				recorder.Reset()
 				synctest.Test(t, func(t *testing.T) {
 					var batch []timeSeries
 					for i, age := range tc.ages {
@@ -2567,6 +2580,7 @@ func TestSendSamplesWithBackoffAgeFilteredPayloadMetrics(t *testing.T) {
 					}
 					var (
 						m                                                                   *QueueManager
+						requestSizes                                                        []int
 						attempts, sentSamples, sentExemplars, sentHistograms, receivedBytes int
 					)
 					client := &MockWriteClient{
@@ -2611,6 +2625,7 @@ func TestSendSamplesWithBackoffAgeFilteredPayloadMetrics(t *testing.T) {
 								}
 							}
 							receivedBytes = len(req)
+							requestSizes = append(requestSizes, len(req))
 							attempts++
 							if attempts < len(tc.kept) {
 								delay := 200 * time.Millisecond
@@ -2643,6 +2658,24 @@ func TestSendSamplesWithBackoffAgeFilteredPayloadMetrics(t *testing.T) {
 						require.NoError(t, m.shards.sendV2Samples(t.Context(), v2Pending[:nSeries], symbols.Symbols(), nSamples, nExemplars, nHistograms, &pBuf, compression.NewSyncEncodeBuffer(), compression.Snappy))
 					}
 					require.Equal(t, len(tc.kept), attempts)
+					spans := recorder.Ended()
+					require.Len(t, spans, attempts)
+					retried := 0
+					for i, span := range spans {
+						n := len(tc.kept[i])
+						require.Contains(t, span.Attributes(), attribute.Int("request_size", requestSizes[i]))
+						require.Contains(t, span.Attributes(), attribute.Int("samples", n))
+						if n > 0 {
+							require.Contains(t, span.Attributes(), attribute.Int("exemplars", n))
+							require.Contains(t, span.Attributes(), attribute.Int("histograms", 2*n))
+						}
+						if i < len(spans)-1 {
+							retried += n
+						}
+					}
+					require.Equal(t, float64(retried), client_testutil.ToFloat64(m.metrics.retriedSamplesTotal))
+					require.Equal(t, float64(retried), client_testutil.ToFloat64(m.metrics.retriedExemplarsTotal))
+					require.Equal(t, float64(2*retried), client_testutil.ToFloat64(m.metrics.retriedHistogramsTotal))
 					require.Equal(t, float64(receivedBytes), client_testutil.ToFloat64(m.metrics.sentBytesTotal))
 					lastKept := tc.kept[len(tc.kept)-1]
 					var highest int64
