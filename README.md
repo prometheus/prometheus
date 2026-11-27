@@ -68,7 +68,7 @@ To build Prometheus from source code, you need:
 
 * Go: Version specified in [go.mod](./go.mod) or greater.
 * NodeJS: Version specified in [.nvmrc](./web/ui/.nvmrc) or greater.
-* npm: Version 10 or greater (check with `npm --version` and [here](https://www.npmjs.com/)).
+* pnpm: Version 10.26 or greater (check with `pnpm --version` and [here](https://pnpm.io/installation)).
 
 Start by cloning the repository:
 

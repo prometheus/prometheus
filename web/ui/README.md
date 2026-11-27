@@ -11,16 +11,16 @@ The directory also contains helper files for building and compiling the UI asset
 
 Prometheus serves the new UI by default, but you can still use the Prometheus server feature flag `--enable-feature=old-ui` to switch back to the old UI for the time being.
 
-While both the `mantine-ui` and `modules` directories are part of the same shared npm workspace, the old UI in the `react-app` directory has been separated out of the workspace setup, since its dependencies were too incompatible to integrate.
+While both the `mantine-ui` and `modules` directories are part of the same shared pnpm workspace, the old UI in the `react-app` directory has been separated out of the workspace setup, since its dependencies were too incompatible to integrate.
 
 ### Pre-requisites
 
 To be able to build either of the React applications, you will need:
 
-* npm >= v10
+* pnpm >= v10.26
 * node >= v22
 
-### Installing npm dependencies
+### Installing dependencies
 
 To install all required [npm](https://www.npmjs.com/) package dependencies and also build the local workspace npm modules, run this command from the root of the repository:
 
@@ -28,23 +28,23 @@ To install all required [npm](https://www.npmjs.com/) package dependencies and a
 make ui-build
 ```
 
-This will run `npm install` both in the main `web/ui` workspace directory, as well as in the `web/ui/react-app` directory, and it will further run `npm run build` in both directories to make sure that both apps and their dependencies are built correctly.
+This will run `pnpm install` both in the main `web/ui` workspace directory, as well as in the `web/ui/react-app` directory, and it will further run `pnpm run build` in both directories to make sure that both apps and their dependencies are built correctly.
 
-npm consults the `package.json` and `package-lock.json` files for dependencies to install. It creates a `node_modules` directory with all installed dependencies.
+pnpm consults the `package.json` and `pnpm-lock.yaml` files for dependencies to install. It creates a `node_modules` directory with all installed dependencies.
 
-**NOTE**: Do not run `npm install` directly in the `mantine-ui` folder or in any sub folder of the `module` directory - dependencies for these should be installed only via the npm workspace setup from `web/ui`.
+**NOTE**: Do not run `pnpm install` directly in the `mantine-ui` folder or in any sub folder of the `module` directory - dependencies for these should be installed only via the pnpm workspace setup from `web/ui`.
 
 ### Running a local development server
 
 You can start a development server for the new React UI outside of a running Prometheus server by running:
 
-    npm start
+    pnpm start
 
 (For the old UI, you will have to run the same command from the `react-app` subdirectory.)
 
 This will start the development server on http://localhost:5173/. The page will hot-reload if you make edits to the source code. You will also see any lint errors in the console.
 
-**NOTE**: Hot reloads will only work for code in the `mantine-ui` and `react-app` folders. For changes in the `module` directory (the CodeMirror PromQL editor code) to become visible, you will need to run `npm run build:module` from `web/ui`.
+**NOTE**: Hot reloads will only work for code in the `mantine-ui` and `react-app` folders. For changes in the `module` directory (the CodeMirror PromQL editor code) to become visible, you will need to run `pnpm run build:module` from `web/ui`.
 
 ### Proxying API requests to a Prometheus backend server
 
