@@ -1018,6 +1018,65 @@ func TestChunkedSeriesIterator(t *testing.T) {
 	})
 }
 
+// corruptMiddleChunk returns the test chunks with the second one cut down to
+// its header and one byte, so it still claims its samples but can't decode them.
+func corruptMiddleChunk(t *testing.T) []prompb.Chunk {
+	chks := buildTestChunks(t)
+	chks[1].Data = chks[1].Data[:3]
+	return chks
+}
+
+func TestChunkedSeriesIteratorReportsCorruptChunk(t *testing.T) {
+	t.Run("next", func(t *testing.T) {
+		it := newChunkedSeriesIterator(corruptMiddleChunk(t), 0, 14000)
+		var got []int64
+		for it.Next() != chunkenc.ValNone {
+			got = append(got, it.AtT())
+		}
+		require.Error(t, it.Err())
+		// The samples of the chunk after the corrupt one are not returned as
+		// if nothing had gone wrong.
+		require.Equal(t, []int64{0, 1000, 2000, 3000, 4000}, got)
+	})
+
+	t.Run("seek", func(t *testing.T) {
+		it := newChunkedSeriesIterator(corruptMiddleChunk(t), 0, 14000)
+		require.Equal(t, chunkenc.ValNone, it.Seek(6000))
+		require.Error(t, it.Err())
+		require.Equal(t, chunkenc.ValNone, it.Seek(11000))
+		require.Equal(t, chunkenc.ValNone, it.Next())
+		require.Error(t, it.Err())
+	})
+
+	t.Run("seek into a chunk that fails to decode", func(t *testing.T) {
+		chks := buildTestChunks(t)
+		// The first chunk understates its max time, so Seek moves past it
+		// before its samples run out, and the chunk it moves to can't be read.
+		chks[0].MaxTimeMs = 1000
+		chks[1].Type = prompb.Chunk_Encoding(99)
+		it := newChunkedSeriesIterator(chks, 0, 14000)
+		require.Equal(t, chunkenc.ValNone, it.Seek(2000))
+		require.ErrorContains(t, it.Err(), "invalid chunk encoding")
+	})
+
+	t.Run("reused for another series", func(t *testing.T) {
+		corrupt := &chunkedSeries{ChunkedSeries: prompb.ChunkedSeries{Chunks: corruptMiddleChunk(t)}, mint: 0, maxt: 14000}
+		it := corrupt.Iterator(nil)
+		for it.Next() != chunkenc.ValNone {
+		}
+		require.Error(t, it.Err())
+
+		healthy := &chunkedSeries{ChunkedSeries: prompb.ChunkedSeries{Chunks: buildTestChunks(t)}, mint: 0, maxt: 14000}
+		it = healthy.Iterator(it)
+		n := 0
+		for it.Next() != chunkenc.ValNone {
+			n++
+		}
+		require.NoError(t, it.Err())
+		require.Equal(t, numTestChunks*numSamplesPerTestChunk, n)
+	})
+}
+
 func TestChunkedSeries(t *testing.T) {
 	t.Run("happy path", func(t *testing.T) {
 		chks := buildTestChunks(t)
