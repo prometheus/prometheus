@@ -1782,8 +1782,47 @@ func TestStreamSearchResultsWarningsTrailerDiff(t *testing.T) {
 	var trailer searchTrailer
 	require.NoError(t, json.Unmarshal(lines[len(lines)-1], &trailer))
 	require.Equal(t, "success", trailer.Status)
-	require.Equal(t, []string{"base-warn", "late-warn"}, trailer.Warnings,
-		"trailer must surface warnings that appeared only after iteration exhausted")
+	require.Equal(t, []string{"late-warn"}, trailer.Warnings,
+		"trailer must carry only the warnings the first batch did not")
+}
+
+// TestStreamSearchResultsWarningsTrailerDeltaKeepsOnlyNew verifies that the
+// trailer's warning diff is applied per warning, not all-or-nothing: when the
+// set grows during iteration, only the entries the first batch did not carry
+// may be re-emitted.
+func TestStreamSearchResultsWarningsTrailerDeltaKeepsOnlyNew(t *testing.T) {
+	var base annotations.Annotations
+	base.Add(errors.New("a-base-warn"))
+	base.Add(errors.New("b-base-warn"))
+	var extra annotations.Annotations
+	extra.Add(errors.New("c-late-warn"))
+
+	rs := &warningsOnExhaustResultSet{
+		inner: storage.NewSearchResultSetFromSlice([]storage.SearchResult{{Value: "alpha"}}, base),
+		extra: extra,
+	}
+
+	api := newSearchTestAPI(t)
+	rec := httptest.NewRecorder()
+	// batch_size=1 keeps the first-batch snapshot ahead of exhaustion.
+	sp := searchParams{limit: 100, batchSize: 1}
+
+	streamSearchResults(t.Context(), api, rec, rs, sp, func(sr storage.SearchResult) string {
+		return sr.Value
+	})
+
+	lines := parseNDJSON(t, rec.Body.String())
+	require.Len(t, lines, 2, "expected one batch line plus a trailer")
+
+	var firstBatch searchBatch[string]
+	require.NoError(t, json.Unmarshal(lines[0], &firstBatch))
+	require.Equal(t, []string{"a-base-warn", "b-base-warn"}, firstBatch.Warnings)
+
+	var trailer searchTrailer
+	require.NoError(t, json.Unmarshal(lines[1], &trailer))
+	require.Equal(t, "success", trailer.Status)
+	require.Equal(t, []string{"c-late-warn"}, trailer.Warnings,
+		"trailer must carry only the warnings absent from the first batch")
 }
 
 // TestSearchParamsRejectsExcessSearchTerms ensures that a request padded
