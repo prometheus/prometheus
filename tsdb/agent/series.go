@@ -35,16 +35,22 @@ type memSeries struct {
 	// stale.
 	lastTs int64
 
+	// Last committed float value, valid only when lastSampleIsFloat is true.
+	lastValue         float64
+	lastSampleIsFloat bool
+
 	meta unique.Handle[metadata.Metadata]
 }
 
-// updateTimestamp obtains the lock on s and will attempt to update lastTs.
-// fails if newTs < lastTs.
-func (m *memSeries) updateTimestamp(newTs int64) bool {
+// updateSample records the latest committed sample under the series lock.
+// It returns false for an older sample.
+func (m *memSeries) updateSample(newTs int64, v float64, isFloat bool) bool {
 	m.Lock()
 	defer m.Unlock()
 	if newTs >= m.lastTs {
 		m.lastTs = newTs
+		m.lastValue = v
+		m.lastSampleIsFloat = isFloat
 		return true
 	}
 	return false
