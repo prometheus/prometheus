@@ -117,11 +117,13 @@ const signatureFunc = (on: boolean, names: string[]) => {
     };
   }
 
+  // Like the PromQL engine, include the label names as well as the values, so
+  // that e.g. {label1="x"} and {label2="x"} don't get the same signature.
   return (lset: Metric): string =>
     fnv1a(
       Object.keys(lset)
         .filter((ln) => !names.includes(ln) && ln !== "__name__")
-        .map((ln) => lset[ln])
+        .flatMap((ln) => [ln, lset[ln]])
     );
 };
 
