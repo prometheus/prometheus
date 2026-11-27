@@ -86,6 +86,9 @@ func (importer *ruleImporter) importAll(ctx context.Context) (errs []error) {
 		importer.logger.Info("processing group", "component", "backfiller", "name", name)
 
 		for i, r := range group.Rules() {
+			if _, ok := r.(*rules.RecordingRule); !ok {
+				continue
+			}
 			importer.logger.Info("processing rule", "component", "backfiller", "id", i, "name", r.Name())
 			if err := importer.importRule(ctx, r.Query().String(), r.Name(), r.Labels(), importer.config.start, importer.config.end, int64(importer.config.blockDuration/time.Millisecond), group); err != nil {
 				errs = append(errs, err)
