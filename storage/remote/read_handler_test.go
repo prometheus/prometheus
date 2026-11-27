@@ -43,6 +43,7 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/storage"
@@ -50,6 +51,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
+	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/teststorage"
 )
 
@@ -219,6 +221,445 @@ func TestSampledReadEndpoint(t *testing.T) {
 			}},
 		}, resp)
 	})
+}
+
+func TestSampledReadEndpointHistogramScratchOwnership(t *testing.T) {
+	const stepMs = int64(15_000)
+	store := teststorage.New(t)
+	app := store.AppenderV2(t.Context())
+	refs := make(map[string]storage.SeriesRef)
+	appendValue := func(series string, index int64, f float64, h *histogram.Histogram, fh *histogram.FloatHistogram) {
+		ls := labels.FromStrings("__name__", "sampled_read_ownership", "job", "local", "series", series)
+		ref, err := app.Append(refs[series], ls, 0, index*stepMs, f, h, fh, storage.AOptions{})
+		require.NoError(t, err)
+		refs[series] = ref
+	}
+	for i := range int64(3) {
+		h := tsdbutil.GenerateTestHistogram(i)
+		h.NegativeSpans = []histogram.Span{{Offset: 2, Length: 4}}
+		h.NegativeBuckets = []int64{i + 1, 0, 0, 1}
+		fh := tsdbutil.GenerateTestFloatHistogram(i)
+		fh.NegativeSpans = []histogram.Span{{Offset: 2, Length: 4}}
+		fh.NegativeBuckets = []float64{float64(i + 1), float64(i + 1), float64(i + 1), float64(i + 2)}
+		custom := tsdbutil.GenerateTestCustomBucketsHistogram(i)
+		customFloat := tsdbutil.GenerateTestCustomBucketsFloatHistogram(i)
+		if i > 0 {
+			h.CounterResetHint = histogram.NotCounterReset
+			fh.CounterResetHint = histogram.NotCounterReset
+			custom.CounterResetHint = histogram.NotCounterReset
+			customFloat.CounterResetHint = histogram.NotCounterReset
+		}
+		appendValue("histogram", i, 0, h, nil)
+		appendValue("floathistogram", i, 0, nil, fh)
+		appendValue("custom", i, 0, custom, nil)
+		appendValue("customfloat", i, 0, nil, customFloat)
+		appendValue("float", i, float64(i), nil, nil)
+	}
+	appendValue("histogram", 3, 0, &histogram.Histogram{Sum: math.Float64frombits(value.StaleNaN)}, nil)
+	appendValue("floathistogram", 3, 0, nil, &histogram.FloatHistogram{Sum: math.Float64frombits(value.StaleNaN)})
+	appendValue("histogram", 4, 0, tsdbutil.GenerateTestHistogram(4), nil)
+	appendValue("floathistogram", 4, 0, nil, tsdbutil.GenerateTestFloatHistogram(4))
+	appendValue("mixed", 0, 7, nil, nil)
+	appendValue("mixed", 1, 0, tsdbutil.GenerateTestHistogram(1), nil)
+	appendValue("mixed", 2, 0, tsdbutil.GenerateTestHistogramWithHint(2, histogram.NotCounterReset), nil)
+	appendValue("mixed", 3, 0, nil, tsdbutil.GenerateTestFloatHistogram(2))
+	appendValue("mixed", 4, 0, nil, tsdbutil.GenerateTestCustomBucketsFloatHistogram(3))
+	appendValue("mixed", 5, 42, nil, nil)
+	require.NoError(t, app.Commit())
+
+	matcher := labels.MustNewMatcher(labels.MatchEqual, "__name__", "sampled_read_ownership")
+	nonMixed := labels.MustNewMatcher(labels.MatchNotEqual, "series", "mixed")
+	empty := labels.MustNewMatcher(labels.MatchEqual, "__name__", "no_samples")
+	externalLabels := labels.FromStrings("Cluster", "west", "job", "remote", "zone", "west")
+	externalLabelProtos := prompb.FromLabels(externalLabels, nil)
+	cfg := config.Config{GlobalConfig: config.GlobalConfig{ExternalLabels: externalLabels}}
+	handler := NewReadHandler(nil, nil, store, func() config.Config { return cfg }, 1_000_000, 1, 0)
+	const end = 5 * stepMs
+
+	for _, matchers := range [][]*labels.Matcher{{matcher, nonMixed}, {matcher}} {
+		query, err := ToQuery(0, end, matchers, nil)
+		require.NoError(t, err)
+		emptyQuery, err := ToQuery(0, end, []*labels.Matcher{empty}, nil)
+		require.NoError(t, err)
+		requestBytes, err := proto.Marshal(&prompb.ReadRequest{
+			Queries:               []*prompb.Query{query, emptyQuery, query},
+			AcceptedResponseTypes: []prompb.ReadRequest_ResponseType{prompb.ReadRequest_SAMPLES},
+		})
+		require.NoError(t, err)
+		request := httptest.NewRequest(http.MethodPost, "/api/v1/read", bytes.NewReader(snappy.Encode(nil, requestBytes)))
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, request)
+		require.Equal(t, http.StatusOK, recorder.Code)
+		decoded, err := snappy.Decode(nil, recorder.Body.Bytes())
+		require.NoError(t, err)
+		var response prompb.ReadResponse
+		require.NoError(t, proto.Unmarshal(decoded, &response))
+
+		querier, err := store.Querier(0, end)
+		require.NoError(t, err)
+		result, _, err := ToQueryResult(querier.Select(t.Context(), false, nil, matchers...), 1_000_000)
+		require.NoError(t, err)
+		for _, series := range result.Timeseries {
+			series.Labels = MergeLabels(series.Labels, externalLabelProtos)
+		}
+		want := &prompb.ReadResponse{Results: []*prompb.QueryResult{result, {}, result}}
+		expectedRecorder := httptest.NewRecorder()
+		require.NoError(t, EncodeReadResponse(want, expectedRecorder))
+		encodedWant, err := snappy.Decode(nil, expectedRecorder.Body.Bytes())
+		require.NoError(t, err)
+		if len(matchers) == 2 {
+			// No float/histogram interleaving: the raw wire bytes must be canonical.
+			require.Equal(t, encodedWant, decoded)
+		} else {
+			// Field interleaving changes wire order, but not decoded values or series order.
+			encodedResponse, err := proto.Marshal(&response)
+			require.NoError(t, err)
+			require.Equal(t, encodedWant, encodedResponse)
+		}
+		for _, result := range response.Results {
+			got := FromQueryResult(false, result)
+			source := querier.Select(t.Context(), false, nil, matchers...)
+			if len(result.Timeseries) == 0 {
+				source = querier.Select(t.Context(), false, nil, empty)
+			}
+			for source.Next() {
+				require.True(t, got.Next())
+				require.Equal(t, MergeLabels(prompb.FromLabels(source.At().Labels(), nil), externalLabelProtos), prompb.FromLabels(got.At().Labels(), nil))
+				wantIter, gotIter := source.At().Iterator(nil), got.At().Iterator(nil)
+				for typ := wantIter.Next(); typ != chunkenc.ValNone; typ = wantIter.Next() {
+					require.Equal(t, typ, gotIter.Next())
+					switch typ {
+					case chunkenc.ValFloat:
+						wt, wv := wantIter.At()
+						gt, gv := gotIter.At()
+						require.Equal(t, wt, gt)
+						require.Equal(t, math.Float64bits(wv), math.Float64bits(gv))
+					case chunkenc.ValHistogram:
+						wt, wh := wantIter.AtHistogram(nil)
+						gt, gh := gotIter.AtHistogram(nil)
+						require.Equal(t, wt, gt)
+						require.True(t, wh.Equals(gh))
+						require.Equal(t, wh.CounterResetHint, gh.CounterResetHint)
+					case chunkenc.ValFloatHistogram:
+						wt, wh := wantIter.AtFloatHistogram(nil)
+						gt, gh := gotIter.AtFloatHistogram(nil)
+						require.Equal(t, wt, gt)
+						require.True(t, wh.Equals(gh))
+						require.Equal(t, wh.CounterResetHint, gh.CounterResetHint)
+					}
+				}
+				require.Equal(t, chunkenc.ValNone, gotIter.Next())
+				require.NoError(t, wantIter.Err())
+				require.NoError(t, gotIter.Err())
+			}
+			require.False(t, got.Next())
+			require.NoError(t, source.Err())
+			require.NoError(t, got.Err())
+		}
+		require.NoError(t, querier.Close())
+	}
+}
+
+func TestSampledReadEndpointSampleLimitAndLateErrors(t *testing.T) {
+	t.Run("sample limit resets for each query and withholds a successful prefix", func(t *testing.T) {
+		store := teststorage.New(t)
+		app := store.AppenderV2(t.Context())
+		oneSampleLabels := labels.FromStrings("__name__", "single_sample", "series", "one")
+		_, err := app.Append(0, oneSampleLabels, 0, 0, 1, nil, nil, storage.AOptions{})
+		require.NoError(t, err)
+		multipleSampleLabels := labels.FromStrings("__name__", "multiple_samples", "series", "many")
+		_, err = app.Append(0, multipleSampleLabels, 0, 0, 1, nil, nil, storage.AOptions{})
+		require.NoError(t, err)
+		_, err = app.Append(0, labels.FromStrings("__name__", "multiple_samples", "series", "second"), 0, 1, 0, tsdbutil.GenerateTestHistogram(0), nil, storage.AOptions{})
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+
+		queryForMetric := func(name string) *prompb.Query {
+			matcher, err := labels.NewMatcher(labels.MatchEqual, "__name__", name)
+			require.NoError(t, err)
+			query, err := ToQuery(0, 1, []*labels.Matcher{matcher}, nil)
+			require.NoError(t, err)
+			return query
+		}
+		oneSampleQuery := queryForMetric("single_sample")
+		multipleSamplesQuery := queryForMetric("multiple_samples")
+		handler := NewReadHandler(nil, nil, store, func() config.Config { return config.Config{} }, 1, 1, 0)
+		makeRequest := func(queries ...*prompb.Query) *http.Request {
+			data, err := proto.Marshal(&prompb.ReadRequest{Queries: queries})
+			require.NoError(t, err)
+			return httptest.NewRequest(http.MethodPost, "/api/v1/read", bytes.NewReader(snappy.Encode(nil, data)))
+		}
+
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, makeRequest(oneSampleQuery, oneSampleQuery))
+		require.Equal(t, http.StatusOK, recorder.Code)
+		decoded, err := snappy.Decode(nil, recorder.Body.Bytes())
+		require.NoError(t, err)
+		var response prompb.ReadResponse
+		require.NoError(t, proto.Unmarshal(decoded, &response))
+		require.Len(t, response.Results, 2)
+		require.Len(t, response.Results[0].Timeseries, 1)
+		require.Len(t, response.Results[1].Timeseries, 1)
+		require.Len(t, response.Results[0].Timeseries[0].Samples, 1)
+		require.Len(t, response.Results[1].Timeseries[0].Samples, 1)
+
+		firstResponse := recorder.Body.Bytes()
+		firstResponseCopy := bytes.Clone(firstResponse)
+		recorder = httptest.NewRecorder()
+		handler.ServeHTTP(recorder, makeRequest(oneSampleQuery, multipleSamplesQuery))
+		require.Equal(t, http.StatusBadRequest, recorder.Code)
+		require.Equal(t, "text/plain; charset=utf-8", recorder.Header().Get("Content-Type"))
+		require.Equal(t, "exceeded sample limit (1)\n", recorder.Body.String())
+
+		// Failed and empty responses must not leave bytes in the next pooled response.
+		recorder = httptest.NewRecorder()
+		handler.ServeHTTP(recorder, makeRequest())
+		require.Equal(t, http.StatusOK, recorder.Code)
+		decoded, err = snappy.Decode(nil, recorder.Body.Bytes())
+		require.NoError(t, err)
+		require.Empty(t, decoded)
+		recorder = httptest.NewRecorder()
+		handler.ServeHTTP(recorder, makeRequest(oneSampleQuery, oneSampleQuery))
+		require.Equal(t, http.StatusOK, recorder.Code)
+		require.Equal(t, firstResponseCopy, recorder.Body.Bytes())
+		require.Equal(t, firstResponseCopy, firstResponse)
+	})
+
+	t.Run("iterator, series-set and unknown-value errors do not publish a prefix", func(t *testing.T) {
+		for _, tc := range []struct {
+			name          string
+			values        []chunkenc.ValueType
+			iteratorError error
+			setError      error
+			wantError     string
+		}{
+			{name: "iterator", values: []chunkenc.ValueType{chunkenc.ValFloat}, iteratorError: errors.New("iterator failed"), wantError: "iterator failed"},
+			{name: "series set", values: []chunkenc.ValueType{chunkenc.ValFloat}, setError: errors.New("series set failed"), wantError: "series set failed"},
+			{name: "unknown value", values: []chunkenc.ValueType{chunkenc.ValueType(99)}, wantError: "unrecognized value type: unknown"},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				var logBuffer bytes.Buffer
+				firstWarning := errors.New("first query warning")
+				failingWarning := errors.New("failing query warning")
+				queryable := &sampledReadTestQueryable{seriesSets: []storage.SeriesSet{
+					newSampledReadTestSeriesSet([]chunkenc.ValueType{chunkenc.ValFloat}, nil, nil, firstWarning),
+					newSampledReadTestSeriesSet(tc.values, tc.iteratorError, tc.setError, failingWarning),
+				}}
+				handler := NewReadHandler(slog.New(slog.NewTextHandler(&logBuffer, nil)), nil, queryable, func() config.Config {
+					return config.Config{}
+				}, 0, 1, 0)
+				requestBytes, err := proto.Marshal(&prompb.ReadRequest{Queries: []*prompb.Query{{}, {}}})
+				require.NoError(t, err)
+				request := httptest.NewRequest(http.MethodPost, "/api/v1/read", bytes.NewReader(snappy.Encode(nil, requestBytes)))
+				recorder := httptest.NewRecorder()
+				handler.ServeHTTP(recorder, request)
+				require.Equal(t, http.StatusInternalServerError, recorder.Code)
+				require.Equal(t, "text/plain; charset=utf-8", recorder.Header().Get("Content-Type"))
+				require.Equal(t, tc.wantError+"\n", recorder.Body.String())
+				require.Contains(t, logBuffer.String(), firstWarning.Error())
+				require.NotContains(t, logBuffer.String(), failingWarning.Error())
+			})
+		}
+	})
+}
+
+type sampledReadTestQueryable struct {
+	storage.SampleAndChunkQueryable
+	seriesSets []storage.SeriesSet
+	nextSet    int
+}
+
+func (q *sampledReadTestQueryable) Querier(int64, int64) (storage.Querier, error) {
+	seriesSet := q.seriesSets[q.nextSet]
+	q.nextSet++
+	return &storage.MockQuerier{
+		SelectMockFunction: func(bool, *storage.SelectHints, ...*labels.Matcher) storage.SeriesSet {
+			return seriesSet
+		},
+	}, nil
+}
+
+type sampledReadTestSeriesSet struct {
+	series   storage.Series
+	warnings annotations.Annotations
+	err      error
+	returned bool
+}
+
+func newSampledReadTestSeriesSet(values []chunkenc.ValueType, iteratorError, setError, warning error) storage.SeriesSet {
+	warnings := annotations.Annotations{}
+	if warning != nil {
+		warnings[warning.Error()] = warning
+	}
+	return &sampledReadTestSeriesSet{
+		series: &storage.SeriesEntry{
+			Lset: labels.FromStrings("__name__", "test_metric", "series", "test"),
+			SampleIteratorFn: func(chunkenc.Iterator) chunkenc.Iterator {
+				return &sampledReadTestIterator{values: values, err: iteratorError, index: -1}
+			},
+		},
+		warnings: warnings,
+		err:      setError,
+	}
+}
+
+func (s *sampledReadTestSeriesSet) Next() bool {
+	if s.returned {
+		return false
+	}
+	s.returned = true
+	return true
+}
+
+func (s *sampledReadTestSeriesSet) At() storage.Series {
+	return s.series
+}
+
+func (s *sampledReadTestSeriesSet) Err() error {
+	return s.err
+}
+
+func (s *sampledReadTestSeriesSet) Warnings() annotations.Annotations {
+	return s.warnings
+}
+
+type sampledReadTestIterator struct {
+	chunkenc.Iterator
+	values []chunkenc.ValueType
+	err    error
+	index  int
+}
+
+func (it *sampledReadTestIterator) Next() chunkenc.ValueType {
+	it.index++
+	if it.index >= len(it.values) {
+		return chunkenc.ValNone
+	}
+	return it.values[it.index]
+}
+
+func (it *sampledReadTestIterator) At() (int64, float64) {
+	return int64(it.index), float64(it.index + 1)
+}
+
+func (it *sampledReadTestIterator) Err() error {
+	return it.err
+}
+
+// BenchmarkSampledReadEndpointManySamples measures complete sampled remote reads
+// with multiple float or native histogram samples per series.
+func BenchmarkSampledReadEndpointManySamples(b *testing.B) {
+	const (
+		seriesCount      = 100
+		samplesPerSeries = 240
+		stepMs           = int64(15000)
+	)
+
+	for _, kind := range []string{"float", "histogram", "floathistogram"} {
+		for _, withExternalLabels := range []bool{false, true} {
+			b.Run(fmt.Sprintf("%s/external_labels_%t", kind, withExternalLabels), func(b *testing.B) {
+				store := teststorage.New(b)
+				app := store.AppenderV2(b.Context())
+				for i := range seriesCount {
+					seriesLabels := labels.FromStrings(
+						"__name__", "sampled_read_histogram",
+						"instance", strconv.Itoa(i),
+						"job", "benchmark",
+					)
+					var ref storage.SeriesRef
+					for j := range samplesPerSeries {
+						var h *histogram.Histogram
+						var fh *histogram.FloatHistogram
+						switch kind {
+						case "histogram":
+							h = tsdbutil.GenerateTestHistogram(int64(j))
+							if j > 0 {
+								h.CounterResetHint = histogram.NotCounterReset
+							}
+						case "floathistogram":
+							fh = tsdbutil.GenerateTestFloatHistogram(int64(j))
+							if j > 0 {
+								fh.CounterResetHint = histogram.NotCounterReset
+							}
+						}
+						var err error
+						ref, err = app.Append(ref, seriesLabels, 0, int64(j)*stepMs, float64(j), h, fh, storage.AOptions{})
+						if err != nil {
+							b.Fatal(err)
+						}
+					}
+				}
+				if err := app.Commit(); err != nil {
+					b.Fatal(err)
+				}
+
+				cfg := config.Config{}
+				if withExternalLabels {
+					cfg.GlobalConfig.ExternalLabels = labels.FromStrings("Cluster", "west", "job", "external", "zone", "a")
+				}
+				handler := NewReadHandler(nil, nil, store, func() config.Config { return cfg }, 1_000_000, 1, 0)
+				matcher, err := labels.NewMatcher(labels.MatchEqual, "__name__", "sampled_read_histogram")
+				if err != nil {
+					b.Fatal(err)
+				}
+				query, err := ToQuery(0, int64(samplesPerSeries-1)*stepMs, []*labels.Matcher{matcher}, nil)
+				if err != nil {
+					b.Fatal(err)
+				}
+				requestBytes, err := proto.Marshal(&prompb.ReadRequest{
+					Queries:               []*prompb.Query{query},
+					AcceptedResponseTypes: []prompb.ReadRequest_ResponseType{prompb.ReadRequest_SAMPLES},
+				})
+				if err != nil {
+					b.Fatal(err)
+				}
+				compressed := snappy.Encode(nil, requestBytes)
+				request := httptest.NewRequest(http.MethodPost, "/api/v1/read", http.NoBody)
+				serve := func() *httptest.ResponseRecorder {
+					request.Body = io.NopCloser(bytes.NewReader(compressed))
+					recorder := httptest.NewRecorder()
+					handler.ServeHTTP(recorder, request)
+					return recorder
+				}
+
+				recorder := serve()
+				if recorder.Code != http.StatusOK {
+					b.Fatalf("status %d: %s", recorder.Code, recorder.Body.String())
+				}
+				decoded, err := snappy.Decode(nil, recorder.Body.Bytes())
+				if err != nil {
+					b.Fatal(err)
+				}
+				var response prompb.ReadResponse
+				if err := proto.Unmarshal(decoded, &response); err != nil {
+					b.Fatal(err)
+				}
+				if len(response.Results) != 1 || len(response.Results[0].Timeseries) != seriesCount {
+					b.Fatal("unexpected response series count")
+				}
+				for _, series := range response.Results[0].Timeseries {
+					if kind == "float" {
+						require.Len(b, series.Samples, samplesPerSeries)
+						require.Empty(b, series.Histograms)
+						require.Equal(b, int64(samplesPerSeries-1)*stepMs, series.Samples[samplesPerSeries-1].Timestamp)
+					} else {
+						require.Len(b, series.Histograms, samplesPerSeries)
+						require.Empty(b, series.Samples)
+						require.Equal(b, kind == "floathistogram", series.Histograms[0].IsFloatHistogram())
+						require.Equal(b, int64(samplesPerSeries-1)*stepMs, series.Histograms[samplesPerSeries-1].Timestamp)
+					}
+				}
+
+				b.ReportAllocs()
+				for b.Loop() {
+					recorder := serve()
+					if recorder.Code != http.StatusOK {
+						b.Fatalf("status %d: %s", recorder.Code, recorder.Body.String())
+					}
+				}
+			})
+		}
+	}
 }
 
 func BenchmarkSampledReadEndpointWithoutExternalLabels(b *testing.B) {
