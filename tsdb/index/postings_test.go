@@ -45,6 +45,66 @@ func TestMemPostings_addFor(t *testing.T) {
 	require.Equal(t, []storage.SeriesRef{1, 2, 3, 4, 5, 6, 7, 8}, p.m[allPostingsKey.Name][allPostingsKey.Value])
 }
 
+func TestMemPostings_OutOfOrderAddKeepsRetainedPostings(t *testing.T) {
+	lset := labels.FromStrings("group", "app-main")
+	for _, reader := range []struct {
+		name     string
+		postings func(*testing.T, *MemPostings) Postings
+	}{
+		{"label matching", func(_ *testing.T, p *MemPostings) Postings {
+			return p.PostingsForLabelMatching(context.Background(), "group", regexp.MustCompile("^app.+$").MatchString)
+		}},
+		{"equality", func(_ *testing.T, p *MemPostings) Postings {
+			return p.Postings(context.Background(), "group", "app-main")
+		}},
+		{"all label values", func(_ *testing.T, p *MemPostings) Postings {
+			return p.PostingsForAllLabelValues(context.Background(), "group")
+		}},
+		{"all postings", func(_ *testing.T, p *MemPostings) Postings {
+			return p.All()
+		}},
+		{"iter", func(t *testing.T, p *MemPostings) Postings {
+			var it Postings
+			require.NoError(t, p.Iter(func(l labels.Label, lp Postings) error {
+				if l.Name == "group" {
+					it = lp
+				}
+				return nil
+			}))
+			return it
+		}},
+	} {
+		for _, seek := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/seek=%t", reader.name, seek), func(t *testing.T) {
+				p := NewMemPostings()
+				// The list of two IDs has spare capacity, so the lower ID added below
+				// fits into the array that the iterator is reading.
+				p.Add(2, lset)
+				p.Add(4, lset)
+				it := reader.postings(t, p)
+				require.True(t, it.Next())
+				require.Equal(t, storage.SeriesRef(2), it.At())
+
+				p.Add(1, lset)
+
+				var rest []storage.SeriesRef
+				if (seek && it.Seek(4)) || (!seek && it.Next()) {
+					rest = append(rest, it.At())
+					for it.Next() {
+						rest = append(rest, it.At())
+					}
+				}
+				require.NoError(t, it.Err())
+				require.Equal(t, []storage.SeriesRef{4}, rest, "retained postings changed after adding a lower ID")
+
+				got, err := ExpandPostings(reader.postings(t, p))
+				require.NoError(t, err)
+				require.Equal(t, []storage.SeriesRef{1, 2, 4}, got, "postings not sorted after adding a lower ID")
+			})
+		}
+	}
+}
+
 func TestMemPostings_ensureOrder(t *testing.T) {
 	p := NewUnorderedMemPostings()
 	p.m["a"] = map[string][]storage.SeriesRef{}
