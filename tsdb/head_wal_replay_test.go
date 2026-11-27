@@ -216,14 +216,14 @@ func TestMergeReplayMmappedChunks(t *testing.T) {
 	}
 }
 
-// recordingExemplarStorage records the series of the exemplars added to it.
+// recordingExemplarStorage records the series of the exemplars restored to it.
 type recordingExemplarStorage struct {
-	ExemplarStorage
+	headExemplarStorage
 	added sync.Map
 }
 
-func (s *recordingExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemplar) error {
-	err := s.ExemplarStorage.AddExemplar(l, e)
+func (s *recordingExemplarStorage) restoreExemplar(l labels.Labels, e exemplar.Exemplar) error {
+	err := s.headExemplarStorage.restoreExemplar(l, e)
 	if err == nil {
 		s.added.Store(l.String(), struct{}{})
 	}
@@ -274,7 +274,7 @@ func TestHead_WALReplay_ExemplarsBeforeFullRangeTombstone(t *testing.T) {
 	}()
 	populateTestWL(t, w, entries, nil, false)
 
-	cb.exemplars = &recordingExemplarStorage{ExemplarStorage: head.exemplars}
+	cb.exemplars = &recordingExemplarStorage{headExemplarStorage: head.exemplars}
 	head.exemplars = cb.exemplars
 
 	require.NoError(t, head.Init(math.MinInt64))

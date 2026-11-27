@@ -93,7 +93,7 @@ type Head struct {
 	opts            *HeadOptions
 	wal, wbl        *wlog.WL
 	exemplarMetrics *ExemplarMetrics
-	exemplars       ExemplarStorage
+	exemplars       headExemplarStorage
 	logger          *slog.Logger
 	// TODO(bwplotka): Consider using record.Pools that's reused with WAL watchers.
 	seriesRecordCandidatesPool zeropool.Pool[[]seriesRecordCandidate]
@@ -282,6 +282,13 @@ type ExemplarStorage interface {
 	AddExemplar(labels.Labels, exemplar.Exemplar) error
 	ValidateExemplar(labels.Labels, exemplar.Exemplar) error
 	IterateExemplars(f func(seriesLabels labels.Labels, e exemplar.Exemplar) error) error
+}
+
+// headExemplarStorage is an ExemplarStorage that can also restore exemplars
+// recovered from the WAL or a chunk snapshot.
+type headExemplarStorage interface {
+	ExemplarStorage
+	restoreExemplar(labels.Labels, exemplar.Exemplar) error
 }
 
 // HeadOptions are parameters for the Head block.
@@ -512,7 +519,7 @@ func (h *Head) resetInMemoryState() error {
 	h.numNativeHistogramSeries.Store(0)
 	h.numNativeHistogramBuckets.Store(0)
 	h.exemplarMetrics = em
-	h.exemplars = es
+	h.exemplars = es.(*CircularExemplarStorage)
 	h.postings = index.NewUnorderedMemPostings()
 	h.tombstones = tombstones.NewMemTombstones()
 	h.walExpiries = map[chunks.HeadSeriesRef]int64{}
