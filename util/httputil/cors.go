@@ -37,7 +37,8 @@ func SetCORS(w http.ResponseWriter, o *regexp.Regexp, r *http.Request) {
 		w.Header().Set(k, v)
 	}
 
-	if o.String() == "^(?:.*)$" {
+	// The default --web.cors.origin ".*", as compiled by relabel.NewRegexp.
+	if o.String() == "^(?s:.*)$" {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		return
 	}
