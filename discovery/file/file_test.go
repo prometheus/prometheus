@@ -17,14 +17,18 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/fsnotify/fsnotify"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
@@ -362,6 +366,55 @@ func TestInitialUpdate(t *testing.T) {
 
 			// Verify that we receive the initial target groups.
 			runner.requireUpdate(time.Time{}, validTg(sdFile))
+		})
+	}
+}
+
+func TestTimestampAfterTargetGroupsRemoved(t *testing.T) {
+	for _, extension := range []string{"json", "yml"} {
+		t.Run(extension, func(t *testing.T) {
+			runner := newTestRunner(t)
+			filename := runner.copyFile("fixtures/valid." + extension)
+			reg := prometheus.NewRegistry()
+			conf := SDConfig{Files: []string{filename}}
+			metrics := conf.NewDiscovererMetrics(reg, discovery.NewRefreshMetrics(reg))
+			require.NoError(t, metrics.Register())
+			t.Cleanup(metrics.Unregister)
+			d, err := NewDiscovery(&conf, nil, metrics)
+			require.NoError(t, err)
+			d.watcher, err = fsnotify.NewWatcher()
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, d.watcher.Close()) })
+			ch := make(chan []*targetgroup.Group, 10)
+			// Refresh synchronously so an extra watch event cannot restore a lost timestamp.
+			d.refresh(t.Context(), ch)
+
+			for i, tc := range []struct {
+				name    string
+				content string
+			}{
+				{name: "fewer groups", content: `[{"targets":["localhost:9090"]}]`},
+				{name: "no groups", content: `[]`},
+				{name: "deleted"},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					var expected string
+					if tc.content == "" {
+						require.NoError(t, os.Remove(filename))
+					} else {
+						runner.writeString(filename, tc.content)
+						mtime := time.Unix(1234567890+int64(i), 0)
+						require.NoError(t, os.Chtimes(filename, mtime, mtime))
+						expected = fmt.Sprintf(`# HELP prometheus_sd_file_mtime_seconds Timestamp (mtime) of files read by FileSD. Timestamp is set at read time.
+# TYPE prometheus_sd_file_mtime_seconds gauge
+prometheus_sd_file_mtime_seconds{filename=%q} %d
+`, filename, mtime.Unix())
+					}
+
+					d.refresh(t.Context(), ch)
+					require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expected), "prometheus_sd_file_mtime_seconds"))
+				})
+			}
 		})
 	}
 }

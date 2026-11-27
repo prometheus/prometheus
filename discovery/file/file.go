@@ -371,7 +371,9 @@ func (d *Discovery) refresh(ctx context.Context, ch chan<- []*targetgroup.Group)
 		m, ok := ref[f]
 		if !ok || n > m {
 			d.logger.Debug("file_sd refresh found file that should be removed", "file", f)
-			d.deleteTimestamp(f)
+			if !ok {
+				d.deleteTimestamp(f)
+			}
 			for i := m; i < n; i++ {
 				select {
 				case ch <- []*targetgroup.Group{{Source: fileSource(f, i)}}:
