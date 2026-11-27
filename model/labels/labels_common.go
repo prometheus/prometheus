@@ -160,6 +160,89 @@ func NewBuilder(base Labels) *Builder {
 	return b
 }
 
+// NewBuilderMerger prepares a function that merges other into a base label set.
+// Both inputs must be sorted, and other must have distinct names. With overwrite
+// false, labels whose names already occur in base are ignored, including names
+// whose base values are empty.
+// Empty values in other delete labels. The second result contains the nonempty
+// base values replaced by other, in other's order.
+// If accept is non-nil, only accepted labels from other are merged. It may be
+// called more than once per label and must return a consistent result. The
+// returned function retains other and accept; the labels in other and the
+// behavior of accept must remain unchanged while in use.
+func NewBuilderMerger(other Labels, accept func(Label) bool) func(Labels, bool) (Builder, []Label) {
+	// Record the append capacities once so later relabel Set calls start with the
+	// same spare capacity as repeated Set calls, without growing per series.
+	probe := make([]Label, 0, 5)
+	capacities := []int{cap(probe)}
+	other.Range(func(l Label) {
+		if l.Value == "" || accept != nil && !accept(l) {
+			return
+		}
+		probe = append(probe, Label{})
+		if capacity := cap(probe); capacity != capacities[len(capacities)-1] {
+			capacities = append(capacities, capacity)
+		}
+	})
+	return func(base Labels, overwrite bool) (Builder, []Label) {
+		return newBuilderWithMergedLabels(base, other, overwrite, accept, capacities)
+	}
+}
+
+func newBuilderWithMergedLabels(base, other Labels, overwrite bool, accept func(Label) bool, capacities []int) (Builder, []Label) {
+	added, deleted, replaced := 0, 0, 0
+	rangeMergedLabels(base, other, overwrite, accept, func(old, update Label, found bool) {
+		if update.Value == "" {
+			deleted++
+		} else {
+			added++
+		}
+		if found && old.Value != "" {
+			replaced++
+		}
+	})
+	b := Builder{del: make([]string, 0, 5)}
+	b.Reset(base)
+	index, _ := slices.BinarySearch(capacities, added)
+	b.add = make([]Label, 0, capacities[index])
+	b.del = slices.Grow(b.del, deleted)
+	if added+deleted == 0 {
+		return b, nil
+	}
+	var conflicts []Label
+	if replaced > 0 {
+		conflicts = make([]Label, 0, replaced)
+	}
+	rangeMergedLabels(base, other, overwrite, accept, func(old, update Label, found bool) {
+		if update.Value == "" {
+			b.del = append(b.del, update.Name)
+		} else {
+			b.add = append(b.add, update)
+		}
+		if found && old.Value != "" {
+			conflicts = append(conflicts, old)
+		}
+	})
+	return b, conflicts
+}
+
+func rangeMergedLabels(base, other Labels, overwrite bool, accept func(Label) bool, visit func(Label, Label, bool)) {
+	left, right := labelIterator{ls: base}, labelIterator{ls: other}
+	old, ok := left.next()
+	for update, more := right.next(); more; update, more = right.next() {
+		if accept != nil && !accept(update) {
+			continue
+		}
+		for ok && old.Name < update.Name {
+			old, ok = left.next()
+		}
+		found := ok && old.Name == update.Name
+		if overwrite || !found {
+			visit(old, update, found)
+		}
+	}
+}
+
 // Del deletes the label of the given name.
 func (b *Builder) Del(ns ...string) *Builder {
 	for _, n := range ns {

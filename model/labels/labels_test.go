@@ -1214,3 +1214,28 @@ func TestMarshaling(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, f, gotFY)
 }
+
+func TestNewBuilderMerger(t *testing.T) {
+	base := FromStrings("a", "old", "b", "", "c", "old")
+	for _, other := range []Labels{EmptyLabels(), FromStrings("a", "new", "b", "set", "c", "", "d", "added")} {
+		for _, overwrite := range []bool{false, true} {
+			for _, accept := range []func(Label) bool{nil, func(l Label) bool { return l.Name != "d" }} {
+				want := NewBuilder(base)
+				var wantConflicts []Label
+				other.Range(func(l Label) {
+					if accept != nil && !accept(l) || !overwrite && base.Has(l.Name) {
+						return
+					}
+					if value := base.Get(l.Name); value != "" {
+						wantConflicts = append(wantConflicts, Label{Name: l.Name, Value: value})
+					}
+					want.Set(l.Name, l.Value)
+				})
+				merge := NewBuilderMerger(other, accept)
+				got, conflicts := merge(base, overwrite)
+				require.Equal(t, wantConflicts, conflicts)
+				require.Equal(t, want.Labels().String(), got.Labels().String())
+			}
+		}
+	}
+}

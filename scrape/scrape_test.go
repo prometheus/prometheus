@@ -3924,6 +3924,7 @@ func benchScrapeLoopAppend(
 	convertToNHCB bool,
 	coldCache bool,
 	parseST bool,
+	opts ...func(*scrapeLoop),
 ) {
 	var a compatAppendable = teststorage.NewAppendable().SkipRecording(true) // Make it noop for benchmark purposes.
 	if withStorage {
@@ -3945,6 +3946,9 @@ func benchScrapeLoopAppend(
 		// Only AppenderV2 uses parseST; false skips p.StartTimestamp() entirely.
 		sl.parseST = parseST
 	})
+	for _, opt := range opts {
+		opt(sl)
+	}
 	ts := time.Time{}
 
 	b.ReportAllocs()
@@ -4022,6 +4026,32 @@ func BenchmarkScrapeLoopAppend_NewSeriesColdCache(b *testing.B) {
 				b.StartTimer()
 			}
 		})
+	}
+}
+
+// BenchmarkScrapeLoopAppend_TargetLabels measures cold-cache scrapes of a real
+// Prometheus /metrics page, including target-label merging and storage appends.
+func BenchmarkScrapeLoopAppend_TargetLabels(b *testing.B) {
+	data := prometheusOMFormatCases(b)[0]
+	for _, n := range []int{2, 10, 25, 50} {
+		cfg := config.DefaultScrapeConfig
+		cfg.JobName = "prometheus"
+		cfg.ScrapeInterval = config.DefaultGlobalConfig.ScrapeInterval
+		cfg.ScrapeTimeout = config.DefaultGlobalConfig.ScrapeTimeout
+		discovered := model.LabelSet{model.AddressLabel: "localhost:9090"}
+		for i := 2; i < n; i++ {
+			discovered[model.LabelName(fmt.Sprintf("pod_label_%02d", i))] = "value"
+		}
+		lset, err := PopulateLabels(labels.NewBuilder(labels.EmptyLabels()), &cfg, discovered, nil)
+		require.NoError(b, err)
+		target := NewTarget(lset, &cfg, discovered, nil)
+		for _, honor := range []bool{false, true} {
+			b.Run(fmt.Sprintf("targetLabels=%d/honor=%v", n, honor), func(b *testing.B) {
+				benchScrapeLoopAppend(b, true, true, data.parsable, data.contentType, false, false, false, false, true, true, func(sl *scrapeLoop) {
+					sl.sampleMutator, _ = newTestSampleMutators(b, target, honor, false, nil)
+				})
+			})
+		}
 	}
 }
 
@@ -5396,6 +5426,91 @@ func testScrapeLoopCacheMemoryExhaustionProtection(t *testing.T, appV2 bool) {
 	}
 
 	require.LessOrEqual(t, len(sl.cache.series), 2000, "More than 2000 series cached.")
+}
+
+func TestMutateSampleLabelsTargetMerge(t *testing.T) {
+	target := &Target{labels: labels.FromStrings(
+		"__name__", "ignored", "A", "target", "a", "target", "c", "target",
+		"e", "target", "f", "target", "y", "", "z", "target", "zzz", "target",
+	)}
+	large := labels.NewScratchBuilder(target.labels.Len() + 25)
+	target.labels.Range(func(l labels.Label) { large.Add(l.Name, l.Value) })
+	for i := range 25 {
+		large.Add(fmt.Sprintf("pod_label_%02d", i), "value")
+	}
+	large.Sort()
+	target.labels = large.Labels()
+	lset := labels.FromStrings("__name__", "metric", "a", "", "b", "b", "c", "c",
+		"d", "d", "exported_c", "already_exported", "m", "m", "y", "y", "z", "z", "zz", "tail")
+	for _, tc := range []struct {
+		honor bool
+		want  labels.Labels
+	}{
+		{false, labels.FromStrings("A", "target", "__name__", "metric", "a", "target", "b", "b", "c", "target",
+			"d", "d", "e", "target", "exported_c", "already_exported", "exported_exported_c", "c",
+			"exported_y", "y", "exported_z", "z", "f", "target", "m", "m", "z", "target", "zz", "tail", "zzz", "target")},
+		{true, labels.FromStrings("A", "target", "__name__", "metric", "b", "b", "c", "c", "d", "d",
+			"e", "target", "exported_c", "already_exported", "f", "target", "m", "m", "y", "y", "z", "z", "zz", "tail", "zzz", "target")},
+	} {
+		t.Run(fmt.Sprintf("honor=%v", tc.honor), func(t *testing.T) {
+			wantLabels := labels.NewBuilder(tc.want)
+			for i := range 25 {
+				wantLabels.Set(fmt.Sprintf("pod_label_%02d", i), "value")
+			}
+			mutate, mutateMeta := newTestSampleMutators(t, target, tc.honor, false, nil)
+			require.Equal(t, wantLabels.Labels().String(), mutate(lset).String())
+			duplicate := labels.FromStrings("__name__", "metric", "a", "", "a", "second")
+			wantDuplicate := labels.NewBuilder(target.labels)
+			wantDuplicate.Set("__name__", "metric")
+			if tc.honor {
+				wantDuplicate.Del("a")
+			}
+			require.Equal(t, wantDuplicate.Labels().String(), mutate(duplicate).String())
+			meta := metadata.Metadata{Type: model.MetricTypeCounter, Unit: "seconds", Help: "help"}
+			got, gotMeta := mutateMeta(lset, meta)
+			require.Equal(t, wantLabels.Labels().String(), got.String())
+			require.Equal(t, meta, gotMeta)
+			if tc.honor {
+				exposed := labels.NewBuilder(target.labels)
+				target.labels.Range(func(l labels.Label) { exposed.Set(l.Name, "metric") })
+				require.Equal(t, exposed.Labels().String(), mutate(exposed.Labels()).String())
+			}
+
+			// A target label mapped onto the same destination as an exposed label
+			// must still be visited last when honor_labels is false.
+			rc := relabel.DefaultRelabelConfig
+			rc.Action, rc.Regex, rc.Replacement = relabel.LabelMap, relabel.MustNewRegexp("a|m"), "mapped"
+			want := "target"
+			if tc.honor {
+				want = "m"
+			}
+			mapped, _ := newTestSampleMutators(t, target, tc.honor, false, []*relabel.Config{&rc})
+			require.Equal(t, want, mapped(lset).Get("mapped"))
+
+			t.Run("drop", func(t *testing.T) {
+				rc := relabel.DefaultRelabelConfig
+				rc.Action = relabel.Drop
+				drop, dropMeta := newTestSampleMutators(t, target, tc.honor, false, []*relabel.Config{&rc})
+				require.True(t, drop(lset).IsEmpty())
+				got, gotMeta := dropMeta(lset, meta)
+				require.True(t, got.IsEmpty())
+				require.Equal(t, metadata.Metadata{}, gotMeta)
+			})
+
+			t.Run("metadata", func(t *testing.T) {
+				rc := relabel.DefaultRelabelConfig
+				rc.TargetLabel, rc.Replacement = model.MetricUnitLabel, "bytes"
+				_, mutateMeta := newTestSampleMutators(t, target, tc.honor, false, []*relabel.Config{&rc})
+				_, gotMeta := mutateMeta(lset, meta)
+				require.Equal(t, metadata.Metadata{Type: model.MetricTypeCounter, Unit: "bytes", Help: "help"}, gotMeta)
+
+				_, mutateMeta = newTestSampleMutators(t, target, tc.honor, true, []*relabel.Config{&rc})
+				got, _ := mutateMeta(lset, meta)
+				require.Equal(t, string(model.MetricTypeCounter), got.Get(model.MetricTypeLabel))
+				require.Equal(t, "bytes", got.Get(model.MetricUnitLabel))
+			})
+		})
+	}
 }
 
 func TestScrapeLoopAppend_HonorLabels(t *testing.T) {

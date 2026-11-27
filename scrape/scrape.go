@@ -709,6 +709,36 @@ func applyTargetLabels(lb *labels.Builder, lset labels.Labels, target *Target, h
 	}
 }
 
+type targetLabelsMerger = func(labels.Labels, bool) (labels.Builder, []labels.Label)
+
+func mutateSampleLabelsMerged(lset labels.Labels, merge targetLabelsMerger, honor bool, rc []*relabel.Config) labels.Labels {
+	lb := targetLabelsBuilder(lset, merge, honor)
+	if keep := relabel.ProcessBuilder(&lb, rc...); !keep {
+		return labels.EmptyLabels()
+	}
+	return lb.Labels()
+}
+
+func mutateSampleLabelsAndMetadataMerged(lset labels.Labels, meta metadata.Metadata, merge targetLabelsMerger, honor, enableTypeAndUnitLabels bool, rc []*relabel.Config) (labels.Labels, metadata.Metadata) {
+	lb := targetLabelsBuilder(lset, merge, honor)
+	keep, meta := relabel.ProcessBuilderWithMetadata(&lb, meta, rc...)
+	if !keep {
+		return labels.EmptyLabels(), metadata.Metadata{}
+	}
+	if enableTypeAndUnitLabels {
+		schema.Metadata{Name: lb.Get(model.MetricNameLabel), Type: meta.Type, Unit: meta.Unit}.SetToLabels(&lb)
+	}
+	return lb.Labels(), meta
+}
+
+func targetLabelsBuilder(lset labels.Labels, merge targetLabelsMerger, honor bool) labels.Builder {
+	lb, conflicts := merge(lset, !honor)
+	if len(conflicts) > 0 {
+		resolveConflictingExposedLabels(&lb, conflicts)
+	}
+	return lb
+}
+
 func resolveConflictingExposedLabels(lb *labels.Builder, conflictingExposedLabels []labels.Label) {
 	slices.SortStableFunc(conflictingExposedLabels, func(a, b labels.Label) int {
 		return len(a.Name) - len(b.Name)
@@ -2026,10 +2056,42 @@ func newScrapeLoop(opts scrapeLoopOptions) *scrapeLoop {
 		appenderCtx = ContextWithTarget(appenderCtx, opts.target)
 	}
 
+	// Keep the Builder path for small targets, where a merge costs more than the scans.
+	const targetLabelMergeThreshold = 16
+	targetLabelCount := 0
+	if labels.ImplementationName == "stringlabels" {
+		_ = opts.target.labels.Validate(func(l labels.Label) error {
+			if !strings.HasPrefix(l.Name, model.ReservedLabelPrefix) {
+				targetLabelCount++
+				if targetLabelCount > targetLabelMergeThreshold {
+					return io.EOF
+				}
+			}
+			return nil
+		})
+	}
+	var sampleMutator labelsMutator
 	var sampleMutatorWithMetadata labelsAndMetadataMutator
-	if opts.sp.options.EnableMetadataRelabeling {
-		sampleMutatorWithMetadata = func(l labels.Labels, m metadata.Metadata) (labels.Labels, metadata.Metadata) {
-			return mutateSampleLabelsAndMetadata(l, m, opts.target, opts.sp.config.HonorLabels, opts.sp.options.EnableTypeAndUnitLabels, opts.sp.config.MetricRelabelConfigs)
+	if targetLabelCount > targetLabelMergeThreshold {
+		merge := labels.NewBuilderMerger(opts.target.labels, func(l labels.Label) bool {
+			return !strings.HasPrefix(l.Name, model.ReservedLabelPrefix)
+		})
+		sampleMutator = func(l labels.Labels) labels.Labels {
+			return mutateSampleLabelsMerged(l, merge, opts.sp.config.HonorLabels, opts.sp.config.MetricRelabelConfigs)
+		}
+		if opts.sp.options.EnableMetadataRelabeling {
+			sampleMutatorWithMetadata = func(l labels.Labels, m metadata.Metadata) (labels.Labels, metadata.Metadata) {
+				return mutateSampleLabelsAndMetadataMerged(l, m, merge, opts.sp.config.HonorLabels, opts.sp.options.EnableTypeAndUnitLabels, opts.sp.config.MetricRelabelConfigs)
+			}
+		}
+	} else {
+		sampleMutator = func(l labels.Labels) labels.Labels {
+			return mutateSampleLabels(l, opts.target, opts.sp.config.HonorLabels, opts.sp.config.MetricRelabelConfigs)
+		}
+		if opts.sp.options.EnableMetadataRelabeling {
+			sampleMutatorWithMetadata = func(l labels.Labels, m metadata.Metadata) (labels.Labels, metadata.Metadata) {
+				return mutateSampleLabelsAndMetadata(l, m, opts.target, opts.sp.config.HonorLabels, opts.sp.options.EnableTypeAndUnitLabels, opts.sp.config.MetricRelabelConfigs)
+			}
 		}
 	}
 
@@ -2043,11 +2105,9 @@ func newScrapeLoop(opts scrapeLoopOptions) *scrapeLoop {
 		l:           opts.sp.logger.With("target", opts.target),
 		cache:       opts.cache,
 
-		interval: opts.interval,
-		timeout:  opts.timeout,
-		sampleMutator: func(l labels.Labels) labels.Labels {
-			return mutateSampleLabels(l, opts.target, opts.sp.config.HonorLabels, opts.sp.config.MetricRelabelConfigs)
-		},
+		interval:                  opts.interval,
+		timeout:                   opts.timeout,
+		sampleMutator:             sampleMutator,
 		sampleMutatorWithMetadata: sampleMutatorWithMetadata,
 		reportSampleMutator:       func(l labels.Labels) labels.Labels { return mutateReportSampleLabels(l, opts.target) },
 		scraper:                   opts.scraper,
