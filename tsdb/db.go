@@ -1341,7 +1341,11 @@ func (db *DB) run(ctx context.Context) {
 
 					if !nextCompactionIsSoon {
 						if err := db.CompactStaleHead(); err != nil {
-							db.logger.Error("immediate stale series compaction failed", "err", err)
+							if errors.Is(err, context.Canceled) {
+								db.logger.Info("immediate stale series compaction cancelled", "err", err)
+							} else {
+								db.logger.Error("immediate stale series compaction failed", "err", err)
+							}
 						}
 					}
 				}
@@ -1353,7 +1357,11 @@ func (db *DB) run(ctx context.Context) {
 			db.autoCompactMtx.Lock()
 			if db.autoCompact {
 				if err := db.Compact(ctx); err != nil {
-					db.logger.Error("compaction failed", "err", err)
+					if errors.Is(err, context.Canceled) {
+						db.logger.Info("compaction cancelled", "err", err)
+					} else {
+						db.logger.Error("compaction failed", "err", err)
+					}
 					backoff = exponential(backoff, 1*time.Second, 1*time.Minute)
 				} else {
 					backoff = 0

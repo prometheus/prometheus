@@ -1,4 +1,3 @@
-// Used for escaping escape sequences and double quotes in double-quoted strings.
-export const escapeString = (str: string) => {
-  return str.replace(/([\\"])/g, "\\$1");
-};
+// Used for escaping escape sequences, double quotes and line breaks in
+// double-quoted strings. Re-exported so that both copies stay in sync.
+export { escapeString } from "../promql/utils";

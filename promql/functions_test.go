@@ -23,8 +23,10 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/promqltest"
@@ -317,4 +319,416 @@ func TestMADOverTimeUsesExactSubnormalMedian(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, vector, 1)
 	require.Equal(t, math.Float64bits(math.Float64frombits(1)), math.Float64bits(vector[0].F))
+}
+
+func TestRangeUnaryAndTimestampFastPaths(t *testing.T) {
+	stor := promqltest.LoadedStorage(t, `
+load 10s
+	unary_float{__type__="gauge",__unit__="seconds",k="1"}@st _ -1s -2s -3s -4s -5s -6s
+	unary_float{__type__="gauge",__unit__="seconds",k="1"}    _ -1  -2  -3  -4  -5  -6
+	unary_hist{k="2"}@st                                      _ -1s -2s -3s -4s -5s -6s
+	unary_hist{k="2"}                                         _ {{sum:1}} {{sum:2}} {{sum:3}} {{sum:4}} {{sum:5}} {{sum:6}}
+	unary_mixed{k="3"}@st                                     _ -1s -2s -3s -4s -5s -6s
+	unary_mixed{k="3"}                                        _ -1  -2  -3  {{sum:4}} {{sum:5}} {{sum:6}}
+	dup_a{k="dup"}@st                                         _ -1s -2s
+	dup_a{k="dup"}                                            _ -1  -2
+	dup_b{k="dup"}@st                                         _ _   _   _   _   -5s -6s
+	dup_b{k="dup"}                                            _ _   _   _   _   -5  -6
+	dup_err_a{k="dup_err"}@st                                 _ -5s
+	dup_err_a{k="dup_err"}                                    _ -1
+	dup_err_b{k="dup_err"}@st                                 _ -5s
+	dup_err_b{k="dup_err"}                                    _ -2
+	mix_dup_a{k="mix_dup"}@st                                 _ -1s -2s
+	mix_dup_a{k="mix_dup"}                                    _ -1  -2
+	mix_dup_b{k="mix_dup"}@st                                 _ -1s -2s _   _   -5s -6s
+	mix_dup_b{k="mix_dup"}                                    _ {{sum:1}} {{sum:2}} _ _ -5 -6
+	stale_float{k="stale"}@st                                 _ -1s _   _   -4s
+	stale_float{k="stale"}                                    _ -1  stale _ -4
+`, func(opt *tsdb.Options) {
+		opt.EnableSTStorage = true
+		opt.FloatChunkEncoding = chunkenc.EncXOR2
+		opt.EnableHistogramSTEncoding = true
+	})
+
+	// Append a native histogram series with an explicit stale histogram marker
+	// (promqltest load syntax does not support stale inside {{...}} histograms).
+	app := stor.AppenderV2(t.Context())
+	staleHistLbls := labels.FromStrings(model.MetricNameLabel, "stale_hist", "k", "stale_h")
+	for _, pt := range []struct {
+		st, ts int64
+		fh     *histogram.FloatHistogram
+	}{
+		{st: 9_000, ts: 10_000, fh: &histogram.FloatHistogram{Count: 1, Sum: 1}},
+		{st: 0, ts: 20_000, fh: &histogram.FloatHistogram{Sum: math.Float64frombits(value.StaleNaN)}},
+		{st: 36_000, ts: 40_000, fh: &histogram.FloatHistogram{Count: 1, Sum: 4}},
+	} {
+		_, err := app.Append(0, staleHistLbls, pt.st, pt.ts, 0, nil, pt.fh, storage.AppendV2Options{})
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+
+	start := time.Unix(10, 0)
+	end := time.Unix(60, 0)
+	// Query every 5s across 10s sample intervals so odd steps exercise PeekPrev lookback.
+	step := 5 * time.Second
+
+	expectedSampleIdx := func(tsMS int64) int {
+		return int(tsMS/10_000) - 1
+	}
+
+	testCases := []struct {
+		expr string
+		want func(tsMS int64) map[string]float64
+	}{
+		{
+			expr: `abs({k=~"1|2|3"})`,
+			want: func(tsMS int64) map[string]float64 {
+				idx := expectedSampleIdx(tsMS)
+				v := float64(idx + 1)
+				if idx < 3 {
+					return map[string]float64{`{k="1"}`: v, `{k="3"}`: v}
+				}
+				return map[string]float64{`{k="1"}`: v}
+			},
+		},
+		{
+			expr: `sgn({k=~"1|2|3"})`,
+			want: func(tsMS int64) map[string]float64 {
+				if expectedSampleIdx(tsMS) < 3 {
+					return map[string]float64{`{k="1"}`: -1, `{k="3"}`: -1}
+				}
+				return map[string]float64{`{k="1"}`: -1}
+			},
+		},
+		{
+			expr: `timestamp({k=~"1|2|3"})`,
+			want: func(tsMS int64) map[string]float64 {
+				sampleTS := float64((expectedSampleIdx(tsMS) + 1) * 10)
+				return map[string]float64{`{k="1"}`: sampleTS, `{k="2"}`: sampleTS, `{k="3"}`: sampleTS}
+			},
+		},
+		{
+			expr: `abs(unary_hist)`,
+			want: func(int64) map[string]float64 {
+				return nil
+			},
+		},
+		{
+			expr: `timestamp(unary_float @ 30)`,
+			want: func(int64) map[string]float64 {
+				return map[string]float64{`{k="1"}`: 30}
+			},
+		},
+		{
+			expr: `start_timestamp(unary_float @ 30)`,
+			want: func(int64) map[string]float64 {
+				return map[string]float64{`{k="1"}`: 27}
+			},
+		},
+		{
+			expr: `timestamp(unary_float offset 10s)`,
+			want: func(tsMS int64) map[string]float64 {
+				if tsMS < 20_000 {
+					return nil
+				}
+				sampleTS := float64((expectedSampleIdx(tsMS-10_000) + 1) * 10)
+				return map[string]float64{`{k="1"}`: sampleTS}
+			},
+		},
+		{
+			expr: `start_timestamp(unary_float offset 10s)`,
+			want: func(tsMS int64) map[string]float64 {
+				if tsMS < 20_000 {
+					return nil
+				}
+				sampleST := float64((expectedSampleIdx(tsMS-10_000) + 1) * 9)
+				return map[string]float64{`{k="1"}`: sampleST}
+			},
+		},
+		{
+			expr: `start_timestamp({k=~"1|2|3"})`,
+			want: func(tsMS int64) map[string]float64 {
+				idx := expectedSampleIdx(tsMS)
+				sampleST := float64((idx + 1) * 9)
+				return map[string]float64{`{k="1"}`: sampleST, `{k="2"}`: sampleST, `{k="3"}`: sampleST}
+			},
+		},
+		{
+			expr: `abs({k="dup"})`,
+			want: func(tsMS int64) map[string]float64 {
+				if tsMS >= 35_000 && tsMS < 50_000 {
+					return nil
+				}
+				idx := expectedSampleIdx(tsMS)
+				if tsMS == 30_000 {
+					idx = 1
+				}
+				return map[string]float64{`{k="dup"}`: float64(idx + 1)}
+			},
+		},
+		{
+			expr: `timestamp({k="dup"})`,
+			want: func(tsMS int64) map[string]float64 {
+				if tsMS >= 35_000 && tsMS < 50_000 {
+					return nil
+				}
+				idx := expectedSampleIdx(tsMS)
+				if tsMS == 30_000 {
+					idx = 1
+				}
+				sampleTS := float64((idx + 1) * 10)
+				return map[string]float64{`{k="dup"}`: sampleTS}
+			},
+		},
+		{
+			expr: `start_timestamp({k="dup"})`,
+			want: func(tsMS int64) map[string]float64 {
+				if tsMS >= 35_000 && tsMS < 50_000 {
+					return nil
+				}
+				idx := expectedSampleIdx(tsMS)
+				if tsMS == 30_000 {
+					idx = 1
+				}
+				sampleST := float64((idx + 1) * 9)
+				return map[string]float64{`{k="dup"}`: sampleST}
+			},
+		},
+		{
+			// abs drops mix_dup_b's histograms at 10s..30s before duplicate-labelset merging,
+			// so the remaining float points from mix_dup_a and mix_dup_b do not collide.
+			expr: `abs({k="mix_dup"})`,
+			want: func(tsMS int64) map[string]float64 {
+				if tsMS >= 35_000 && tsMS < 50_000 {
+					return nil
+				}
+				idx := expectedSampleIdx(tsMS)
+				if tsMS == 30_000 {
+					idx = 1
+				}
+				return map[string]float64{`{k="mix_dup"}`: float64(idx + 1)}
+			},
+		},
+		{
+			expr: `abs({k=~"stale|stale_h"})`,
+			want: func(tsMS int64) map[string]float64 {
+				switch {
+				case tsMS <= 15_000:
+					return map[string]float64{`{k="stale"}`: 1}
+				case tsMS >= 40_000 && tsMS <= 50_000:
+					return map[string]float64{`{k="stale"}`: 4}
+				default:
+					return nil
+				}
+			},
+		},
+		{
+			expr: `timestamp({k=~"stale|stale_h"})`,
+			want: func(tsMS int64) map[string]float64 {
+				switch {
+				case tsMS <= 15_000:
+					return map[string]float64{`{k="stale"}`: 10, `{k="stale_h"}`: 10}
+				case tsMS >= 40_000 && tsMS <= 50_000:
+					return map[string]float64{`{k="stale"}`: 40, `{k="stale_h"}`: 40}
+				default:
+					return nil
+				}
+			},
+		},
+		{
+			expr: `start_timestamp({k=~"stale|stale_h"})`,
+			want: func(tsMS int64) map[string]float64 {
+				switch {
+				case tsMS <= 15_000:
+					return map[string]float64{`{k="stale"}`: 9, `{k="stale_h"}`: 9}
+				case tsMS >= 40_000 && tsMS <= 50_000:
+					return map[string]float64{`{k="stale"}`: 36, `{k="stale_h"}`: 36}
+				default:
+					return nil
+				}
+			},
+		},
+	}
+
+	for _, delayedNameRemoval := range []bool{false, true} {
+		t.Run("delayedNameRemoval="+strconv.FormatBool(delayedNameRemoval), func(t *testing.T) {
+			engine := promqltest.NewTestEngineWithOpts(t, promql.EngineOpts{
+				MaxSamples:               promqltest.DefaultMaxSamplesPerQuery,
+				Timeout:                  100 * time.Second,
+				EnableAtModifier:         true,
+				LookbackDelta:            15 * time.Second,
+				EnableDelayedNameRemoval: delayedNameRemoval,
+				UseStartTimestamps:       true,
+				Parser:                   parser.NewParser(promqltest.TestParserOpts),
+			})
+
+			for _, tc := range testCases {
+				t.Run("expr="+tc.expr, func(t *testing.T) {
+					rq, err := engine.NewRangeQuery(t.Context(), stor, nil, tc.expr, start, end, step)
+					require.NoError(t, err)
+					t.Cleanup(rq.Close)
+
+					rRes := rq.Exec(t.Context())
+					require.NoError(t, rRes.Err)
+					require.Empty(t, rRes.Warnings)
+					mat, err := rRes.Matrix()
+					require.NoError(t, err)
+
+					// Verify that duplicate labelsets were actually merged into one Series,
+					// timestamps are strictly increasing per series, and no stray timestamps exist.
+					seenSeries := make(map[string]struct{}, len(mat))
+					gotAtTS := make(map[int64]map[string]float64)
+					for _, s := range mat {
+						require.Empty(t, s.Histograms)
+						require.NotEmpty(t, s.Floats)
+						lbl := s.Metric.String()
+						require.NotContains(t, seenSeries, lbl, "duplicate series in matrix: %s", lbl)
+						seenSeries[lbl] = struct{}{}
+						for i, pt := range s.Floats {
+							if i > 0 {
+								require.Greater(t, pt.T, s.Floats[i-1].T, "non-increasing timestamp for %s", lbl)
+							}
+							if gotAtTS[pt.T] == nil {
+								gotAtTS[pt.T] = make(map[string]float64)
+							}
+							require.NotContains(t, gotAtTS[pt.T], lbl, "duplicate sample for %s at ts=%d", lbl, pt.T)
+							gotAtTS[pt.T][lbl] = pt.F
+						}
+					}
+
+					expectedSteps := 0
+					for ts := start; !ts.After(end); ts = ts.Add(step) {
+						tsMS := timestamp.FromTime(ts)
+						want := tc.want(tsMS)
+						if len(want) > 0 {
+							expectedSteps++
+						}
+						require.Equal(t, want, gotAtTS[tsMS], "ts=%d", tsMS)
+
+						iq, err := engine.NewInstantQuery(t.Context(), stor, nil, tc.expr, ts)
+						require.NoError(t, err)
+						iRes := iq.Exec(t.Context())
+						iq.Close()
+						require.NoError(t, iRes.Err)
+						require.Empty(t, iRes.Warnings)
+						vec, err := iRes.Vector()
+						require.NoError(t, err)
+
+						var instGot map[string]float64
+						if len(vec) > 0 {
+							instGot = make(map[string]float64, len(vec))
+							for _, smp := range vec {
+								require.Nil(t, smp.H)
+								instGot[smp.Metric.String()] = smp.F
+							}
+						}
+						require.Equal(t, want, instGot, "instant ts=%d", tsMS)
+					}
+					if expectedSteps == 0 {
+						require.Empty(t, mat)
+					} else {
+						require.NotEmpty(t, mat)
+					}
+					require.Len(t, gotAtTS, expectedSteps)
+				})
+			}
+
+			t.Run("start_timestamp disabled in range query", func(t *testing.T) {
+				disableST := false
+				disabledOpts := promql.NewPrometheusQueryOpts(false, 0, &disableST)
+				rq, err := engine.NewRangeQuery(t.Context(), stor, disabledOpts, `start_timestamp({k=~"1|2|3"})`, start, end, step)
+				require.NoError(t, err)
+				t.Cleanup(rq.Close)
+
+				rRes := rq.Exec(t.Context())
+				require.NoError(t, rRes.Err)
+				mat, err := rRes.Matrix()
+				require.NoError(t, err)
+				require.Empty(t, mat)
+			})
+
+			for _, expr := range []string{
+				`abs({k="dup_err"})`,
+				`timestamp({k="dup_err"})`,
+				`start_timestamp({k="dup_err"})`,
+				`timestamp({k="mix_dup"})`,
+				`start_timestamp({k="mix_dup"})`,
+			} {
+				t.Run("duplicate labelset error/"+expr, func(t *testing.T) {
+					rq, err := engine.NewRangeQuery(t.Context(), stor, nil, expr, start, end, step)
+					require.NoError(t, err)
+					t.Cleanup(rq.Close)
+
+					rRes := rq.Exec(t.Context())
+					require.ErrorContains(t, rRes.Err, "vector cannot contain metrics with the same labelset")
+				})
+			}
+
+			// Nested expressions observe metadata label preservation (__name__, __type__,
+			// __unit__) and delayed duplicate merging, which top-level queries mask via
+			// Eval's final cleanupMetricLabels.
+			nestedLabelCases := []struct {
+				expr string
+				want func(tsMS int64) float64
+			}{
+				{
+					expr: `label_join(abs(unary_float), "meta", ",", "__name__", "__type__", "__unit__")`,
+					want: func(tsMS int64) float64 { return float64(expectedSampleIdx(tsMS) + 1) },
+				},
+				{
+					expr: `label_join(timestamp(unary_float), "meta", ",", "__name__", "__type__", "__unit__")`,
+					want: func(tsMS int64) float64 { return float64((expectedSampleIdx(tsMS) + 1) * 10) },
+				},
+				{
+					expr: `label_join(start_timestamp(unary_float), "meta", ",", "__name__", "__type__", "__unit__")`,
+					want: func(tsMS int64) float64 { return float64((expectedSampleIdx(tsMS) + 1) * 9) },
+				},
+			}
+			for _, tc := range nestedLabelCases {
+				t.Run("nested label_join/"+tc.expr, func(t *testing.T) {
+					rq, err := engine.NewRangeQuery(t.Context(), stor, nil, tc.expr, start, end, step)
+					require.NoError(t, err)
+					t.Cleanup(rq.Close)
+
+					rRes := rq.Exec(t.Context())
+					require.NoError(t, rRes.Err)
+					mat, err := rRes.Matrix()
+					require.NoError(t, err)
+					require.Len(t, mat, 1)
+
+					wantLabels := `{k="1", meta=",,"}`
+					if delayedNameRemoval {
+						wantLabels = `{k="1", meta="unary_float,gauge,seconds"}`
+					}
+					require.Equal(t, wantLabels, mat[0].Metric.String())
+					var wantFloats []promql.FPoint
+					for ts := start; !ts.After(end); ts = ts.Add(step) {
+						tsMS := timestamp.FromTime(ts)
+						wantFloats = append(wantFloats, promql.FPoint{T: tsMS, F: tc.want(tsMS)})
+					}
+					require.Equal(t, wantFloats, mat[0].Floats)
+				})
+			}
+
+			for _, expr := range []string{`count(abs({k="dup_err"}))`, `count(timestamp({k="dup_err"}))`, `count(start_timestamp({k="dup_err"}))`} {
+				t.Run("nested count/"+expr, func(t *testing.T) {
+					rq, err := engine.NewRangeQuery(t.Context(), stor, nil, expr, start, end, step)
+					require.NoError(t, err)
+					t.Cleanup(rq.Close)
+
+					rRes := rq.Exec(t.Context())
+					if !delayedNameRemoval {
+						require.ErrorContains(t, rRes.Err, "vector cannot contain metrics with the same labelset")
+						return
+					}
+					require.NoError(t, rRes.Err)
+					mat, err := rRes.Matrix()
+					require.NoError(t, err)
+					require.Len(t, mat, 1)
+					require.Equal(t, `{}`, mat[0].Metric.String())
+					require.Equal(t, []promql.FPoint{{T: 10_000, F: 2}, {T: 15_000, F: 2}, {T: 20_000, F: 2}}, mat[0].Floats)
+				})
+			}
+		})
+	}
 }

@@ -303,6 +303,7 @@ func (b *OpenAPIBuilder) searchMetricNamesPath() *v3.PathItem {
 			Type:  []string{"array"},
 			Items: &base.DynamicValue[*base.SchemaProxy, bool]{A: stringSchema()},
 		}), []example{{"example", []string{"http_req"}}}),
+		queryParamWithExample("search_expr", "Boolean search expression matched against metric names. Supports AND, OR, NOT, parentheses and double-quoted terms. Mutually exclusive with search[].", false, stringSchema(), []example{{"example", "http AND NOT bucket"}}),
 	}, commonSearchParams()...)
 	params = append(params,
 		queryParamWithExample("include_metadata", "Include metric metadata in each result.", false, booleanSchema(), []example{{"example", true}}),
@@ -339,6 +340,7 @@ func (b *OpenAPIBuilder) searchLabelNamesPath() *v3.PathItem {
 			Type:  []string{"array"},
 			Items: &base.DynamicValue[*base.SchemaProxy, bool]{A: stringSchema()},
 		}), []example{{"example", []string{"inst"}}}),
+		queryParamWithExample("search_expr", "Boolean search expression matched against label names. Supports AND, OR, NOT, parentheses and double-quoted terms. Mutually exclusive with search[].", false, stringSchema(), []example{{"example", "inst OR job"}}),
 	}, commonSearchParams()...)
 	params = append(params,
 		queryParamWithExample("start", "Start timestamp for label name search.", false, timestampSchema(), timestampExamples(exampleTime.Add(-1*time.Hour))),
@@ -375,6 +377,7 @@ func (b *OpenAPIBuilder) searchLabelValuesPath() *v3.PathItem {
 			Type:  []string{"array"},
 			Items: &base.DynamicValue[*base.SchemaProxy, bool]{A: stringSchema()},
 		}), []example{{"example", []string{"909"}}}),
+		queryParamWithExample("search_expr", "Boolean search expression matched against label values. Supports AND, OR, NOT, parentheses and double-quoted terms. Mutually exclusive with search[].", false, stringSchema(), []example{{"example", "909 AND NOT 9091"}}),
 	}, commonSearchParams()...)
 	params = append(params,
 		queryParamWithExample("start", "Start timestamp for label value search.", false, timestampSchema(), timestampExamples(exampleTime.Add(-1*time.Hour))),

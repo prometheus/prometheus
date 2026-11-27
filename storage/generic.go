@@ -247,58 +247,59 @@ func NewSearchResultSetFromSliceAndError(results []SearchResult, warns annotatio
 // keeping the upfront allocation small for sparse matches against large indices.
 const minLinearAllocCap = 256
 
-// ApplySearchHints filters, sorts, and limits a slice of string values according to hints,
-// returning scored SearchResult entries. A nil hints value is treated as the zero value.
-// The input values slice is assumed to be ordered ascending by value; the function only
-// performs extra work for orderings that differ from this.
-//
-// Allocation and ordering are tuned to the (Filter, OrderBy, Limit) combination:
-//   - Filter == nil: at most Limit entries are copied; OrderByValueDesc walks the input
-//     in reverse so we never materialise the full slice when limited.
-//   - OrderByValueAsc + Filter + Limit: stream-filter with early exit at Limit matches.
-//   - OrderByValueDesc + Filter + Limit: reverse stream-filter with early exit at Limit
-//     matches, taking advantage of the input being ascending so the tail is the largest.
-//   - OrderByScoreDesc + Filter + Limit: top-K min-heap of size Limit, avoiding a full
-//     sort over the matched set.
-//   - Other combinations fall back to filter-then-reorder-then-slice, with the upfront
-//     capacity capped by min(len(values), max(2*Limit, minLinearAllocCap)).
-func ApplySearchHints(values []string, hints *SearchHints) []SearchResult {
+// checkContextEveryNIterations is used in some tight loops to check if the context is done.
+const checkContextEveryNIterations = 128
+
+// ApplySearchHints filters, orders, and limits values using a non-nil ctx.
+// Values must be ascending unless hints specifies score ordering with a filter.
+// Nil hints use the zero-value defaults. Cancellation returns the context error.
+func ApplySearchHints(ctx context.Context, values []string, hints *SearchHints) ([]SearchResult, error) {
 	if hints == nil {
 		hints = &SearchHints{}
 	}
 	if hints.Filter == nil {
-		return applySearchHintsNoFilter(values, hints)
+		return applySearchHintsNoFilter(ctx, values, hints)
 	}
 	if hints.Limit > 0 {
 		switch hints.OrderBy {
 		case OrderByScoreDesc:
-			return topKByScore(values, hints.Filter, hints.Limit)
+			return topKByScore(ctx, values, hints.Filter, hints.Limit)
 		case OrderByValueDesc:
-			return reverseFilterEarlyExit(values, hints.Filter, hints.Limit)
+			return reverseFilterEarlyExit(ctx, values, hints.Filter, hints.Limit)
 		}
 	}
-	return applySearchHintsLinear(values, hints)
+	return applySearchHintsLinear(ctx, values, hints)
+}
+
+func searchHintsContextErr(ctx context.Context, i int) error {
+	if i%checkContextEveryNIterations != 0 {
+		return nil
+	}
+	return ctx.Err()
 }
 
 // reverseFilterEarlyExit walks the input ascending-sorted slice from the tail,
 // accepting up to limit matches. Because the input is ascending, the tail
 // holds the lex-largest entries, so iterating in reverse yields results in
 // descending order without an extra sort.
-func reverseFilterEarlyExit(values []string, filter Filter, limit int) []SearchResult {
+func reverseFilterEarlyExit(ctx context.Context, values []string, filter Filter, limit int) ([]SearchResult, error) {
 	results := make([]SearchResult, 0, min(limit, len(values)))
 	for i := len(values) - 1; i >= 0 && len(results) < limit; i-- {
+		if err := searchHintsContextErr(ctx, len(values)-1-i); err != nil {
+			return nil, err
+		}
 		accepted, score := filter.Accept(values[i])
 		if !accepted {
 			continue
 		}
 		results = append(results, SearchResult{Value: values[i], Score: score})
 	}
-	return results
+	return results, nil
 }
 
 // applySearchHintsNoFilter handles the unfiltered path: scores are uniformly 1.0
 // and at most Limit entries are emitted in the requested order.
-func applySearchHintsNoFilter(values []string, hints *SearchHints) []SearchResult {
+func applySearchHintsNoFilter(ctx context.Context, values []string, hints *SearchHints) ([]SearchResult, error) {
 	n := len(values)
 	if hints.Limit > 0 && hints.Limit < n {
 		n = hints.Limit
@@ -310,25 +311,34 @@ func applySearchHintsNoFilter(values []string, hints *SearchHints) []SearchResul
 		// guard is defensive: n is clamped to len(values) above, so we
 		// should always exit on len(results) == n first.
 		for i := len(values) - 1; i >= 0 && len(results) < n; i-- {
+			if err := searchHintsContextErr(ctx, len(values)-1-i); err != nil {
+				return nil, err
+			}
 			results = append(results, SearchResult{Value: values[i], Score: 1.0})
 		}
-		return results
+		return results, nil
 	}
 	// OrderByValueAsc and OrderByScoreDesc both reduce to value-ascending here:
 	// uniform scores tie-break on Value asc under (Score desc, Value asc).
 	for i := range n {
+		if err := searchHintsContextErr(ctx, i); err != nil {
+			return nil, err
+		}
 		results = append(results, SearchResult{Value: values[i], Score: 1.0})
 	}
-	return results
+	return results, nil
 }
 
 // applySearchHintsLinear handles the filtered path for orderings other than
 // OrderByScoreDesc-with-limit (which uses top-K). It streams the filter and,
 // for OrderByValueAsc with a limit, exits as soon as the limit is reached.
-func applySearchHintsLinear(values []string, hints *SearchHints) []SearchResult {
+func applySearchHintsLinear(ctx context.Context, values []string, hints *SearchHints) ([]SearchResult, error) {
 	results := make([]SearchResult, 0, linearResultCap(len(values), hints.Limit))
 	earlyExit := hints.OrderBy == OrderByValueAsc && hints.Limit > 0
-	for _, v := range values {
+	for i, v := range values {
+		if err := searchHintsContextErr(ctx, i); err != nil {
+			return nil, err
+		}
 		accepted, score := hints.Filter.Accept(v)
 		if !accepted {
 			continue
@@ -349,7 +359,7 @@ func applySearchHintsLinear(values []string, hints *SearchHints) []SearchResult 
 	if hints.Limit > 0 && len(results) > hints.Limit {
 		results = results[:hints.Limit]
 	}
-	return results
+	return results, nil
 }
 
 // linearResultCap returns the upfront capacity hint for the linear-path result
@@ -446,9 +456,12 @@ func (h smallestNHeap) siftDown(i int) {
 // The heap is a small typed structure (no container/heap interface) so each
 // candidate replacement is a direct struct write rather than an interface
 // box. This keeps the hot loop allocation-free past the initial fill.
-func topKByScore(values []string, filter Filter, limit int) []SearchResult {
+func topKByScore(ctx context.Context, values []string, filter Filter, limit int) ([]SearchResult, error) {
 	h := make(searchTopKHeap, 0, min(limit, len(values)))
-	for _, v := range values {
+	for i, v := range values {
+		if err := searchHintsContextErr(ctx, i); err != nil {
+			return nil, err
+		}
 		accepted, score := filter.Accept(v)
 		if !accepted {
 			continue
@@ -481,7 +494,7 @@ func topKByScore(values []string, filter Filter, limit int) []SearchResult {
 		r, h = h.pop()
 		out[i] = r
 	}
-	return out
+	return out, nil
 }
 
 // searchTopKHeap is a typed binary min-heap under the inverse of the (Score

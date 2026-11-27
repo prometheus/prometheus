@@ -108,6 +108,7 @@ func newTestAPI(t *testing.T, cfg testhelpers.APIConfig) *testhelpers.APIWrapper
 		parser.NewParser(parser.Options{}), // promqlParser
 		false,                              // enableQueryCost
 		0,                                  // queryTimeoutFlag
+		0,                                  // metadataDefaultTimeRange
 	)
 
 	// Register routes.

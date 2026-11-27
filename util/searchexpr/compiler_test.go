@@ -185,9 +185,10 @@ func TestCompileEquivalentExpressionsRankIdentically(t *testing.T) {
 	} {
 		t.Run(expression, func(t *testing.T) {
 			filter := compileContains(t, expression, map[string]float64{"a": 0.75, "b": 0.75, "c": 0.75, "d": 0.25, "other": 0.55})
-			results := storage.ApplySearchHints([]string{"a_b_c_d", "other"}, &storage.SearchHints{
+			results, err := storage.ApplySearchHints(t.Context(), []string{"a_b_c_d", "other"}, &storage.SearchHints{
 				Filter: filter, Limit: 1, OrderBy: storage.OrderByScoreDesc,
 			})
+			require.NoError(t, err)
 			require.Equal(t, []storage.SearchResult{{Value: "a_b_c_d", Score: 1.75 / 3}}, results)
 		})
 	}

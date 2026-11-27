@@ -185,8 +185,12 @@ function arrayToCompletionResult(data: Completion[], from: number, to: number, i
 function escapePromQLString(str: string): string {
   // PromQL only evaluates escape sequences in single- and double-quoted strings.
   // Backtick-quoted string completions are not handled separately today, so keep
-  // the inserted value escaped unconditionally.
-  return str.replace(/([\\"])/g, '\\$1');
+  // the inserted value escaped unconditionally. A raw line break would end the
+  // string literal with a syntax error, so line breaks are escaped as well.
+  return str
+    .replace(/([\\"])/g, '\\$1')
+    .replace(/\n/g, '\\n')
+    .replace(/\r/g, '\\r');
 }
 
 function isAfterClosedFunctionCallBody(state: EditorState, node: SyntaxNode, pos: number): boolean {

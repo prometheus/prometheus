@@ -189,18 +189,18 @@ func (h *Head) appender() *headAppender {
 	appendID, cleanupAppendIDsBelow := h.iso.newAppendID(minValidTime) // Every appender gets an ID that is cleared upon commit/rollback.
 	return &headAppender{
 		headAppenderBase: headAppenderBase{
-			head:                  h,
-			minValidTime:          minValidTime,
-			headMaxt:              h.MaxTime(),
-			oooTimeWindow:         h.opts.OutOfOrderTimeWindow.Load(),
-			seriesRefs:            h.getRefSeriesBuffer(),
-			series:                h.getSeriesBuffer(),
-			typesInBatch:          h.getTypeMap(),
-			appendID:              appendID,
-			cleanupAppendIDsBelow: cleanupAppendIDsBelow,
-			storeST:               h.opts.EnableSTStorage.Load(),
-			useXOR2:               h.opts.UseXOR2FloatEncoding(),
-			useHistogramST:        h.opts.EnableHistogramSTEncoding.Load(),
+			head:                   h,
+			minValidTime:           minValidTime,
+			headMaxt:               h.MaxTime(),
+			oooTimeWindow:          h.opts.OutOfOrderTimeWindow.Load(),
+			seriesRecordCandidates: h.getSeriesRecordCandidateBuffer(),
+			series:                 h.getSeriesBuffer(),
+			typesInBatch:           h.getTypeMap(),
+			appendID:               appendID,
+			cleanupAppendIDsBelow:  cleanupAppendIDsBelow,
+			storeST:                h.opts.EnableSTStorage.Load(),
+			useXOR2:                h.opts.UseXOR2FloatEncoding(),
+			useHistogramST:         h.opts.EnableHistogramSTEncoding.Load(),
 		},
 	}
 }
@@ -229,19 +229,17 @@ func (h *Head) AppendableMinValidTime() (int64, bool) {
 	return h.appendableMinValidTime(), true
 }
 
-func (h *Head) getRefSeriesBuffer() []record.RefSeries {
-	b := h.refSeriesPool.Get()
+func (h *Head) getSeriesRecordCandidateBuffer() []seriesRecordCandidate {
+	b := h.seriesRecordCandidatesPool.Get()
 	if b == nil {
-		return make([]record.RefSeries, 0, 512)
+		return make([]seriesRecordCandidate, 0, 512)
 	}
 	return b
 }
 
-func (h *Head) putRefSeriesBuffer(b []record.RefSeries) {
-	for i := range b { // Zero out to avoid retaining label data.
-		b[i].Labels = labels.EmptyLabels()
-	}
-	h.refSeriesPool.Put(b[:0])
+func (h *Head) putSeriesRecordCandidateBuffer(b []seriesRecordCandidate) {
+	clear(b)
+	h.seriesRecordCandidatesPool.Put(b[:0])
 }
 
 func (h *Head) getFloatBuffer() []record.RefSample {
@@ -256,20 +254,20 @@ func (h *Head) putFloatBuffer(b []record.RefSample) {
 	h.floatsPool.Put(b[:0])
 }
 
-func (h *Head) getExemplarBuffer() []exemplarWithSeriesRef {
+func (h *Head) getExemplarBuffer() []exemplarWithSeries {
 	b := h.exemplarsPool.Get()
 	if b == nil {
-		return make([]exemplarWithSeriesRef, 0, 512)
+		return make([]exemplarWithSeries, 0, 512)
 	}
 	return b
 }
 
-func (h *Head) putExemplarBuffer(b []exemplarWithSeriesRef) {
+func (h *Head) putExemplarBuffer(b []exemplarWithSeries) {
 	if b == nil {
 		return
 	}
-	for i := range b { // Zero out to avoid retaining label data.
-		b[i].exemplar.Labels = labels.EmptyLabels()
+	for i := range b { // Zero out to avoid retaining label data and series.
+		b[i] = exemplarWithSeries{}
 	}
 
 	h.exemplarsPool.Put(b[:0])
@@ -354,8 +352,11 @@ func (h *Head) putBytesBuffer(b []byte) {
 	h.bytesPool.Put(b[:0])
 }
 
-type exemplarWithSeriesRef struct {
-	ref      storage.SeriesRef
+// exemplarWithSeries is an exemplar held by an appender. The appender holds a
+// pending-commit reservation on the series until the exemplar is committed or
+// rolled back.
+type exemplarWithSeries struct {
+	series   *memSeries
 	exemplar exemplar.Exemplar
 }
 
@@ -389,7 +390,7 @@ type appendBatch struct {
 	floatHistogramSeries []*memSeries                     // FloatHistogramSamples series corresponding to the samples held by this appender (using corresponding slice indices - same series may appear more than once).
 	metadata             []record.RefMetadata             // New metadata held by this appender.
 	metadataSeries       []*memSeries                     // Series corresponding to the metadata held by this appender.
-	exemplars            []exemplarWithSeriesRef          // New exemplars held by this appender.
+	exemplars            []exemplarWithSeries             // New exemplars held by this appender.
 }
 
 // close returns all the slices to the pools in Head and nil's them.
@@ -414,15 +415,22 @@ func (b *appendBatch) close(h *Head) {
 	b.exemplars = nil
 }
 
+type seriesRecordCandidate struct {
+	series *memSeries
+	lset   labels.Labels
+}
+
 type headAppenderBase struct {
 	head          *Head
 	minValidTime  int64 // No samples below this timestamp are allowed.
 	headMaxt      int64 // We track it here to not take the lock for every sample appended.
 	oooTimeWindow int64 // Use the same for the entire append, and don't load the atomic for each sample.
 
-	seriesRefs []record.RefSeries // New series records held by this appender.
-	series     []*memSeries       // New series held by this appender (using corresponding slices indexes from seriesRefs)
-	batches    []*appendBatch     // Holds all the other data to append. (In regular cases, there should be only one of these.)
+	// Series whose WAL records may still need writing, with their captured labels.
+	// Pending-commit reservations protect them while their records may be needed.
+	seriesRecordCandidates []seriesRecordCandidate
+	series                 []*memSeries   // Series created by this appender, with a creation reservation to release.
+	batches                []*appendBatch // Holds all the other data to append. (In regular cases, there should be only one of these.)
 
 	typesInBatch map[chunks.HeadSeriesRef]sampleType // Which (one) sample type each series holds in the most recent batch.
 
@@ -499,6 +507,7 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 			return 0, storage.ErrOutOfOrderSample
 		}
 		s.markPendingCommit()
+		a.trackSeriesRecord(s)
 	}
 	if delta > 0 {
 		a.head.metrics.oooHistogram.Observe(float64(delta) / 1000)
@@ -557,6 +566,7 @@ func (a *headAppender) AppendSTZeroSample(ref storage.SeriesRef, lset labels.Lab
 		return storage.SeriesRef(s.ref), storage.ErrOutOfOrderST
 	}
 	s.markPendingCommit()
+	a.trackSeriesRecord(s)
 	s.Unlock()
 
 	b := a.getCurrentBatch(stFloat, s.ref)
@@ -589,10 +599,6 @@ func (a *headAppenderBase) getOrCreate(lset labels.Labels) (s *memSeries, create
 		return nil, false, err
 	}
 	if created {
-		a.seriesRefs = append(a.seriesRefs, record.RefSeries{
-			Ref:    s.ref,
-			Labels: lset,
-		})
 		a.series = append(a.series, s)
 	}
 	return s, created, nil
@@ -904,6 +910,9 @@ func (a *headAppender) AppendExemplar(ref storage.SeriesRef, lset labels.Labels,
 	if s == nil {
 		return 0, fmt.Errorf("unknown HeadSeriesRef when trying to add exemplar: %d", ref)
 	}
+	if hook := a.head.testAfterSeriesLookup; hook != nil {
+		hook(s)
+	}
 
 	// Ensure no empty labels have gotten through.
 	e.Labels = e.Labels.WithoutEmpty()
@@ -917,12 +926,38 @@ func (a *headAppender) AppendExemplar(ref storage.SeriesRef, lset labels.Labels,
 		return 0, err
 	}
 
-	b := a.getCurrentBatch(stNone, chunks.HeadSeriesRef(ref))
-	// Protect the series from ordinary compaction before the exemplar is committed.
-	s.updateExemplarTimestamp(e.Ts)
-	b.exemplars = append(b.exemplars, exemplarWithSeriesRef{ref, e})
+	if s = a.reserveSeriesForExemplar(s, e.Ts); s == nil {
+		return 0, fmt.Errorf("unknown HeadSeriesRef when trying to add exemplar: %d", ref)
+	}
+	b := a.getCurrentBatch(stNone, s.ref)
+	b.exemplars = append(b.exemplars, exemplarWithSeries{s, e})
 
 	return storage.SeriesRef(s.ref), nil
+}
+
+// reserveSeriesForExemplar takes a pending-commit reservation on s for an
+// exemplar with timestamp ts, so that the series cannot be garbage collected
+// before the exemplar is committed. Otherwise, the commit would log the
+// exemplar after the tombstone of the series. If s was garbage collected in the
+// meantime, it uses the series that replaced it, if any. It returns the reserved
+// series, or nil if there is none.
+func (a *headAppenderBase) reserveSeriesForExemplar(s *memSeries, ts int64) *memSeries {
+	for {
+		s.Lock()
+		if !s.isGCed() {
+			s.updateExemplarTimestampLocked(ts)
+			s.markPendingCommit()
+			a.trackSeriesRecord(s)
+			s.Unlock()
+			return s
+		}
+		lset := s.lset // Safe to access; the series is locked.
+		s.Unlock()
+
+		if s = a.head.series.getByHash(lset.Hash(), lset); s == nil {
+			return nil
+		}
+	}
 }
 
 func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
@@ -965,6 +1000,7 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 		_, delta, err := s.appendableHistogram(t, h, a.headMaxt, a.minValidTime, a.oooTimeWindow, a.head)
 		if err == nil {
 			s.markPendingCommit()
+			a.trackSeriesRecord(s)
 		}
 		s.Unlock()
 		if delta > 0 {
@@ -1000,6 +1036,7 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 		_, delta, err := s.appendableFloatHistogram(t, fh, a.headMaxt, a.minValidTime, a.oooTimeWindow, a.head)
 		if err == nil {
 			s.markPendingCommit()
+			a.trackSeriesRecord(s)
 		}
 		s.Unlock()
 		if delta > 0 {
@@ -1078,6 +1115,7 @@ func (a *headAppender) AppendHistogramSTZeroSample(ref storage.SeriesRef, lset l
 		}
 
 		s.markPendingCommit()
+		a.trackSeriesRecord(s)
 		s.Unlock()
 		sTyp := stHistogram
 		if h.UsesCustomBuckets() {
@@ -1122,6 +1160,7 @@ func (a *headAppender) AppendHistogramSTZeroSample(ref storage.SeriesRef, lset l
 		}
 
 		s.markPendingCommit()
+		a.trackSeriesRecord(s)
 		s.Unlock()
 		sTyp := stFloatHistogram
 		if fh.UsesCustomBuckets() {
@@ -1153,21 +1192,32 @@ func (a *headAppender) UpdateMetadata(ref storage.SeriesRef, lset labels.Labels,
 		return 0, fmt.Errorf("unknown series when trying to add metadata with HeadSeriesRef: %d and labels: %s", ref, lset)
 	}
 
+	if hook := a.head.testAfterSeriesLookup; hook != nil {
+		hook(s)
+	}
 	s.Lock()
+	if s.isGCed() {
+		s.Unlock()
+		return 0, fmt.Errorf("unknown series when trying to add metadata with HeadSeriesRef: %d and labels: %s", ref, lset)
+	}
 	hasNewMetadata := metadata.IsZeroHandle(s.meta) || s.meta.Value() != meta
+	if !hasNewMetadata {
+		s.Unlock()
+		return ref, nil
+	}
+	// Keep the series until the metadata record is committed or rolled back.
+	s.markPendingCommit()
+	a.trackSeriesRecord(s)
 	s.Unlock()
 
-	if hasNewMetadata {
-		b := a.getCurrentBatch(stNone, s.ref)
-		b.metadata = append(b.metadata, record.RefMetadata{
-			Ref:  s.ref,
-			Type: record.GetMetricType(meta.Type),
-			Unit: meta.Unit,
-			Help: meta.Help,
-		})
-		b.metadataSeries = append(b.metadataSeries, s)
-	}
-
+	b := a.getCurrentBatch(stNone, s.ref)
+	b.metadata = append(b.metadata, record.RefMetadata{
+		Ref:  s.ref,
+		Type: record.GetMetricType(meta.Type),
+		Unit: meta.Unit,
+		Help: meta.Help,
+	})
+	b.metadataSeries = append(b.metadataSeries, s)
 	return ref, nil
 }
 
@@ -1182,6 +1232,100 @@ func (a *headAppenderBase) GetRef(lset labels.Labels, hash uint64) (storage.Seri
 	return storage.SeriesRef(s.ref), s.labels()
 }
 
+const (
+	seriesWALUnlogged uint32 = iota
+	seriesWALWriting
+	seriesWALLogged
+)
+
+// trackSeriesRecord buffers a candidate WAL series record if the series still needs one.
+// The caller must hold the series lock and keep a pending-commit reservation on s
+// until Commit or Rollback so the series stays in Head while its record may be logged.
+func (a *headAppenderBase) trackSeriesRecord(s *memSeries) {
+	if s.walState.Load() == seriesWALLogged {
+		return
+	}
+	// Avoid consecutive duplicates, such as consecutive samples for the same series.
+	// logSeriesRecords performs full deduplication.
+	if n := len(a.seriesRecordCandidates); n > 0 && a.seriesRecordCandidates[n-1].series == s {
+		return
+	}
+	a.seriesRecordCandidates = append(a.seriesRecordCandidates, seriesRecordCandidate{series: s, lset: s.lset})
+}
+
+// filterSeriesRecords keeps the candidates whose series match keep, reporting how many remain.
+func (a *headAppenderBase) filterSeriesRecords(keep func(*memSeries) bool) int {
+	n := 0
+	for _, candidate := range a.seriesRecordCandidates {
+		if !keep(candidate.series) {
+			continue
+		}
+		a.seriesRecordCandidates[n] = candidate
+		n++
+	}
+	clear(a.seriesRecordCandidates[n:])
+	a.seriesRecordCandidates = a.seriesRecordCandidates[:n]
+	return n
+}
+
+// logSeriesRecords uses enc to encode any series records still needed by
+// a.seriesRecordCandidates and writes them before rec, a non-empty encoded WAL
+// record. It returns rec's buffer, grown if needed and reset to length zero,
+// and any WAL error.
+//
+// The caller must already hold pending-commit reservations to keep the series
+// in Head. When writing series records, this method takes walSeriesMtx and
+// marks the series as logged on success or ready for retry on failure before unlocking.
+func (a *headAppenderBase) logSeriesRecords(enc record.Encoder, rec []byte) ([]byte, error) {
+	h := a.head
+	if a.filterSeriesRecords(func(s *memSeries) bool {
+		return s.walState.Load() != seriesWALLogged
+	}) == 0 {
+		return rec[:0], h.wal.Log(rec)
+	}
+
+	h.walSeriesMtx.Lock()
+	// Writing also deduplicates refs within this appender. Other appenders
+	// cannot select series until this batch's write result has been published.
+	if a.filterSeriesRecords(func(s *memSeries) bool {
+		if s.walState.Load() != seriesWALUnlogged {
+			return false
+		}
+		s.walState.Store(seriesWALWriting)
+		return true
+	}) == 0 {
+		h.walSeriesMtx.Unlock()
+		return rec[:0], h.wal.Log(rec)
+	}
+
+	// Write the series record to the WAL before any samples or other records
+	// that reference these series. SeriesFromFunc appends it after rec in the
+	// buffer; the WAL call below writes it before rec.
+	buf := enc.SeriesFromFunc(len(a.seriesRecordCandidates), func(i int) record.RefSeries {
+		candidate := a.seriesRecordCandidates[i]
+		return record.RefSeries{Ref: candidate.series.ref, Labels: candidate.lset}
+	}, rec)
+	err := h.wal.Log(buf[len(rec):], rec)
+	state := seriesWALLogged
+	if err != nil {
+		// Log reports one result for the whole batch. Leave the series eligible
+		// for retry even if its record was written before the data write failed.
+		state = seriesWALUnlogged
+	}
+	for _, candidate := range a.seriesRecordCandidates {
+		candidate.series.walState.Store(state)
+	}
+	h.walSeriesMtx.Unlock()
+	if err != nil {
+		return buf[:0], fmt.Errorf("log series and data: %w", err)
+	}
+	// Clear labels and series pointers before shortening the slice, since
+	// pool cleanup only visits entries within its current length.
+	clear(a.seriesRecordCandidates)
+	a.seriesRecordCandidates = a.seriesRecordCandidates[:0]
+	return buf[:0], nil
+}
+
 // log writes all headAppender's data to the WAL.
 func (a *headAppenderBase) log() error {
 	if a.head.wal == nil {
@@ -1194,20 +1338,20 @@ func (a *headAppenderBase) log() error {
 	var rec []byte
 	enc := record.Encoder{EnableSTStorage: a.storeST}
 
-	if len(a.seriesRefs) > 0 {
-		rec = enc.Series(a.seriesRefs, buf)
-		buf = rec[:0]
-
-		if err := a.head.wal.Log(rec); err != nil {
-			return fmt.Errorf("log series: %w", err)
+	log := func(rec []byte) error {
+		if len(a.seriesRecordCandidates) == 0 {
+			return a.head.wal.Log(rec)
 		}
+		var err error
+		buf, err = a.logSeriesRecords(enc, rec)
+		return err
 	}
 	for _, b := range a.batches {
 		if len(b.metadata) > 0 {
 			rec = enc.Metadata(b.metadata, buf)
 			buf = rec[:0]
 
-			if err := a.head.wal.Log(rec); err != nil {
+			if err := log(rec); err != nil {
 				return fmt.Errorf("log metadata: %w", err)
 			}
 		}
@@ -1217,7 +1361,7 @@ func (a *headAppenderBase) log() error {
 			rec = enc.Samples(b.floats, buf)
 			buf = rec[:0]
 
-			if err := a.head.wal.Log(rec); err != nil {
+			if err := log(rec); err != nil {
 				return fmt.Errorf("log samples: %w", err)
 			}
 		}
@@ -1226,14 +1370,14 @@ func (a *headAppenderBase) log() error {
 			rec, customBucketsHistograms = enc.HistogramSamples(b.histograms, buf)
 			buf = rec[:0]
 			if len(rec) > 0 {
-				if err := a.head.wal.Log(rec); err != nil {
+				if err := log(rec); err != nil {
 					return fmt.Errorf("log histograms: %w", err)
 				}
 			}
 
 			if len(customBucketsHistograms) > 0 {
 				rec = enc.CustomBucketsHistogramSamples(customBucketsHistograms, buf)
-				if err := a.head.wal.Log(rec); err != nil {
+				if err := log(rec); err != nil {
 					return fmt.Errorf("log custom buckets histograms: %w", err)
 				}
 			}
@@ -1243,14 +1387,14 @@ func (a *headAppenderBase) log() error {
 			rec, customBucketsFloatHistograms = enc.FloatHistogramSamples(b.floatHistograms, buf)
 			buf = rec[:0]
 			if len(rec) > 0 {
-				if err := a.head.wal.Log(rec); err != nil {
+				if err := log(rec); err != nil {
 					return fmt.Errorf("log float histograms: %w", err)
 				}
 			}
 
 			if len(customBucketsFloatHistograms) > 0 {
 				rec = enc.CustomBucketsFloatHistogramSamples(customBucketsFloatHistograms, buf)
-				if err := a.head.wal.Log(rec); err != nil {
+				if err := log(rec); err != nil {
 					return fmt.Errorf("log custom buckets float histograms: %w", err)
 				}
 			}
@@ -1263,7 +1407,7 @@ func (a *headAppenderBase) log() error {
 			rec = enc.Exemplars(exemplarsForEncoding(b.exemplars), buf)
 			buf = rec[:0]
 
-			if err := a.head.wal.Log(rec); err != nil {
+			if err := log(rec); err != nil {
 				return fmt.Errorf("log exemplars: %w", err)
 			}
 		}
@@ -1271,11 +1415,11 @@ func (a *headAppenderBase) log() error {
 	return nil
 }
 
-func exemplarsForEncoding(es []exemplarWithSeriesRef) []record.RefExemplar {
+func exemplarsForEncoding(es []exemplarWithSeries) []record.RefExemplar {
 	ret := make([]record.RefExemplar, 0, len(es))
 	for _, e := range es {
 		ret = append(ret, record.RefExemplar{
-			Ref:    chunks.HeadSeriesRef(e.ref),
+			Ref:    e.series.ref,
 			T:      e.exemplar.Ts,
 			V:      e.exemplar.Value,
 			Labels: e.exemplar.Labels,
@@ -1329,20 +1473,14 @@ type appenderCommitContext struct {
 func (a *headAppenderBase) commitExemplars(b *appendBatch) {
 	// No errors logging to WAL, so pass the exemplars along to the in memory storage.
 	for _, e := range b.exemplars {
-		s := a.head.series.getByID(chunks.HeadSeriesRef(e.ref))
-		if s == nil {
-			// This is very unlikely to happen, but we have seen it in the wild.
-			// It means that the series was truncated between AppendExemplar and Commit.
-			// See TestHeadCompactionWhileAppendAndCommitExemplar.
-			continue
-		}
+		s := e.series
 		// We don't instrument exemplar appends here, all is instrumented by storage.
-		if err := a.head.exemplars.AddExemplar(s.labels(), e.exemplar); err != nil {
-			if errors.Is(err, storage.ErrOutOfOrderExemplar) {
-				continue
-			}
+		if err := a.head.exemplars.AddExemplar(s.labels(), e.exemplar); err != nil && !errors.Is(err, storage.ErrOutOfOrderExemplar) {
 			a.head.logger.Debug("Unknown error while adding exemplar", "err", err)
 		}
+		s.Lock()
+		a.releasePendingCommit(s)
+		s.Unlock()
 	}
 }
 
@@ -1828,12 +1966,13 @@ func (a *headAppenderBase) commitFloatHistograms(b *appendBatch, acc *appenderCo
 // It iterates over the metadata slice and updates the corresponding series
 // with the new metadata information. The series is locked during the update
 // to ensure thread safety.
-func commitMetadata(b *appendBatch) {
+func (a *headAppenderBase) commitMetadata(b *appendBatch) {
 	var series *memSeries
 	for i, m := range b.metadata {
 		series = b.metadataSeries[i]
 		series.Lock()
 		series.meta = unique.Make(metadata.Metadata{Type: record.ToMetricType(m.Type), Unit: m.Unit, Help: m.Help})
+		a.releasePendingCommit(series)
 		series.Unlock()
 	}
 }
@@ -1847,9 +1986,10 @@ func (a *headAppenderBase) releaseCreatedSeriesReservations() {
 }
 
 // releasePendingCommit releases one of the series' pending-sample reservations.
-// Reservations are taken once per queued sample and once per series created by
-// this appender. Decrementing without one would underflow into the packed flag
-// bits, so the accounting error is reported instead.
+// Reservations are taken once per queued sample, exemplar or metadata update,
+// and once per newly created series. Decrementing without one would
+// underflow into the packed flag bits, so the accounting error is reported
+// instead.
 //
 // Must be called with the series lock held.
 func (a *headAppenderBase) releasePendingCommit(s *memSeries) {
@@ -1873,14 +2013,14 @@ func (a *headAppenderBase) Commit() (err error) {
 			// Don't double-close in case Rollback() was called.
 			return
 		}
-		h.putRefSeriesBuffer(a.seriesRefs)
+		h.putSeriesRecordCandidateBuffer(a.seriesRecordCandidates)
 		h.putSeriesBuffer(a.series)
 		h.putTypeMap(a.typesInBatch)
 		a.closed = true
 	}()
 
 	if err := a.log(); err != nil {
-		_ = a.Rollback() // Most likely the same error will happen again.
+		_ = a.Rollback()
 		return fmt.Errorf("write to WAL: %w", err)
 	}
 
@@ -1930,7 +2070,7 @@ func (a *headAppenderBase) Commit() (err error) {
 		a.commitFloats(b, acc)
 		a.commitHistograms(b, acc)
 		a.commitFloatHistograms(b, acc)
-		commitMetadata(b)
+		a.commitMetadata(b)
 	}
 	// Release the reservations that protected newly indexed series before their first sample was queued.
 	a.releaseCreatedSeriesReservations()
@@ -2411,8 +2551,8 @@ func handleChunkWriteError(err error) {
 	}
 }
 
-// Rollback removes the samples and exemplars from headAppender and writes any series to WAL.
-func (a *headAppenderBase) Rollback() (err error) {
+// Rollback discards buffered data and releases pending-commit reservations.
+func (a *headAppenderBase) Rollback() error {
 	if a.closed {
 		return ErrAppenderClosed
 	}
@@ -2422,7 +2562,7 @@ func (a *headAppenderBase) Rollback() (err error) {
 		h.iso.closeAppend(a.appendID)
 		h.metrics.activeAppenders.Dec()
 		a.closed = true
-		h.putRefSeriesBuffer(a.seriesRefs)
+		h.putSeriesRecordCandidateBuffer(a.seriesRecordCandidates)
 		h.putSeriesBuffer(a.series)
 		h.putTypeMap(a.typesInBatch)
 	}()
@@ -2450,10 +2590,18 @@ func (a *headAppenderBase) Rollback() (err error) {
 			a.releasePendingCommit(series)
 			series.Unlock()
 		}
+		for _, e := range b.exemplars {
+			e.series.Lock()
+			a.releasePendingCommit(e.series)
+			e.series.Unlock()
+		}
+		for _, s := range b.metadataSeries {
+			s.Lock()
+			a.releasePendingCommit(s)
+			s.Unlock()
+		}
 		b.close(h)
 	}
 	a.batches = a.batches[:0]
-	// Series are created in the head memory regardless of rollback. Thus we have
-	// to log them to the WAL in any case.
-	return a.log()
+	return nil
 }

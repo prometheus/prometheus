@@ -1804,6 +1804,11 @@ describe('autocomplete promQL test', () => {
             apply: 'quoted\\"value',
             type: 'text',
           },
+          {
+            label: 'multi\nline',
+            apply: 'multi\\nline',
+            type: 'text',
+          },
         ],
         from: 25,
         to: 25,

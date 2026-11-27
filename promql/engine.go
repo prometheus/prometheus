@@ -2457,7 +2457,7 @@ func (ev *evaluator) evalSeries(ctx context.Context, series []storage.Series, of
 			if atTimestamp != nil {
 				lookupTS = *atTimestamp
 			}
-			_, origT, f, h, ok := ev.vectorSelectorSingle(it, offset, lookupTS)
+			_, origT, f, h, ok := ev.vectorSelectorSingle(it, offset, lookupTS, false)
 			if !ok {
 				continue
 			}
@@ -2727,15 +2727,16 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		return result, warnings
 
 	case *parser.Call:
-		call := FunctionCalls[e.Func.Name]
 		if e.Func.Name == "timestamp" || e.Func.Name == "start_timestamp" {
 			// Matrix evaluation always returns the evaluation time,
 			// so this function needs special handling when given
 			// a vector selector.
 			if vs, ok := e.Args[0].(*parser.VectorSelector); ok {
-				return ev.rangeEvalTimestampFunctionOverVectorSelector(ctx, vs, call, e)
+				return ev.rangeEvalTimestampFunctionOverVectorSelector(ctx, vs, e)
 			}
 		}
+
+		call := FunctionCalls[e.Func.Name]
 
 		// Check if the function has a matrix argument.
 		var (
@@ -2790,6 +2791,10 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 		}
 
 		if !matrixArg {
+			if fn, ok := inPlaceFloatUnaryFuncs[e.Func.Name]; ok && len(e.Args) == 1 {
+				return ev.evalInPlaceFloatUnary(ctx, e.Args[0], fn)
+			}
+
 			// Does not have a matrix argument.
 			return ev.rangeEval(ctx, nil, func(v []Vector, _ Matrix, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 				vec, annos := call(v, nil, e.Args, enh)
@@ -3292,88 +3297,158 @@ func reuseOrGetFPointSlices(prevSS *Series, numSteps int) (r []FPoint) {
 	return getFPointSlice(numSteps)
 }
 
-func (ev *evaluator) rangeEvalTimestampFunctionOverVectorSelector(ctx context.Context, vs *parser.VectorSelector, call FunctionCall, e *parser.Call) (parser.Value, annotations.Annotations) {
+func (ev *evaluator) evalInPlaceFloatUnary(ctx context.Context, arg parser.Expr, fn func(float64) float64) (Matrix, annotations.Annotations) {
+	originalNumSamples := ev.currentSamples
+	val, ws := ev.eval(ctx, arg)
+	mat := val.(Matrix)
+	outIdx := 0
+	totalFloats := 0
+	for i := range mat {
+		if err := contextDone(ctx, "expression evaluation"); err != nil {
+			ev.error(err)
+		}
+		if mat[i].Histograms != nil {
+			putHPointSlice(mat[i].Histograms)
+			mat[i].Histograms = nil
+		}
+		if len(mat[i].Floats) == 0 {
+			putFPointSlice(mat[i].Floats)
+			continue
+		}
+		if !ev.enableDelayedNameRemoval {
+			mat[i].Metric = mat[i].Metric.DropReserved(schema.IsMetadataLabel)
+		}
+		mat[i].DropName = true
+		floats := mat[i].Floats
+		for j := range floats {
+			floats[j].F = fn(floats[j].F)
+		}
+		totalFloats += len(floats)
+		mat[outIdx] = mat[i]
+		outIdx++
+	}
+	clear(mat[outIdx:])
+	mat = mat[:outIdx]
+	// Reconcile currentSamples like rangeEval rather than subtracting dropped
+	// histogram sizes so children like smoothSeries or absent_over_time cannot
+	// leave currentSamples skewed or negative.
+	ev.currentSamples = originalNumSamples + totalFloats
+	ev.samplesStats.UpdatePeak(ev.currentSamples)
+	if ev.currentSamples > ev.maxSamples {
+		ev.error(ErrTooManySamples(env))
+	}
+	if !ev.enableDelayedNameRemoval {
+		mat = ev.mergeSeriesWithSameLabelset(mat)
+	}
+	return mat, ws
+}
+
+func (ev *evaluator) rangeEvalTimestampFunctionOverVectorSelector(ctx context.Context, vs *parser.VectorSelector, e *parser.Call) (parser.Value, annotations.Annotations) {
 	ws, err := ev.checkAndExpandSeriesSet(ctx, vs)
 	if err != nil {
 		ev.error(errWithWarnings{fmt.Errorf("expanding series: %w", err), ws})
 	}
 
-	seriesIterators := make([]*storage.MemoizedSeriesIterator, len(vs.Series))
-	for i, s := range vs.Series {
-		it := s.Iterator(nil)
-		if ev.budget != nil {
-			it = ev.newQueryIterator(ctx, it)
-		}
-		seriesIterators[i] = storage.NewMemoizedIterator(it, durationMilliseconds(ev.lookbackDelta)-1)
+	isStartTS := e.Func.Name == "start_timestamp"
+	emitSamples := !isStartTS || ev.useStartTimestamps
+	needST := isStartTS && ev.useStartTimestamps
+	numSteps := int((ev.endTimestamp-ev.startTimestamp)/ev.interval) + 1
+
+	mat := Matrix{}
+	if emitSamples {
+		mat = make(Matrix, 0, len(vs.Series))
+	}
+	var prevSS *Series
+	it := storage.NewMemoizedEmptyIterator(durationMilliseconds(ev.lookbackDelta) - 1)
+	var chkIter chunkenc.Iterator
+	var budgetedIterator *queryIterator
+	if ev.budget != nil {
+		budgetedIterator = ev.newQueryIterator(ctx, nil)
 	}
 
-	return ev.rangeEval(ctx, nil, func(_ []Vector, _ Matrix, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-		if vs.Timestamp != nil {
-			// This is a special case for "timestamp()" when the @ modifier is used, to ensure that
-			// we return a point for each time step in this case.
-			// See https://github.com/prometheus/prometheus/issues/8433.
-			vs.Offset = time.Duration(enh.Ts-*vs.Timestamp) * time.Millisecond
+	baseOffset := vs.Offset
+	for _, s := range vs.Series {
+		if err := contextDone(ctx, "expression evaluation"); err != nil {
+			ev.error(err)
 		}
 
-		vec := make(Vector, 0, len(vs.Series))
-
-		propagateSTs := e.Func.Name == "start_timestamp" && ev.useStartTimestamps
-
-		var sts []int64
-		if propagateSTs {
-			if enh.StartTimestamps != nil {
-				sts = enh.StartTimestamps.Floats[:0]
-			}
-			sts = slices.Grow(sts, len(vs.Series))[:0]
+		chkIter = s.Iterator(chkIter)
+		if budgetedIterator != nil {
+			budgetedIterator.Iterator = chkIter
+			it.Reset(budgetedIterator)
+		} else {
+			it.Reset(chkIter)
 		}
-		for i, s := range vs.Series {
-			if ev.budget != nil {
-				if err := contextDone(ctx, env); err != nil {
+
+		var floats []FPoint
+		for ts, step := ev.startTimestamp, -1; ts <= ev.endTimestamp; ts += ev.interval {
+			step++
+			if budgetedIterator != nil {
+				budgetedIterator.checkContext()
+			} else if step&1023 == 1023 {
+				// Without a budgeted iterator, check cancellation periodically so a
+				// single series over many steps (e.g. disabled start_timestamp) cannot
+				// spin past context cancellation or timeout.
+				if err := contextDone(ctx, "expression evaluation"); err != nil {
 					ev.error(err)
 				}
 			}
-			it := seriesIterators[i]
-			st, t, _, _, ok := ev.vectorSelectorSingle(it, vs.Offset, enh.Ts)
+			stepOffset := baseOffset
+			if vs.Timestamp != nil {
+				// This is a special case for "timestamp()" when the @ modifier is used, to ensure that
+				// we return a point for each time step in this case.
+				// See https://github.com/prometheus/prometheus/issues/8433.
+				stepOffset = time.Duration(ts-*vs.Timestamp) * time.Millisecond
+			}
+			st, t, _, _, ok := ev.vectorSelectorSingle(it, stepOffset, ts, needST)
 			if !ok {
 				continue
 			}
 
-			// Note that we ignore the sample values because call only cares about the timestamp.
-			vec = append(vec, Sample{
-				Metric: s.Labels(),
-				T:      t,
-			})
-			if propagateSTs {
-				sts = append(sts, st)
+			ev.samplesStats.IncrementSamplesAtStep(step, 1)
+			ev.samplesStats.IncrementSamplesReadAtStep(step, 1)
+			ev.consumeSamples(1)
+			if !emitSamples {
+				continue
 			}
 
 			ev.currentSamples++
-			ev.samplesStats.IncrementSamplesAtTimestamp(enh.Ts, 1)
-			ev.samplesStats.IncrementSamplesReadAtTimestamp(enh.Ts, 1)
-			ev.consumeSamples(1)
 			if ev.currentSamples > ev.maxSamples {
 				ev.error(ErrTooManySamples(env))
 			}
-		}
-
-		if propagateSTs {
-			if enh.StartTimestamps == nil {
-				enh.StartTimestamps = &StartTimestamps{}
+			if floats == nil {
+				floats = reuseOrGetFPointSlices(prevSS, numSteps)
 			}
-			enh.StartTimestamps.Floats = sts
-		} else if enh.StartTimestamps != nil {
-			// Clear the slice in case it wasn't empty.
-			enh.StartTimestamps.Floats = enh.StartTimestamps.Floats[:0]
+			outT := t
+			if isStartTS {
+				outT = st
+			}
+			floats = append(floats, FPoint{F: float64(outT) / 1000, T: ts})
 		}
 
-		ev.samplesStats.UpdatePeak(ev.currentSamples)
-		vec, annos := call([]Vector{vec}, nil, e.Args, enh)
-		return vec, ws.Merge(annos)
-	})
+		if len(floats) > 0 {
+			metric := s.Labels()
+			if !ev.enableDelayedNameRemoval {
+				metric = metric.DropReserved(schema.IsMetadataLabel)
+			}
+			mat = append(mat, Series{
+				Metric:   metric,
+				Floats:   floats,
+				DropName: true,
+			})
+			prevSS = &mat[len(mat)-1]
+		}
+	}
+
+	if !ev.enableDelayedNameRemoval {
+		mat = ev.mergeSeriesWithSameLabelset(mat)
+	}
+	ev.samplesStats.UpdatePeak(ev.currentSamples)
+	return mat, ws
 }
 
 // vectorSelectorSingle evaluates an instant vector for the iterator of one time series.
-func (ev *evaluator) vectorSelectorSingle(it *storage.MemoizedSeriesIterator, offset time.Duration, ts int64) (
+func (ev *evaluator) vectorSelectorSingle(it *storage.MemoizedSeriesIterator, offset time.Duration, ts int64, needST bool) (
 	int64, int64, float64, *histogram.FloatHistogram, bool,
 ) {
 	refTime := ts - durationMilliseconds(offset)
@@ -3389,10 +3464,14 @@ func (ev *evaluator) vectorSelectorSingle(it *storage.MemoizedSeriesIterator, of
 		}
 	case chunkenc.ValFloat:
 		t, v = it.At()
-		st = it.AtST()
+		if needST && t <= refTime {
+			st = it.AtST()
+		}
 	case chunkenc.ValFloatHistogram:
 		t, h = it.AtFloatHistogram()
-		st = it.AtST()
+		if needST && t <= refTime {
+			st = it.AtST()
+		}
 	default:
 		panic(fmt.Errorf("unknown value type %v", valueType))
 	}

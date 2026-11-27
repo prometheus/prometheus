@@ -543,13 +543,16 @@ func BenchmarkCommitMetadata(b *testing.B) {
 				}
 			}
 
+			a := &headAppenderBase{head: &Head{}}
+			require.LessOrEqual(b, uint64(b.N), uint64(seriesPendingCommitMask))
 			batch := &appendBatch{
 				metadata:       make([]record.RefMetadata, numSeries),
 				metadataSeries: make([]*memSeries, numSeries),
 			}
 			for i := range numSeries {
 				fam := i % numFamilies
-				batch.metadataSeries[i] = &memSeries{ref: chunks.HeadSeriesRef(i + 1)}
+				// Reserve all iterations up front to time only committing metadata.
+				batch.metadataSeries[i] = &memSeries{ref: chunks.HeadSeriesRef(i + 1), state: uint32(b.N)}
 				batch.metadata[i] = record.RefMetadata{
 					Ref:  chunks.HeadSeriesRef(i + 1),
 					Type: uint8(record.Counter),
@@ -560,8 +563,12 @@ func BenchmarkCommitMetadata(b *testing.B) {
 
 			b.ReportAllocs()
 			b.ResetTimer()
-			for b.Loop() {
-				commitMetadata(batch)
+			for range b.N {
+				a.commitMetadata(batch)
+			}
+			b.StopTimer()
+			for _, s := range batch.metadataSeries {
+				require.Zero(b, s.pendingCommitCount())
 			}
 		})
 	}
@@ -1955,6 +1962,7 @@ func TestAppendHistogramLayoutChange_PanicsAtIDSpaceBound(t *testing.T) {
 }
 
 func TestHeadDeleteSeriesWithoutSamples(t *testing.T) {
+	// Restore a series without samples and check deletion with each WAL encoding.
 	for _, enableSTStorage := range []bool{false, true} {
 		for _, compress := range []compression.Type{compression.None, compression.Snappy, compression.Zstd} {
 			t.Run(fmt.Sprintf("compress=%s,stStorage=%v", compress, enableSTStorage), func(t *testing.T) {
@@ -1978,6 +1986,95 @@ func TestHeadDeleteSeriesWithoutSamples(t *testing.T) {
 				require.NoError(t, head.Init(math.MinInt64))
 
 				require.NoError(t, head.Delete(context.Background(), 0, 100, labels.MustNewMatcher(labels.MatchEqual, "a", "1")))
+			})
+		}
+	}
+
+	for _, version := range []int{1, 2} {
+		for name, tc := range map[string]struct {
+			commitBeforeDelete bool
+			wantTombstones     uint64
+			wantSeries         int
+		}{
+			// Delete skips the empty series after the first appender rolls back.
+			// The second appender's later commit must survive replay.
+			"first_appender_rolled_back": {
+				wantSeries: 1,
+			},
+			// The second appender commits while the first is still open. Delete,
+			// then roll back the first and retry; the deletion must survive replay.
+			"second_appender_committed_first_appender_pending": {
+				commitBeforeDelete: true,
+				wantTombstones:     1,
+			},
+		} {
+			t.Run(fmt.Sprintf("v%d/%s", version, name), func(t *testing.T) {
+				db := newTestDB(t)
+				db.DisableCompactions()
+				h := db.Head()
+				// Keep the deletion range inside Head's bounds even when the target series is empty.
+				appender, appendSample := newWALSeriesRecordTestAppender(t, h, version)
+				ref, err := appendSample(0, labels.FromStrings("role", "existing"), 0, 0)
+				require.NoError(t, err)
+				_, err = appendSample(ref, labels.EmptyLabels(), 300, 0)
+				require.NoError(t, err)
+				require.NoError(t, appender.Commit())
+
+				firstAppender, appendFirstSample := newWALSeriesRecordTestAppender(t, h, version)
+				defer firstAppender.Rollback()
+				ref, err = appendFirstSample(0, labels.FromStrings("role", "target"), 100, 1)
+				require.NoError(t, err)
+				secondAppender, appendSecondSample := newWALSeriesRecordTestAppender(t, h, version)
+				defer secondAppender.Rollback()
+				_, err = appendSecondSample(ref, labels.EmptyLabels(), 100, 1)
+				require.NoError(t, err)
+				if tc.commitBeforeDelete {
+					require.NoError(t, secondAppender.Commit())
+				} else {
+					require.NoError(t, firstAppender.Rollback())
+				}
+
+				matcher := labels.MustNewMatcher(labels.MatchEqual, "role", "target")
+				require.NoError(t, h.Delete(t.Context(), 100, 100, matcher))
+				require.Equal(t, tc.wantTombstones, h.tombstones.Total())
+				if tc.commitBeforeDelete {
+					require.NoError(t, firstAppender.Rollback())
+					// A retry after rollback must remain hidden by the deletion.
+					appender, appendSample = newWALSeriesRecordTestAppender(t, h, version)
+					defer appender.Rollback()
+					_, err = appendSample(ref, labels.EmptyLabels(), 100, 1)
+					require.NoError(t, err)
+					require.NoError(t, appender.Commit())
+				} else {
+					require.NoError(t, secondAppender.Commit())
+				}
+
+				known := map[storage.SeriesRef]bool{}
+				for _, rec := range readTestWAL(t, h.wal.Dir()) {
+					switch rec := rec.(type) {
+					case []record.RefSeries:
+						for _, series := range rec {
+							known[storage.SeriesRef(series.Ref)] = true
+						}
+					case []tombstones.Stone:
+						for _, stone := range rec {
+							require.True(t, known[stone.Ref], "tombstone precedes series record for ref %d", stone.Ref)
+						}
+					}
+				}
+				q, err := NewBlockQuerier(h, 0, 300)
+				require.NoError(t, err)
+				before := query(t, q, matcher)
+				require.Len(t, before, tc.wantSeries)
+				for _, samples := range before {
+					require.Equal(t, []chunks.Sample{sample{t: 100, f: 1}}, samples)
+				}
+				require.NoError(t, db.Close())
+				replayed := newTestDB(t, withDir(db.Dir()))
+				q, err = NewBlockQuerier(replayed.Head(), 0, 300)
+				require.NoError(t, err)
+				require.Equal(t, before, query(t, q, matcher))
+				require.Zero(t, prom_testutil.ToFloat64(replayed.Head().metrics.walReplayUnknownRefsTotal.WithLabelValues("tombstones")))
 			})
 		}
 	}
@@ -3042,7 +3139,7 @@ func TestHeadShardedPostings(t *testing.T) {
 		p, err = ir.Postings(ctx, "const", "1")
 		require.NoError(t, err)
 
-		p = ir.ShardedPostings(p, shardIndex, shardCount)
+		p = ir.ShardedPostings(ctx, p, shardIndex, shardCount)
 		for p.Next() {
 			ref := p.At()
 
@@ -3075,11 +3172,23 @@ func TestHeadShardedPostings(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			p := index.Merge(ctx, index.NewListPostings(tc.refs), index.ErrPostings(errExpected))
-			p = ir.ShardedPostings(p, 0, shardCount)
+			p = ir.ShardedPostings(ctx, p, 0, shardCount)
 			require.False(t, p.Next())
 			require.ErrorIs(t, p.Err(), errExpected)
 		})
 	}
+
+	t.Run("context canceled", func(t *testing.T) {
+		cancelCtx := &testutil.MockContextErrAfter{FailAfter: 1}
+		p := ir.ShardedPostings(cancelCtx, index.NewListPostings(expected), 0, shardCount)
+		require.False(t, p.Next())
+		require.ErrorIs(t, p.Err(), context.Canceled)
+
+		cancelCtx = &testutil.MockContextErrAfter{FailAfter: 1}
+		p = ir.SortedPostings(cancelCtx, index.NewListPostings(expected))
+		require.False(t, p.Next())
+		require.ErrorIs(t, p.Err(), context.Canceled)
+	})
 }
 
 func BenchmarkHeadLabelValuesWithMatchers(b *testing.B) {

@@ -108,12 +108,12 @@ func (m mockIndex) Postings(ctx context.Context, name string, values ...string) 
 	p := []Postings{}
 	for _, value := range values {
 		l := labels.Label{Name: name, Value: value}
-		p = append(p, m.SortedPostings(NewListPostings(m.postings[l])))
+		p = append(p, m.SortedPostings(ctx, NewListPostings(m.postings[l])))
 	}
 	return Merge(ctx, p...), nil
 }
 
-func (m mockIndex) SortedPostings(p Postings) Postings {
+func (m mockIndex) SortedPostings(_ context.Context, p Postings) Postings {
 	ep, err := ExpandPostings(p)
 	if err != nil {
 		return ErrPostings(fmt.Errorf("expand postings: %w", err))
@@ -214,7 +214,7 @@ func TestIndexRW_Postings(t *testing.T) {
 			p, err = ir.Postings(ctx, "a", "1")
 			require.NoError(t, err)
 
-			p = ir.ShardedPostings(p, shardIndex, shardCount)
+			p = ir.ShardedPostings(ctx, p, shardIndex, shardCount)
 			for p.Next() {
 				ref := p.At()
 
@@ -247,11 +247,18 @@ func TestIndexRW_Postings(t *testing.T) {
 		} {
 			t.Run(tc.name, func(t *testing.T) {
 				p := Merge(ctx, NewListPostings(tc.refs), ErrPostings(errExpected))
-				p = ir.ShardedPostings(p, 0, shardCount)
+				p = ir.ShardedPostings(ctx, p, 0, shardCount)
 				require.False(t, p.Next())
 				require.ErrorIs(t, p.Err(), errExpected)
 			})
 		}
+
+		t.Run("context canceled", func(t *testing.T) {
+			cancelCtx := &testutil.MockContextErrAfter{FailAfter: 1}
+			p := ir.ShardedPostings(cancelCtx, NewListPostings(expected), 0, shardCount)
+			require.False(t, p.Next())
+			require.ErrorIs(t, p.Err(), context.Canceled)
+		})
 	})
 }
 
@@ -539,7 +546,7 @@ func BenchmarkReader_ShardedPostings(b *testing.B) {
 		allPostings, err := ir.Postings(ctx, "const", fmt.Sprintf("%10d", 1))
 		require.NoError(b, err)
 
-		ir.ShardedPostings(allPostings, uint64(n%numShards), numShards)
+		ir.ShardedPostings(ctx, allPostings, uint64(n%numShards), numShards)
 	}
 }
 

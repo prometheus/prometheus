@@ -1418,3 +1418,43 @@ func TestOOOMmapGuardPreventsAliasing(t *testing.T) {
 		seen[id] = pos
 	}
 }
+
+func TestOOOCompactionCanceledContext(t *testing.T) {
+	dir := t.TempDir()
+	opts := DefaultOptions()
+	opts.OutOfOrderTimeWindow = 60 * time.Minute.Milliseconds()
+	db := newTestDB(t, withDir(dir), withOpts(opts))
+	db.DisableCompactions()
+
+	s := labels.FromStrings("foo", "bar")
+	add := func(from, to int64) {
+		app := db.Appender(context.Background())
+		for m := from; m <= to; m++ {
+			_, err := app.Append(0, s, m*time.Minute.Milliseconds(), float64(m))
+			require.NoError(t, err)
+		}
+		require.NoError(t, app.Commit())
+	}
+	add(290, 300)
+	add(250, 260) // OOO.
+
+	count := func(db *DB) int {
+		q, err := db.Querier(0, 1000*time.Minute.Milliseconds())
+		require.NoError(t, err)
+		defer q.Close()
+		return len(query(t, q, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))[s.String()])
+	}
+
+	// 22 = 11 in-order + 11 out-of-order
+	require.Equal(t, 22, count(db))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	err := db.compactOOOHead(ctx)
+	require.ErrorIs(t, err, context.Canceled)
+	require.Empty(t, db.Blocks())
+	require.NoError(t, db.Close())
+
+	db = newTestDB(t, withDir(dir), withOpts(opts))
+	require.Equal(t, 22, count(db))
+}

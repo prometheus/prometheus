@@ -884,7 +884,7 @@ func AllSortedPostings(ctx context.Context, reader IndexReader) index.Postings {
 	if err != nil {
 		return index.ErrPostings(err)
 	}
-	return reader.SortedPostings(all)
+	return reader.SortedPostings(ctx, all)
 }
 
 type DefaultBlockPopulator struct{}

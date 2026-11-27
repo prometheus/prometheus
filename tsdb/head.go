@@ -96,16 +96,16 @@ type Head struct {
 	exemplars       ExemplarStorage
 	logger          *slog.Logger
 	// TODO(bwplotka): Consider using record.Pools that's reused with WAL watchers.
-	refSeriesPool       zeropool.Pool[[]record.RefSeries]
-	floatsPool          zeropool.Pool[[]record.RefSample]
-	exemplarsPool       zeropool.Pool[[]exemplarWithSeriesRef]
-	histogramsPool      zeropool.Pool[[]record.RefHistogramSample]
-	floatHistogramsPool zeropool.Pool[[]record.RefFloatHistogramSample]
-	metadataPool        zeropool.Pool[[]record.RefMetadata]
-	seriesPool          zeropool.Pool[[]*memSeries]
-	typeMapPool         zeropool.Pool[map[chunks.HeadSeriesRef]sampleType]
-	bytesPool           zeropool.Pool[[]byte]
-	memChunkPool        sync.Pool
+	seriesRecordCandidatesPool zeropool.Pool[[]seriesRecordCandidate]
+	floatsPool                 zeropool.Pool[[]record.RefSample]
+	exemplarsPool              zeropool.Pool[[]exemplarWithSeries]
+	histogramsPool             zeropool.Pool[[]record.RefHistogramSample]
+	floatHistogramsPool        zeropool.Pool[[]record.RefFloatHistogramSample]
+	metadataPool               zeropool.Pool[[]record.RefMetadata]
+	seriesPool                 zeropool.Pool[[]*memSeries]
+	typeMapPool                zeropool.Pool[map[chunks.HeadSeriesRef]sampleType]
+	bytesPool                  zeropool.Pool[[]byte]
+	memChunkPool               sync.Pool
 
 	// These pools are only used during WAL/WBL replay and are reset at the end.
 	// NOTE: Adjust resetWLReplayResources() upon changes to the pools.
@@ -123,6 +123,10 @@ type Head struct {
 
 	walExpiriesMtx sync.Mutex
 	walExpiries    map[chunks.HeadSeriesRef]int64 // Series no longer in the head, and what time they must be kept until.
+
+	// walSeriesMtx serializes selecting and logging series records with their first data record.
+	// Lock order: walSeriesMtx, then the WAL's lock. Never take it while holding a series lock.
+	walSeriesMtx sync.Mutex
 
 	wblPinnedSeriesRefsMtx sync.Mutex
 	// Series references that the WBL uses. WAL replay maps each one onto a
@@ -167,7 +171,7 @@ type Head struct {
 	memTruncationInProcess atomic.Bool
 	memTruncationCallBack  func() // For testing purposes.
 	// TODO: find a better solution than this test hook in production code.
-	// testAfterSeriesLookup is invoked after getByID in appenders, before the
+	// testAfterSeriesLookup is invoked after a series lookup in appenders, before the
 	// series is locked. Tests use it to race GC against a resolved pointer.
 	testAfterSeriesLookup func(*memSeries)
 	// TODO: find a better solution than this test hook in production code.
@@ -2423,6 +2427,10 @@ func (h *Head) getOrCreateWithOptionalID(id chunks.HeadSeriesRef, hash uint64, l
 		shardHash = labels.StableHash(lset)
 	}
 	optimisticallyCreatedSeries := newMemSeries(lset, id, shardHash, h.opts.IsolationDisabled, pendingCommit)
+	// Restored series and series created without a WAL need no new WAL series record.
+	if !pendingCommit || h.wal == nil {
+		optimisticallyCreatedSeries.walState.Store(seriesWALLogged)
+	}
 
 	assignID := id == 0
 	for {
@@ -2811,7 +2819,7 @@ func (h *Head) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shouldEvict 
 		h.series.pendingTombstones.reserve(len(seriesRefs))
 		defer h.series.pendingTombstones.releaseAll()
 	}
-	deleted, affected, chunksRemoved, staleSeriesDeleted, histogramSeriesDeleted, histogramBucketsDeleted := h.series.gcSeries(seriesRefs, maxt, shouldEvict)
+	deleted, affected, lastExemplarTs, chunksRemoved, staleSeriesDeleted, histogramSeriesDeleted, histogramBucketsDeleted := h.series.gcSeries(seriesRefs, maxt, shouldEvict)
 
 	// Record the deleted series refs in the WAL so that we can ignore them during replay. This is done as soon as
 	// the series are unlinked, before deleting them from the postings, which takes long: the creation of series
@@ -2851,11 +2859,11 @@ func (h *Head) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shouldEvict 
 
 	if h.wal != nil {
 		h.walExpiriesMtx.Lock()
-		// Retain series declarations while WAL samples up to maxt may still be replayed.
-		// Preserve any later expiry already recorded.
+		// Retain series declarations while WAL samples up to maxt, or exemplars after it,
+		// may still be replayed. Preserve any later expiry already recorded.
 		for ref := range deleted {
 			hRef := chunks.HeadSeriesRef(ref)
-			h.walExpiries[hRef] = max(maxt, h.walExpiries[hRef])
+			h.walExpiries[hRef] = max(maxt, lastExemplarTs[hRef], h.walExpiries[hRef])
 		}
 		h.walExpiriesMtx.Unlock()
 	}
@@ -2896,11 +2904,18 @@ func (h *Head) deleteSeriesByID(refs []chunks.HeadSeriesRef) {
 		h.series.hashes[hashStripe].del(hash, series.ref)
 		h.series.locks[hashStripe].Unlock()
 
-		// Keep the series record in checkpoints until its last sample time; while the
-		// WAL may still hold samples for this ref, they can't outlive maxt.
+		// Keep the series record in checkpoints until its last sample or exemplar time,
+		// whichever is later, as the WAL may still hold records for this ref until then.
+		// Exemplar timestamps are not bounded by sample timestamps.
 		if h.wal != nil {
-			if maxt := series.maxTime(); maxt != math.MinInt64 {
-				h.updateWALExpiry(series.ref, maxt)
+			keepUntil := series.maxTime()
+			series.Lock()
+			if series.hasExemplar {
+				keepUntil = max(keepUntil, series.lastExemplarTs)
+			}
+			series.Unlock()
+			if keepUntil != math.MinInt64 {
+				h.updateWALExpiry(series.ref, keepUntil)
 			}
 		}
 
@@ -2950,12 +2965,14 @@ func (h *Head) deleteSeriesByID(refs []chunks.HeadSeriesRef) {
 
 // gcSeries walks all series and removes those whose ref is in seriesRefs, whose maxTime is
 // <= maxt, and for which shouldEvict returns true. Returns the set of deleted refs, the set
-// of label-name/value pairs whose postings are affected, the count of removed chunks, and
-// the number of deleted series that carried a stale-NaN last value.
-func (s *stripeSeries) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shouldEvict func(*memSeries) bool) (_ map[storage.SeriesRef]struct{}, _ map[labels.Label]struct{}, _, _, _, _ int) {
+// of label-name/value pairs whose postings are affected, the last exemplar timestamp of the
+// deleted series whose exemplars are after maxt, the count of removed chunks, and the number
+// of deleted series that carried a stale-NaN last value.
+func (s *stripeSeries) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shouldEvict func(*memSeries) bool) (_ map[storage.SeriesRef]struct{}, _ map[labels.Label]struct{}, _ map[chunks.HeadSeriesRef]int64, _, _, _, _ int) {
 	var (
 		deleted                 = map[storage.SeriesRef]struct{}{}
 		affected                = map[labels.Label]struct{}{}
+		lastExemplarTs          map[chunks.HeadSeriesRef]int64
 		rmChunks                = 0
 		staleSeriesDeleted      = 0
 		histogramSeriesDeleted  = 0
@@ -3003,6 +3020,13 @@ func (s *stripeSeries) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shou
 		}
 
 		deleted[storage.SeriesRef(series.ref)] = struct{}{}
+		// Exemplar timestamps are not bounded by sample timestamps.
+		if series.hasExemplar && series.lastExemplarTs > maxt {
+			if lastExemplarTs == nil {
+				lastExemplarTs = map[chunks.HeadSeriesRef]int64{}
+			}
+			lastExemplarTs[series.ref] = series.lastExemplarTs
+		}
 		// Keep head chunks intact for readers that still reference the series.
 		series.setGCed()
 		stale, isHist, buckets := series.sampleState()
@@ -3023,7 +3047,7 @@ func (s *stripeSeries) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shou
 
 	s.iterForDeletion(check)
 
-	return deleted, affected, rmChunks, staleSeriesDeleted, histogramSeriesDeleted, histogramBucketsDeleted
+	return deleted, affected, lastExemplarTs, rmChunks, staleSeriesDeleted, histogramSeriesDeleted, histogramBucketsDeleted
 }
 
 // The iterForDeletion function iterates through all series, invoking the checkDeletedFunc for each.
@@ -3182,7 +3206,7 @@ type memSeries struct {
 	// been explicitly enabled in TSDB.
 	shardHash uint64
 
-	// Everything after here should only be accessed with the lock held.
+	// Except for atomic fields, everything after here requires the lock.
 	sync.Mutex
 
 	lset labels.Labels // Locking required with -tags dedupelabels, not otherwise.
@@ -3193,6 +3217,11 @@ type memSeries struct {
 	lastExemplarTs int64
 	// Whether an exemplar timestamp has been recorded, including zero or negative timestamps.
 	hasExemplar bool
+	// Tracks the WAL series record's status before other records reference this series.
+	// seriesWALUnlogged: The series record still needs to be logged.
+	// seriesWALWriting: The WAL batch containing the series record is being prepared or written.
+	// seriesWALLogged: The series record was logged successfully or is not needed.
+	walState stdatomic.Uint32
 
 	// Immutable chunks on disk that have not yet gone into a block, in order of ascending time stamps.
 	// When compaction runs, chunks get moved into a block and all pointers are shifted like so:
@@ -3338,11 +3367,17 @@ func newMemSeries(lset labels.Labels, id chunks.HeadSeriesRef, shardHash uint64,
 // updateExemplarTimestamp records the latest exemplar time while holding the series lock.
 func (s *memSeries) updateExemplarTimestamp(ts int64) {
 	s.Lock()
+	s.updateExemplarTimestampLocked(ts)
+	s.Unlock()
+}
+
+// updateExemplarTimestampLocked records the latest exemplar time.
+// Must be called with the series lock held.
+func (s *memSeries) updateExemplarTimestampLocked(ts int64) {
 	if !s.hasExemplar || ts > s.lastExemplarTs {
 		s.lastExemplarTs = ts
 	}
 	s.hasExemplar = true
-	s.Unlock()
 }
 
 func (s *memSeries) minTime() int64 {
