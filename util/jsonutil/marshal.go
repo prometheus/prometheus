@@ -28,19 +28,19 @@ func MarshalTimestamp(t int64, stream *jsoniter.Stream) {
 	// This is ~3x faster than converting to a float.
 	if t < 0 {
 		stream.WriteRaw(`-`)
-		t = -t
+		// Negating math.MinInt64 as an int64 overflows and leaves a negative
+		// value, producing an invalid JSON number. Work on the absolute value
+		// as an unsigned integer instead.
+		u := uint64(-(t + 1)) + 1
+		stream.WriteUint64(u / 1000)
+		if fraction := u % 1000; fraction != 0 {
+			writeFraction(stream, fraction)
+		}
+		return
 	}
 	stream.WriteInt64(t / 1000)
-	fraction := t % 1000
-	if fraction != 0 {
-		stream.WriteRaw(`.`)
-		if fraction < 100 {
-			stream.WriteRaw(`0`)
-		}
-		if fraction < 10 {
-			stream.WriteRaw(`0`)
-		}
-		stream.WriteInt64(fraction)
+	if fraction := t % 1000; fraction != 0 {
+		writeFraction(stream, uint64(fraction))
 	}
 }
 
@@ -134,4 +134,16 @@ func MarshalHistogram(h *histogram.FloatHistogram, stream *jsoniter.Stream) {
 		stream.WriteArrayEnd()
 	}
 	stream.WriteObjectEnd()
+}
+
+// writeFraction writes a non-zero millisecond fraction in three digits.
+func writeFraction(stream *jsoniter.Stream, fraction uint64) {
+	stream.WriteRaw(`.`)
+	if fraction < 100 {
+		stream.WriteRaw(`0`)
+	}
+	if fraction < 10 {
+		stream.WriteRaw(`0`)
+	}
+	stream.WriteUint64(fraction)
 }
