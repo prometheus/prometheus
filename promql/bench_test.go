@@ -366,11 +366,20 @@ func BenchmarkRangeQuery(b *testing.B) {
 			ctx := context.Background()
 			b.ReportAllocs()
 			for b.Loop() {
-				qry, err := engine.NewRangeQuery(
-					ctx, stor, nil, c.expr,
-					time.Unix(int64((numIntervals-c.steps)*10), 0),
-					time.Unix(int64(numIntervals*10), 0), time.Second*10,
-				)
+				var qry promql.Query
+				var err error
+				if c.steps == 1 {
+					qry, err = engine.NewInstantQuery(
+						ctx, stor, nil, c.expr,
+						time.Unix(int64(numIntervals*10), 0),
+					)
+				} else {
+					qry, err = engine.NewRangeQuery(
+						ctx, stor, nil, c.expr,
+						time.Unix(int64((numIntervals-c.steps)*10), 0),
+						time.Unix(int64(numIntervals*10), 0), time.Second*10,
+					)
+				}
 				if err != nil {
 					b.Fatal(err)
 				}
