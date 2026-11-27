@@ -671,6 +671,14 @@ eval instant at 50m histogram_quantiles(testhistogram3, "start", 0, 0.25, 0.5, 0
 eval instant at 50m histogram_quantiles(testhistogram3_bucket, "start", 0, 0.25, 0.5, 0.75, 1)
     expect fail
 
+# Invalid quantile label name.
+
+eval instant at 50m histogram_quantiles(testhistogram3, "", 0.5)
+    expect fail msg: invalid quantile label name in histogram_quantiles(): ""
+
+eval instant at 50m histogram_quantiles(testhistogram3_bucket, "", 0.5)
+    expect fail msg: invalid quantile label name in histogram_quantiles(): ""
+
 # Quantile too low.
 
 eval instant at 50m histogram_quantile(-0.1, testhistogram)

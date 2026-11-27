@@ -2547,6 +2547,10 @@ func funcHistogramQuantiles(vectorVals []Vector, _ Matrix, args parser.Expressio
 		annos annotations.Annotations
 	)
 
+	if !model.UTF8Validation.IsValidLabelName(quantileLabel) {
+		panic(fmt.Errorf("invalid quantile label name in histogram_quantiles(): %q", quantileLabel))
+	}
+
 	if enh.quantileStrs == nil {
 		enh.quantileStrs = make(map[float64]string, numQuantiles)
 	}
