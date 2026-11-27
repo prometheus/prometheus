@@ -48,7 +48,9 @@ any optional `for` duration described above has been satisfied).
 
 The `labels` clause allows specifying a set of additional labels to be attached
 to the alert. Any existing conflicting labels will be overwritten. The label
-values can be templated.
+values can be templated. Reserved metric schema labels (`__name__`, `__type__`,
+`__unit__`) are stripped from alerts, while `__type__` and `__unit__` are
+stripped from the synthetic `ALERTS` and `ALERTS_FOR_STATE` series.
 
 The `annotations` clause specifies a set of informational labels that can be used to store longer additional information such as alert descriptions or runbook links. The annotation values can be templated.
 
