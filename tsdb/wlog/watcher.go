@@ -103,6 +103,9 @@ type Watcher struct {
 	startTime      time.Time
 	startTimestamp int64 // the start time as a Prometheus timestamp
 	sendSamples    bool
+	replaySegment  int
+	replayOffset   int64
+	replaySnapshot bool
 
 	recordsReadMetric       *prometheus.CounterVec
 	recordDecodeFailsMetric prometheus.Counter
@@ -304,6 +307,22 @@ func (w *Watcher) Run() error {
 		return fmt.Errorf("Segments: %w", err)
 	}
 
+	// Snapshot the end of the WAL before replay. Records added after that
+	// position are live even if their sample timestamps precede startup. Keep
+	// the first snapshot across retries (loop reruns Run after a WAL read
+	// error): re-snapshotting would mark records written but never read as
+	// historical and drop them.
+	if !w.replaySnapshot {
+		w.replaySnapshot = true
+		w.replaySegment, w.replayOffset = lastSegment, 0
+		if lastSegment >= 0 {
+			w.replayOffset, err = getSegmentSize(w.walDir, lastSegment)
+			if err != nil {
+				return fmt.Errorf("getting size of WAL segment %d: %w", lastSegment, err)
+			}
+		}
+	}
+
 	// We want to ensure this is false across iterations since
 	// Run will be called again if there was a failure to read the WAL.
 	w.sendSamples = false
@@ -343,7 +362,11 @@ func (w *Watcher) Run() error {
 		// On start, after reading the existing WAL for series records, we have a pointer to what is the latest segment.
 		// On subsequent calls to this function, currentSegment will have been incremented and we should open that segment.
 		w.logger.Debug("Processing segment", "currentSegment", currentSegment)
-		if err := w.watch(currentSegment, currentSegment < lastSegment); err != nil && !errors.Is(err, ErrIgnorable) {
+		// Segments entirely before the replay boundary only need series
+		// records. Later ones can hold live records written since the
+		// snapshot (e.g. before a retried Run), so read those in full even
+		// mid-replay.
+		if err := w.watch(currentSegment, currentSegment < lastSegment && currentSegment < w.replaySegment); err != nil && !errors.Is(err, ErrIgnorable) {
 			return err
 		}
 
@@ -539,6 +562,12 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, onlySeries bool) er
 	for r.Next() && !isClosed(w.quit) {
 		var err error
 		rec := r.Record()
+		isLive := segmentNum > w.replaySegment || (segmentNum == w.replaySegment && r.Offset() > w.replayOffset)
+		if isLive {
+			// Advance the live boundary with the record so a retried Run
+			// neither re-sends delivered records nor drops unread ones.
+			w.replaySegment, w.replayOffset = segmentNum, r.Offset()
+		}
 		w.recordsReadMetric.WithLabelValues(dec.Type(rec).String()).Inc()
 
 		switch dec.Type(rec) {
@@ -565,7 +594,7 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, onlySeries bool) er
 			// It's valid to do, because we override elements that we no longer need to read when filtering.
 			samplesToSend := samples[:0]
 			for _, s := range samples {
-				if s.T > w.startTimestamp {
+				if isLive || s.T > w.startTimestamp {
 					if !w.sendSamples {
 						w.sendSamples = true
 						duration := time.Since(w.startTime)
@@ -612,7 +641,7 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, onlySeries bool) er
 			// It's valid to do, because we override elements that we no longer need to read when filtering.
 			histogramsToSend := histograms[:0]
 			for _, h := range histograms {
-				if h.T > w.startTimestamp {
+				if isLive || h.T > w.startTimestamp {
 					if !w.sendSamples {
 						w.sendSamples = true
 						duration := time.Since(w.startTime)
@@ -642,7 +671,7 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, onlySeries bool) er
 			// It's valid to do, because we override elements that we no longer need to read when filtering.
 			floatHistogramsToSend := floatHistograms[:0]
 			for _, fh := range floatHistograms {
-				if fh.T > w.startTimestamp {
+				if isLive || fh.T > w.startTimestamp {
 					if !w.sendSamples {
 						w.sendSamples = true
 						duration := time.Since(w.startTime)
