@@ -14,6 +14,7 @@
 package main
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -29,53 +30,119 @@ import (
 
 func TestSDCheckResult(t *testing.T) {
 	t.Parallel()
-	targetGroups := []*targetgroup.Group{{
-		Targets: []model.LabelSet{
-			map[model.LabelName]model.LabelValue{"__address__": "localhost:8080", "foo": "bar"},
-		},
-	}}
 
 	reg, err := relabel.NewRegexp("(.*)")
 	require.NoError(t, err)
 
-	scrapeConfig := &config.ScrapeConfig{
-		ScrapeInterval: model.Duration(1 * time.Minute),
-		ScrapeTimeout:  model.Duration(10 * time.Second),
-		RelabelConfigs: []*relabel.Config{{
-			SourceLabels:         model.LabelNames{"foo"},
-			Action:               relabel.Replace,
-			TargetLabel:          "newfoo",
-			Regex:                reg,
-			Replacement:          "$1",
-			NameValidationScheme: model.UTF8Validation,
-		}},
+	defaultLabels := func(address string, extra ...string) labels.Labels {
+		return labels.FromStrings(append([]string{
+			"__address__", address,
+			"__always_scrape_classic_histograms__", "false",
+			"__convert_classic_histograms_to_nhcb__", "false",
+			"__scrape_interval__", "1m",
+			"__scrape_native_histograms__", "false",
+			"__scrape_timeout__", "10s",
+		}, extra...)...)
 	}
 
-	expectedSDCheckResult := []sdCheckResult{
+	// The expectations are written against the JSON that `promtool check service-discovery` prints.
+	type jsonResult struct {
+		DiscoveredLabels labels.Labels `json:"discoveredLabels"`
+		Labels           labels.Labels `json:"labels"`
+		Error            string        `json:"error,omitempty"`
+	}
+
+	for _, tc := range []struct {
+		name           string
+		targets        []model.LabelSet
+		relabelConfigs []*relabel.Config
+		expected       []jsonResult
+	}{
 		{
-			DiscoveredLabels: labels.FromStrings(
-				"__address__", "localhost:8080",
-				"__always_scrape_classic_histograms__", "false",
-				"__convert_classic_histograms_to_nhcb__", "false",
-				"__scrape_interval__", "1m",
-				"__scrape_native_histograms__", "false",
-				"__scrape_timeout__", "10s",
-				"foo", "bar",
-			),
-			Labels: labels.FromStrings(
-				"__address__", "localhost:8080",
-				"__always_scrape_classic_histograms__", "false",
-				"__convert_classic_histograms_to_nhcb__", "false",
-				"__scrape_interval__", "1m",
-				"__scrape_native_histograms__", "false",
-				"__scrape_timeout__", "10s",
-				"foo", "bar",
-				"instance", "localhost:8080",
-				"newfoo", "bar",
-			),
-			Error: nil,
+			name: "relabeling succeeds",
+			targets: []model.LabelSet{
+				{"__address__": "localhost:8080", "foo": "bar"},
+			},
+			relabelConfigs: []*relabel.Config{{
+				SourceLabels:         model.LabelNames{"foo"},
+				Action:               relabel.Replace,
+				TargetLabel:          "newfoo",
+				Regex:                reg,
+				Replacement:          "$1",
+				NameValidationScheme: model.UTF8Validation,
+			}},
+			expected: []jsonResult{
+				{
+					DiscoveredLabels: defaultLabels("localhost:8080", "foo", "bar"),
+					Labels:           defaultLabels("localhost:8080", "foo", "bar", "instance", "localhost:8080", "newfoo", "bar"),
+				},
+			},
 		},
-	}
+		{
+			// The error message must be part of the output.
+			name: "relabeling removes the address of a target",
+			targets: []model.LabelSet{
+				{"__address__": "localhost:8080"},
+			},
+			relabelConfigs: []*relabel.Config{{
+				Action:               relabel.Replace,
+				TargetLabel:          "__address__",
+				Regex:                reg,
+				Replacement:          "",
+				NameValidationScheme: model.UTF8Validation,
+			}},
+			expected: []jsonResult{
+				{
+					DiscoveredLabels: defaultLabels("localhost:8080"),
+					Labels:           labels.EmptyLabels(),
+					Error:            "no address",
+				},
+			},
+		},
+		{
+			// Every failing target must be reported.
+			name: "relabeling removes the address of every target",
+			targets: []model.LabelSet{
+				{"__address__": "localhost:8080"},
+				{"__address__": "localhost:8081"},
+			},
+			relabelConfigs: []*relabel.Config{{
+				Action:               relabel.Replace,
+				TargetLabel:          "__address__",
+				Regex:                reg,
+				Replacement:          "",
+				NameValidationScheme: model.UTF8Validation,
+			}},
+			expected: []jsonResult{
+				{
+					DiscoveredLabels: defaultLabels("localhost:8080"),
+					Labels:           labels.EmptyLabels(),
+					Error:            "no address",
+				},
+				{
+					DiscoveredLabels: defaultLabels("localhost:8081"),
+					Labels:           labels.EmptyLabels(),
+					Error:            "no address",
+				},
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 
-	testutil.RequireEqual(t, expectedSDCheckResult, getSDCheckResult(targetGroups, scrapeConfig))
+			targetGroups := []*targetgroup.Group{{Targets: tc.targets}}
+			scrapeConfig := &config.ScrapeConfig{
+				ScrapeInterval: model.Duration(1 * time.Minute),
+				ScrapeTimeout:  model.Duration(10 * time.Second),
+				RelabelConfigs: tc.relabelConfigs,
+			}
+
+			out, err := json.Marshal(getSDCheckResult(targetGroups, scrapeConfig))
+			require.NoError(t, err)
+
+			var got []jsonResult
+			require.NoError(t, json.Unmarshal(out, &got), "unexpected JSON: %s", out)
+			testutil.RequireEqual(t, tc.expected, got)
+		})
+	}
 }
