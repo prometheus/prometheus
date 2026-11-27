@@ -605,6 +605,9 @@ func (d *Decoder) histogramSamplesV1(dec *encoding.Decbuf, histograms []RefHisto
 		}
 
 		DecodeHistogram(dec, rh.H)
+		if dec.Err() != nil {
+			break
+		}
 
 		if !histogram.IsKnownSchema(rh.H.Schema) {
 			d.logger.Warn("skipping histogram with unknown schema in WAL record", "schema", rh.H.Schema, "timestamp", rh.T)
@@ -664,6 +667,9 @@ func (d *Decoder) histogramSamplesV2(dec *encoding.Decbuf, histograms []RefHisto
 		}
 		prevRef, prevST = rh.Ref, rh.ST
 		DecodeHistogram(dec, rh.H)
+		if dec.Err() != nil {
+			break
+		}
 
 		if !histogram.IsKnownSchema(rh.H.Schema) {
 			d.logger.Warn("skipping histogram with unknown schema in WAL record", "schema", rh.H.Schema, "timestamp", rh.T)
@@ -689,6 +695,15 @@ func (d *Decoder) histogramSamplesV2(dec *encoding.Decbuf, histograms []RefHisto
 	return histograms, nil
 }
 
+// The histogramVectorFits helper validates the minimum encoded size before a count is converted to int.
+func histogramVectorFits(buf *encoding.Decbuf, count uint64, minBytesPerItem int) bool {
+	if count > uint64(buf.Len()/minBytesPerItem) {
+		buf.E = encoding.ErrInvalidSize
+		return false
+	}
+	return true
+}
+
 // DecodeHistogram decodes a Histogram from buf.
 func DecodeHistogram(buf *encoding.Decbuf, h *histogram.Histogram) {
 	h.CounterResetHint = histogram.CounterResetHint(buf.Byte())
@@ -700,47 +715,52 @@ func DecodeHistogram(buf *encoding.Decbuf, h *histogram.Histogram) {
 	h.Count = buf.Uvarint64()
 	h.Sum = math.Float64frombits(buf.Be64())
 
-	l := buf.Uvarint()
-	if l > 0 {
-		h.PositiveSpans = make([]histogram.Span, l)
+	count := buf.Uvarint64()
+	if count > 0 && histogramVectorFits(buf, count, 2) {
+		h.PositiveSpans = make([]histogram.Span, int(count))
 	}
-	for i := range h.PositiveSpans {
-		h.PositiveSpans[i].Offset = int32(buf.Varint64())
-		h.PositiveSpans[i].Length = buf.Uvarint32()
-	}
-
-	l = buf.Uvarint()
-	if l > 0 {
-		h.NegativeSpans = make([]histogram.Span, l)
-	}
-	for i := range h.NegativeSpans {
-		h.NegativeSpans[i].Offset = int32(buf.Varint64())
-		h.NegativeSpans[i].Length = buf.Uvarint32()
+	spans := h.PositiveSpans
+	for i := range spans {
+		spans[i].Offset = int32(buf.Varint64())
+		spans[i].Length = buf.Uvarint32()
 	}
 
-	l = buf.Uvarint()
-	if l > 0 {
-		h.PositiveBuckets = make([]int64, l)
+	count = buf.Uvarint64()
+	if count > 0 && histogramVectorFits(buf, count, 2) {
+		h.NegativeSpans = make([]histogram.Span, int(count))
 	}
-	for i := range h.PositiveBuckets {
-		h.PositiveBuckets[i] = buf.Varint64()
+	spans = h.NegativeSpans
+	for i := range spans {
+		spans[i].Offset = int32(buf.Varint64())
+		spans[i].Length = buf.Uvarint32()
 	}
 
-	l = buf.Uvarint()
-	if l > 0 {
-		h.NegativeBuckets = make([]int64, l)
+	count = buf.Uvarint64()
+	if count > 0 && histogramVectorFits(buf, count, 1) {
+		h.PositiveBuckets = make([]int64, int(count))
 	}
-	for i := range h.NegativeBuckets {
-		h.NegativeBuckets[i] = buf.Varint64()
+	buckets := h.PositiveBuckets
+	for i := range buckets {
+		buckets[i] = buf.Varint64()
+	}
+
+	count = buf.Uvarint64()
+	if count > 0 && histogramVectorFits(buf, count, 1) {
+		h.NegativeBuckets = make([]int64, int(count))
+	}
+	buckets = h.NegativeBuckets
+	for i := range buckets {
+		buckets[i] = buf.Varint64()
 	}
 
 	if histogram.IsCustomBucketsSchema(h.Schema) {
-		l = buf.Uvarint()
-		if l > 0 {
-			h.CustomValues = make([]float64, l)
+		count = buf.Uvarint64()
+		if count > 0 && histogramVectorFits(buf, count, 8) {
+			h.CustomValues = make([]float64, int(count))
 		}
-		for i := range h.CustomValues {
-			h.CustomValues[i] = buf.Be64Float64()
+		values := h.CustomValues
+		for i := range values {
+			values[i] = buf.Be64Float64()
 		}
 	}
 }
@@ -779,6 +799,9 @@ func (d *Decoder) floatHistogramSamplesV1(dec *encoding.Decbuf, histograms []Ref
 		}
 
 		DecodeFloatHistogram(dec, rh.FH)
+		if dec.Err() != nil {
+			break
+		}
 
 		if !histogram.IsKnownSchema(rh.FH.Schema) {
 			d.logger.Warn("skipping histogram with unknown schema in WAL record", "schema", rh.FH.Schema, "timestamp", rh.T)
@@ -836,6 +859,9 @@ func (d *Decoder) floatHistogramSamplesV2(dec *encoding.Decbuf, histograms []Ref
 		}
 		prevRef, prevST = rfh.Ref, rfh.ST
 		DecodeFloatHistogram(dec, rfh.FH)
+		if dec.Err() != nil {
+			break
+		}
 
 		if !histogram.IsKnownSchema(rfh.FH.Schema) {
 			d.logger.Warn("skipping histogram with unknown schema in WAL record", "schema", rfh.FH.Schema, "timestamp", rfh.T)
@@ -873,44 +899,44 @@ func DecodeFloatHistogram(buf *encoding.Decbuf, fh *histogram.FloatHistogram) {
 	fh.Count = buf.Be64Float64()
 	fh.Sum = buf.Be64Float64()
 
-	l := buf.Uvarint()
-	if l > 0 {
-		fh.PositiveSpans = make([]histogram.Span, l)
+	count := buf.Uvarint64()
+	if count > 0 && histogramVectorFits(buf, count, 2) {
+		fh.PositiveSpans = make([]histogram.Span, int(count))
 	}
 	for i := range fh.PositiveSpans {
 		fh.PositiveSpans[i].Offset = int32(buf.Varint64())
 		fh.PositiveSpans[i].Length = buf.Uvarint32()
 	}
 
-	l = buf.Uvarint()
-	if l > 0 {
-		fh.NegativeSpans = make([]histogram.Span, l)
+	count = buf.Uvarint64()
+	if count > 0 && histogramVectorFits(buf, count, 2) {
+		fh.NegativeSpans = make([]histogram.Span, int(count))
 	}
 	for i := range fh.NegativeSpans {
 		fh.NegativeSpans[i].Offset = int32(buf.Varint64())
 		fh.NegativeSpans[i].Length = buf.Uvarint32()
 	}
 
-	l = buf.Uvarint()
-	if l > 0 {
-		fh.PositiveBuckets = make([]float64, l)
+	count = buf.Uvarint64()
+	if count > 0 && histogramVectorFits(buf, count, 8) {
+		fh.PositiveBuckets = make([]float64, int(count))
 	}
 	for i := range fh.PositiveBuckets {
 		fh.PositiveBuckets[i] = buf.Be64Float64()
 	}
 
-	l = buf.Uvarint()
-	if l > 0 {
-		fh.NegativeBuckets = make([]float64, l)
+	count = buf.Uvarint64()
+	if count > 0 && histogramVectorFits(buf, count, 8) {
+		fh.NegativeBuckets = make([]float64, int(count))
 	}
 	for i := range fh.NegativeBuckets {
 		fh.NegativeBuckets[i] = buf.Be64Float64()
 	}
 
 	if histogram.IsCustomBucketsSchema(fh.Schema) {
-		l = buf.Uvarint()
-		if l > 0 {
-			fh.CustomValues = make([]float64, l)
+		count = buf.Uvarint64()
+		if count > 0 && histogramVectorFits(buf, count, 8) {
+			fh.CustomValues = make([]float64, int(count))
 		}
 		for i := range fh.CustomValues {
 			fh.CustomValues[i] = buf.Be64Float64()
