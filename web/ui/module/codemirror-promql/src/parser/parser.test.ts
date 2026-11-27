@@ -1207,6 +1207,45 @@ describe('promql operations', () => {
       ],
     },
     {
+      expr: '{a=~".*"}',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [
+        {
+          from: 0,
+          to: 9,
+          message: 'vector selector must contain at least one non-empty matcher',
+          severity: 'error',
+        },
+      ],
+    },
+    {
+      expr: '{a!~".+", b=~"x|"}',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [
+        {
+          from: 0,
+          to: 18,
+          message: 'vector selector must contain at least one non-empty matcher',
+          severity: 'error',
+        },
+      ],
+    },
+    {
+      expr: '{a=~".+"}',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [],
+    },
+    {
+      expr: '{a!~".*"}',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [],
+    },
+    {
+      expr: 'foo{a=~".*"}',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [],
+    },
+    {
       expr: '{"__name__"="foo", __name__="bar"}',
       expectedValueType: ValueType.vector,
       expectedDiag: [
