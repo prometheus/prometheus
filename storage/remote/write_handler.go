@@ -161,7 +161,7 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 			return
 		}
 		err = appV2.Commit()
-		if err != nil {
+		if err == nil {
 			h.samplesAppendedWithoutMetadata.Add(float64(samplesAppended))
 		}
 	}()
