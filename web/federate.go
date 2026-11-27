@@ -359,11 +359,9 @@ func makeClassicHistogram(h *histogram.FloatHistogram) *dto.Histogram {
 		bucketAvailable = bucketIter.Next()
 	)
 	for i, le := range h.CustomValues {
-		for bucketAvailable && int(bucketIter.At().Index) < i {
-			bucketAvailable = bucketIter.Next()
-		}
 		if bucketAvailable && int(bucketIter.At().Index) == i {
 			cumulativeCount += bucketIter.At().Count
+			bucketAvailable = bucketIter.Next()
 		}
 		result.Bucket[i] = &dto.Bucket{
 			UpperBound:           proto.Float64(le),
@@ -371,9 +369,6 @@ func makeClassicHistogram(h *histogram.FloatHistogram) *dto.Histogram {
 		}
 	}
 	// Add the overflow bucket beyond the last custom value, if any.
-	for bucketAvailable && int(bucketIter.At().Index) < len(h.CustomValues) {
-		bucketAvailable = bucketIter.Next()
-	}
 	if bucketAvailable {
 		cumulativeCount += bucketIter.At().Count
 	}

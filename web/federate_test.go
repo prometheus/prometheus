@@ -564,34 +564,65 @@ func TestFederationNHCBCountBelowBucketSum(t *testing.T) {
 	require.Equal(t, 1, histograms)
 }
 
-func TestMakeClassicHistogramCount(t *testing.T) {
+func TestMakeClassicHistogram(t *testing.T) {
 	for name, tc := range map[string]struct {
-		count     float64
-		buckets   []float64
-		spans     []histogram.Span
-		wantCount float64 // Zero means the bucket sum, added at runtime.
+		count       float64
+		buckets     []float64
+		spans       []histogram.Span
+		wantCount   float64
+		wantBuckets []float64
 	}{
 		"count equals bucket sum": {
-			count:     6,
-			buckets:   []float64{3, 2, 1},
-			spans:     []histogram.Span{{Offset: 0, Length: 3}},
-			wantCount: 6,
+			count:       6,
+			buckets:     []float64{3, 2, 1},
+			spans:       []histogram.Span{{Offset: 0, Length: 3}},
+			wantCount:   6,
+			wantBuckets: []float64{3, 5, 6},
 		},
 		"count above bucket sum is kept": {
-			count:     7,
-			buckets:   []float64{3, 2, 1},
-			spans:     []histogram.Span{{Offset: 0, Length: 3}},
-			wantCount: 7,
+			count:       7,
+			buckets:     []float64{3, 2, 1},
+			spans:       []histogram.Span{{Offset: 0, Length: 3}},
+			wantCount:   7,
+			wantBuckets: []float64{3, 5, 6},
 		},
 		"count below bucket sum without +Inf bucket": {
-			count:   0.3,
-			buckets: []float64{0.1, 0.2},
-			spans:   []histogram.Span{{Offset: 0, Length: 2}},
+			count:       0.3,
+			buckets:     []float64{0.1, 0.2},
+			spans:       []histogram.Span{{Offset: 0, Length: 2}},
+			wantCount:   0.30000000000000004,
+			wantBuckets: []float64{0.1, 0.30000000000000004, 0.30000000000000004},
 		},
 		"count below bucket sum with +Inf bucket": {
-			count:   0.6,
-			buckets: []float64{0.1, 0.2, 0.3},
-			spans:   []histogram.Span{{Offset: 0, Length: 1}, {Offset: 1, Length: 2}},
+			count:       0.6,
+			buckets:     []float64{0.1, 0.2, 0.3},
+			spans:       []histogram.Span{{Offset: 0, Length: 1}, {Offset: 1, Length: 2}},
+			wantCount:   0.6000000000000001,
+			wantBuckets: []float64{0.1, 0.1, 0.30000000000000004},
+		},
+		"no buckets": {
+			wantBuckets: []float64{0, 0, 0},
+		},
+		"first bucket not at index 0": {
+			count:       3,
+			buckets:     []float64{2, 1},
+			spans:       []histogram.Span{{Offset: 1, Length: 2}},
+			wantCount:   3,
+			wantBuckets: []float64{0, 2, 3},
+		},
+		"only +Inf bucket": {
+			count:       4,
+			buckets:     []float64{4},
+			spans:       []histogram.Span{{Offset: 3, Length: 1}},
+			wantCount:   4,
+			wantBuckets: []float64{0, 0, 0},
+		},
+		"zero count bucket and empty span": {
+			count:       3,
+			buckets:     []float64{0, 2, 1},
+			spans:       []histogram.Span{{Offset: 0, Length: 1}, {Offset: 0, Length: 0}, {Offset: 1, Length: 2}},
+			wantCount:   3,
+			wantBuckets: []float64{0, 0, 2},
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -603,16 +634,13 @@ func TestMakeClassicHistogramCount(t *testing.T) {
 				CustomValues:    []float64{1, 2, 5},
 			}
 			require.NoError(t, fh.Validate())
-			if tc.wantCount == 0 {
-				for _, b := range tc.buckets {
-					tc.wantCount += b
-				}
-				require.Greater(t, tc.wantCount, tc.count)
-			}
 			got := makeClassicHistogram(fh)
 			require.Equal(t, tc.wantCount, got.GetSampleCountFloat())
-			last := got.Bucket[len(got.Bucket)-1].GetCumulativeCountFloat()
-			require.GreaterOrEqual(t, got.GetSampleCountFloat(), last)
+			gotBuckets := make([]float64, 0, len(got.Bucket))
+			for _, b := range got.Bucket {
+				gotBuckets = append(gotBuckets, b.GetCumulativeCountFloat())
+			}
+			require.Equal(t, tc.wantBuckets, gotBuckets)
 		})
 	}
 }
