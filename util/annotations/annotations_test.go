@@ -55,6 +55,18 @@ func TestAnnotations_AsStrings(t *testing.T) {
 		"PromQL info: ignored histogram in sum aggregation (1:4)",
 		`PromQL info: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile) for metric name "series_1", from buckets 2.5 to 100, with a max diff of 10, over 3 samples from 2023-12-25T00:00:00Z to 2024-12-25T00:00:00Z (1:4)`,
 	})
+
+	// A limit must drop a deterministic set of annotations, not whichever
+	// entries a random map iteration happens to visit first.
+	limited := New()
+	for _, s := range []string{"warning-b", "warning-c", "warning-a"} {
+		limited.Add(errors.New(s))
+	}
+	want := []string{"warning-a", "2 more warning annotations omitted"}
+	for range 20 {
+		got, _ := limited.AsStrings("", 1, 0)
+		require.Equal(t, want, got)
+	}
 }
 
 type testCustomError struct {
