@@ -27,6 +27,23 @@ import {
 import { EditorState } from '@codemirror/state';
 import { Matcher } from '../types';
 
+// stringLiteralValue returns the content of a PromQL string literal as it is written between
+// double quotes, so labelMatchersToString can put it back between double quotes.
+// Single-quoted and raw (backtick) strings follow other escaping rules.
+function stringLiteralValue(literal: string): string {
+  const content = literal.slice(1, -1);
+  switch (literal[0]) {
+    case "'":
+      // Keep escape sequences, except \' which isn't needed between double quotes, and escape ".
+      return content.replace(/\\.|"/g, (s) => (s === '"' ? '\\"' : s === "\\'" ? "'" : s));
+    case '`':
+      // Raw strings have no escape sequences: escape backslashes, double quotes and line breaks.
+      return content.replace(/[\\"\n]/g, (s) => (s === '\n' ? '\\n' : `\\${s}`));
+    default:
+      return content;
+  }
+}
+
 function createMatcher(labelMatcher: SyntaxNode, state: EditorState): Matcher {
   const matcher = new Matcher(0, '', '');
   const cursor = labelMatcher.cursor();
@@ -49,7 +66,7 @@ function createMatcher(labelMatcher: SyntaxNode, state: EditorState): Matcher {
             break;
           }
           case StringLiteral:
-            matcher.value = state.sliceDoc(cursor.from, cursor.to).slice(1, -1);
+            matcher.value = stringLiteralValue(state.sliceDoc(cursor.from, cursor.to));
             break;
         }
       } while (cursor.nextSibling());
@@ -72,7 +89,7 @@ function createMatcher(labelMatcher: SyntaxNode, state: EditorState): Matcher {
             break;
           }
           case StringLiteral:
-            matcher.value = state.sliceDoc(cursor.from, cursor.to).slice(1, -1);
+            matcher.value = stringLiteralValue(state.sliceDoc(cursor.from, cursor.to));
             break;
         }
       } while (cursor.nextSibling());
