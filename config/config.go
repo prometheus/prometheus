@@ -40,6 +40,7 @@ import (
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage/remote/azuread"
 	"github.com/prometheus/prometheus/storage/remote/googleiam"
 )
@@ -1149,6 +1150,42 @@ type TSDBRetentionConfig struct {
 
 	// Maximum percentage of disk used for TSDB storage.
 	Percentage float64 `yaml:"percentage,omitempty"`
+
+	// Overrides sets a shorter retention time for series matching a selector.
+	Overrides []TSDBRetentionOverride `yaml:"overrides,omitempty"`
+}
+
+// TSDBRetentionOverride configures a retention time for the series matching a
+// series selector.
+type TSDBRetentionOverride struct {
+	// Selector is a series selector, e.g. '{__name__=~"debug_.*"}'.
+	Selector string `yaml:"selector"`
+	// Time is how long to retain samples of the matching series.
+	Time model.Duration `yaml:"time"`
+
+	// Matchers holds the parsed Selector.
+	Matchers []*labels.Matcher `yaml:"-"`
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (o *TSDBRetentionOverride) UnmarshalYAML(unmarshal func(any) error) error {
+	*o = TSDBRetentionOverride{}
+	type plain TSDBRetentionOverride
+	if err := unmarshal((*plain)(o)); err != nil {
+		return err
+	}
+	if o.Selector == "" {
+		return errors.New("'storage.tsdb.retention.overrides' entries must have a selector")
+	}
+	ms, err := parser.NewParser(parser.Options{}).ParseMetricSelector(o.Selector)
+	if err != nil {
+		return fmt.Errorf("invalid selector %q in 'storage.tsdb.retention.overrides': %w", o.Selector, err)
+	}
+	if o.Time <= 0 {
+		return fmt.Errorf("'storage.tsdb.retention.overrides' time for selector %q must be greater than 0, got %v", o.Selector, o.Time)
+	}
+	o.Matchers = ms
+	return nil
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.

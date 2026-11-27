@@ -481,6 +481,9 @@ storage:
       time: 1d
       size: 1GB
       percentage: 28
+      overrides:
+        - selector: '{__name__=~"debug_.*"}'
+          time: 2h
 
 tracing:
   endpoint: "localhost:4317"
