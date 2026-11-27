@@ -1171,6 +1171,11 @@ func (it *histogramIterator) Next() ValueType {
 			return ValNone
 		}
 
+		if err := checkHistogramBucketCount(&it.br, posSpans, negSpans); err != nil {
+			it.err = err
+			return ValNone
+		}
+
 		it.schema = schema
 		it.zThreshold = zeroThreshold
 		it.pSpans, it.nSpans = posSpans, negSpans

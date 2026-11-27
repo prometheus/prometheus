@@ -15,6 +15,7 @@ package chunkenc
 
 import (
 	"fmt"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -1884,4 +1885,71 @@ func TestHistogramIteratorReduceSchema(t *testing.T) {
 
 func TestHistogramChunkOverFlowPanics(t *testing.T) {
 	testChunkOverFlowPanics(t, EncHistogram, ValHistogram)
+}
+
+func TestHistogramIteratorInvalidBucketCount(t *testing.T) {
+	for _, enc := range []Encoding{EncHistogram, EncFloatHistogram, EncHistogramST, EncFloatHistogramST} {
+		t.Run(enc.String(), func(t *testing.T) {
+			for _, negative := range []bool{false, true} {
+				t.Run(fmt.Sprintf("negative=%t", negative), func(t *testing.T) {
+					// Keep the claimed count small enough to reproduce safely on unfixed code.
+					spans := []histogram.Span{{Length: 1 << 16}}
+					var pos, neg []histogram.Span
+					if negative {
+						neg = spans
+					} else {
+						pos = spans
+					}
+					b := bstream{stream: []byte{0, 1, 0}}
+					writeHistogramChunkLayout(&b, 0, 0, pos, neg, nil)
+					c, err := FromData(enc, b.bytes())
+					require.NoError(t, err)
+					it := c.Iterator(nil)
+
+					var before, after runtime.MemStats
+					runtime.ReadMemStats(&before)
+					vt := it.Next()
+					runtime.ReadMemStats(&after)
+					require.Equal(t, ValNone, vt)
+					require.Error(t, it.Err())
+					require.Less(t, after.TotalAlloc-before.TotalAlloc, uint64(256<<10), "invalid layout must not allocate bucket slices")
+					require.Equal(t, ValNone, it.Next())
+				})
+			}
+		})
+	}
+}
+
+// BenchmarkHistogramIteratorInvalidBucketCount measures the cost of rejecting
+// a malformed chunk before allocating slices from untrusted span lengths.
+func BenchmarkHistogramIteratorInvalidBucketCount(b *testing.B) {
+	for _, enc := range []Encoding{EncHistogram, EncFloatHistogram, EncHistogramST, EncFloatHistogramST} {
+		b.Run(enc.String(), func(b *testing.B) {
+			for _, negative := range []bool{false, true} {
+				b.Run(fmt.Sprintf("negative=%t", negative), func(b *testing.B) {
+					spans := []histogram.Span{{Length: 1 << 16}}
+					var pos, neg []histogram.Span
+					if negative {
+						neg = spans
+					} else {
+						pos = spans
+					}
+					stream := bstream{stream: []byte{0, 1, 0}}
+					writeHistogramChunkLayout(&stream, 0, 0, pos, neg, nil)
+					chunk, err := FromData(enc, stream.bytes())
+					if err != nil {
+						b.Fatal(err)
+					}
+					b.ReportAllocs()
+					b.ResetTimer()
+					for b.Loop() {
+						it := chunk.Iterator(nil)
+						if it.Next() != ValNone || it.Err() == nil {
+							b.Fatal("malformed chunk must be rejected")
+						}
+					}
+				})
+			}
+		})
+	}
 }
