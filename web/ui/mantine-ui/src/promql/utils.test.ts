@@ -4,6 +4,7 @@ import {
   containsPlaceholders,
   nodeValueType,
   maybeQuoteLabelName,
+  escapeString,
 } from "./utils";
 import { nodeType, valueType, binaryOperatorType } from "./ast";
 
@@ -174,5 +175,20 @@ describe("maybeQuoteLabelName", () => {
     expect(maybeQuoteLabelName("service.version")).toBe('"service.version"');
     expect(maybeQuoteLabelName("team/name")).toBe('"team/name"');
     expect(maybeQuoteLabelName('team"name')).toBe('"team\\"name"');
+  });
+});
+
+describe("escapeString", () => {
+  it("escapes backslashes and double quotes", () => {
+    expect(escapeString('a\\b"c')).toBe('a\\\\b\\"c');
+  });
+
+  it("escapes line breaks, which PromQL does not allow in double-quoted strings", () => {
+    expect(escapeString("line1\nline2")).toBe("line1\\nline2");
+    expect(escapeString("line1\r\nline2")).toBe("line1\\r\\nline2");
+  });
+
+  it("leaves other characters unchanged", () => {
+    expect(escapeString("tab\there ünïcödé")).toBe("tab\there ünïcödé");
   });
 });
