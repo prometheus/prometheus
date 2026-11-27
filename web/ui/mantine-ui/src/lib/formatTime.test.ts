@@ -48,6 +48,14 @@ describe("formatPrometheusDuration", () => {
     expect(formatPrometheusDuration(3599999)).toBe("59m59s999ms");
   });
 
+  test("carries over fractional milliseconds that round up to the next unit", () => {
+    expect(humanizeDuration(59999.6)).toBe("1m");
+    expect(humanizeDuration(119999.7)).toBe("2m");
+    expect(humanizeDuration(3599999.8)).toBe("1h");
+    expect(humanizeDuration(1999.9996)).toBe("2s");
+    expect(humanizeDuration(1500.4)).toBe("1.5s");
+  });
+
   test("formats hours correctly", () => {
     expect(formatPrometheusDuration(3600000)).toBe("1h");
     expect(formatPrometheusDuration(7200000)).toBe("2h");
