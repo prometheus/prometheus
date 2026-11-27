@@ -825,6 +825,7 @@ func (p *openMetrics2Parser) parseSingleExemplar() (done bool, err error) {
 func (p *openMetrics2Parser) parseLVals(offsets []int, isExemplar bool) ([]int, error) {
 	t := p.nextToken()
 	first := true
+	seen := map[string]struct{}{}
 	for {
 		isFirst := first
 		first = false
@@ -878,6 +879,11 @@ func (p *openMetrics2Parser) parseLVals(offsets []int, isExemplar bool) ([]int, 
 				return nil, fmt.Errorf("invalid UTF-8 label name: %q", p.l.b[curTStart:curTI])
 			}
 		}
+		name := string(p.l.b[curTStart:curTI])
+		if _, ok := seen[name]; ok {
+			return nil, fmt.Errorf("duplicate label name %q", name)
+		}
+		seen[name] = struct{}{}
 		offsets = append(offsets, curTStart, curTI)
 
 		if t != tEqual {

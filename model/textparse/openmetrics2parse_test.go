@@ -14,6 +14,7 @@
 package textparse
 
 import (
+	"errors"
 	"io"
 	"math"
 	"strings"
@@ -2495,4 +2496,37 @@ func TestOpenMetrics2ParseCarriageReturnInHelp(t *testing.T) {
 		},
 	}
 	requireEntries(t, exp, got)
+}
+
+func TestOpenMetrics2RejectsDuplicateLabelNames(t *testing.T) {
+	inputs := []string{
+		"# TYPE foo gauge\nfoo{a=\"1\",a=\"2\"} 1\n# EOF\n",
+		"# TYPE foo histogram\nfoo{a=\"1\",a=\"2\"} {count:1,sum:1.0,bucket:[+Inf:1]}\n# EOF\n",
+		"# TYPE foo_total counter\nfoo_total 1.0 1000.0 # {id=\"x\",id=\"y\"} 1.0 1000.0\n# EOF\n",
+	}
+	for _, input := range inputs {
+		p := NewOpenMetrics2Parser([]byte(input), labels.NewSymbolTable(), ParserOptions{})
+		var err error
+		for {
+			var et Entry
+			et, err = p.Next()
+			if et == EntryInvalid {
+				if errors.Is(err, io.EOF) {
+					err = nil
+				}
+				break
+			}
+			if err != nil {
+				break
+			}
+			if et == EntrySeries {
+				var lset labels.Labels
+				p.Labels(&lset)
+				if _, dup := lset.HasDuplicateLabelNames(); dup {
+					t.Fatalf("parser produced duplicate labels from %q: %v", input, lset)
+				}
+			}
+		}
+		require.Error(t, err, "duplicate label names must be rejected during parsing of %q", input)
+	}
 }
