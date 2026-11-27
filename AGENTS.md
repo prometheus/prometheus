@@ -103,6 +103,12 @@ Example:
   `[BUGFIX]`, do not call it a regression, and do not propose backports.
 - Properties of a type that are not documented, such as concurrency safety,
   are not guarantees. Check the type's documentation before relying on them.
+- When deprecating a CLI flag, config field, self-metric, or any other
+  user-observable behaviour, mark it with the `util/deprecation` package and
+  add an entry to `docs/stability.md` naming the replacement. Logging next to
+  the `Mark` is recommended to help identify the usage, at `warn` if it fires
+  once and `debug` if it can repeat. Deprecations that affect only library
+  consumers need a `// Deprecated:` comment and nothing else.
 
 ---
 

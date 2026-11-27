@@ -174,6 +174,4 @@ func TestSetFeatureListOptions_OTLPDeltaToCumulativeDeprecated(t *testing.T) {
 
 	require.True(t, c.web.ConvertOTLPDelta)
 	require.Contains(t, output.String(), "otlp-deltatocumulative")
-	require.Contains(t, output.String(), "deprecated")
-	require.Contains(t, output.String(), "Use otlp-native-delta-ingestion instead")
 }

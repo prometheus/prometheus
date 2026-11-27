@@ -82,6 +82,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/util/compression"
+	"github.com/prometheus/prometheus/util/deprecation"
 	"github.com/prometheus/prometheus/util/documentcli"
 	"github.com/prometheus/prometheus/util/features"
 	"github.com/prometheus/prometheus/util/logging"
@@ -236,6 +237,11 @@ type flagConfig struct {
 
 // setFeatureListOptions sets the corresponding options from the featureList.
 func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
+	markDeprecatedFeatureFlag := func(o string) {
+		name := fmt.Sprintf("Using --enable-feature=%s", o)
+		deprecation.MarkDeprecated(name, deprecation.FutureMinorRelease)
+		deprecation.Warn(logger, name)
+	}
 	for _, f := range c.featureList {
 		for o := range strings.SplitSeq(f, ",") {
 			switch o {
@@ -249,7 +255,7 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				t := true
 				config.DefaultConfig.GlobalConfig.ExtraScrapeMetrics = &t
 				config.DefaultGlobalConfig.ExtraScrapeMetrics = &t
-				logger.Warn("This option for --enable-feature is being phased out. It currently changes the default for the extra_scrape_metrics config setting to true, but will become a no-op in a future version. Stop using this option and set extra_scrape_metrics in the config instead.", "option", o)
+				markDeprecatedFeatureFlag(o)
 			case "metadata-wal-records":
 				c.scrape.AppendMetadata = true
 				c.web.AppendMetadata = true
@@ -262,7 +268,7 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				logger.Info("Experimental per-step statistics reporting")
 			case "auto-reload-config":
 				c.enableAutoReload = true
-				logger.Warn("This option for --enable-feature is deprecated. Use --config.auto-reload instead.", "option", o)
+				markDeprecatedFeatureFlag(o)
 			case "concurrent-rule-eval":
 				c.enableConcurrentRuleEval = true
 				logger.Info("Experimental concurrent rule evaluation enabled.")
@@ -276,11 +282,11 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				c.parserOpts.EnableExperimentalFunctions = true
 				logger.Info("Experimental PromQL functions enabled.")
 			case "promql-duration-expr":
-				logger.Warn("This option for --enable-feature is now permanently enabled and therefore a no-op.", "option", o)
+				markDeprecatedFeatureFlag(o)
 			case "native-histograms":
-				logger.Warn("This option for --enable-feature is a no-op. To scrape native histograms, set the scrape_native_histograms scrape config setting to true.", "option", o)
+				markDeprecatedFeatureFlag(o)
 			case "ooo-native-histograms":
-				logger.Warn("This option for --enable-feature is now permanently enabled and therefore a no-op.", "option", o)
+				markDeprecatedFeatureFlag(o)
 			case "created-timestamp-zero-ingestion":
 				// NOTE(bwplotka): Once AppendableV1 is removed, there will be only the TSDB and agent flags.
 				c.scrape.EnableStartTimestampZeroIngestion = true
@@ -295,7 +301,7 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				logger.Info("Experimental start timestamp zero ingestion enabled. OpenMetrics 1.0 parsing will parse <metric>_created metrics as ST instead of normal sample. Changed default scrape_protocols to prefer PrometheusProto format.", "global.scrape_protocols", fmt.Sprintf("%v", config.DefaultGlobalConfig.ScrapeProtocols))
 			case "xor2-encoding":
 				c.tsdb.FloatChunkEncoding = chunkenc.EncXOR2
-				logger.Warn("This option for --enable-feature is being phased out. It currently changes the default for the storage.tsdb.chunk_encoding.floats config setting to xor2, but will become a no-op in a future major version. Stop using this option and set storage.tsdb.chunk_encoding.floats in the config instead.", "option", o)
+				markDeprecatedFeatureFlag(o)
 			case "histograms-st-encoding":
 				c.tsdb.EnableHistogramSTEncoding = true
 				logger.Info("Experimental ST-capable histogram chunk encoding enabled.")
@@ -325,7 +331,7 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				c.promqlEnableDelayedNameRemoval = true
 				logger.Info("Experimental PromQL delayed name removal enabled.")
 			case "promql-extended-range-selectors":
-				logger.Warn("This option for --enable-feature is now permanently enabled and therefore a no-op.", "option", o)
+				markDeprecatedFeatureFlag(o)
 			case "promql-binop-fill-modifiers":
 				c.parserOpts.EnableBinopFillModifiers = true
 				logger.Info("Experimental PromQL binary operator fill modifiers enabled.")
@@ -334,7 +340,7 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 				logger.Info("Serving previous version of the Prometheus web UI.")
 			case "otlp-deltatocumulative":
 				c.web.ConvertOTLPDelta = true
-				logger.Warn("This option for --enable-feature is deprecated and will be removed in a future major version. Use otlp-native-delta-ingestion instead.", "option", o)
+				markDeprecatedFeatureFlag(o)
 			case "otlp-native-delta-ingestion":
 				// Experimental OTLP native delta ingestion.
 				// This currently just stores the raw delta value as-is with unknown metric type. Better typing and
@@ -419,6 +425,7 @@ func main() {
 			),
 		)
 	}
+	deprecation.Register(prometheus.DefaultRegisterer)
 
 	cfg := flagConfig{
 		notifier: notifier.Options{
@@ -540,10 +547,22 @@ func main() {
 		"Size at which to split the tsdb WAL segment files. Example: 100MB").
 		Hidden().PlaceHolder("<bytes>").BytesVar(&cfg.tsdb.WALSegmentSize)
 
-	serverOnlyFlag(a, "storage.tsdb.retention.time", "[DEPRECATED] How long to retain samples in storage. If neither this flag nor \"storage.tsdb.retention.size\" is set, the retention time defaults to "+defaultRetentionString+". Units Supported: y, w, d, h, m, s, ms. This flag has been deprecated, use the storage.tsdb.retention.time field in the config file instead.").
+	const storageTSDBRetentionTimeFlag = "storage.tsdb.retention.time"
+	serverOnlyFlag(a, storageTSDBRetentionTimeFlag, "[DEPRECATED] How long to retain samples in storage. If neither this flag nor \"storage.tsdb.retention.size\" is set, the retention time defaults to "+defaultRetentionString+". Units Supported: y, w, d, h, m, s, ms. This flag has been deprecated, use the storage.tsdb.retention.time field in the config file instead.").
+		Action(func(*kingpin.ParseContext) error {
+			deprecation.MarkDeprecated("Using the --storage.tsdb.retention.time CLI flag", deprecation.NextMajorRelease)
+			deprecation.Fprint(os.Stderr, "Using the --storage.tsdb.retention.time CLI flag")
+			return nil
+		}).
 		SetValue(&cfg.tsdb.RetentionDuration)
 
-	serverOnlyFlag(a, "storage.tsdb.retention.size", "[DEPRECATED] Maximum number of bytes that can be stored for blocks. A unit is required, supported units: B, KB, MB, GB, TB, PB, EB. Ex: \"512MB\". Based on powers-of-2, so 1KB is 1024B. This flag has been deprecated, use the storage.tsdb.retention.size field in the config file instead.").
+	const storageTSDBRetentionSizeFlag = "storage.tsdb.retention.size"
+	serverOnlyFlag(a, storageTSDBRetentionSizeFlag, "[DEPRECATED] Maximum number of bytes that can be stored for blocks. A unit is required, supported units: B, KB, MB, GB, TB, PB, EB. Ex: \"512MB\". Based on powers-of-2, so 1KB is 1024B. This flag has been deprecated, use the storage.tsdb.retention.size field in the config file instead.").
+		Action(func(*kingpin.ParseContext) error {
+			deprecation.MarkDeprecated("Using the --storage.tsdb.retention.size CLI flag", deprecation.NextMajorRelease)
+			deprecation.Fprint(os.Stderr, "Using the --storage.tsdb.retention.size CLI flag")
+			return nil
+		}).
 		BytesVar(&cfg.tsdb.MaxBytes)
 
 	serverOnlyFlag(a, "storage.tsdb.no-lockfile", "Do not create lockfile in data directory.").
@@ -650,11 +669,25 @@ func main() {
 	serverOnlyFlag(a, "rules.max-concurrent-evals", "Global concurrency limit for independent rules that can run concurrently. When set, \"query.max-concurrency\" may need to be adjusted accordingly.").
 		Default("4").Int64Var(&cfg.maxConcurrentEvals)
 
-	a.Flag("scrape.adjust-timestamps", "Adjust scrape timestamps by up to `scrape.timestamp-tolerance` to align them to the intended schedule. See https://github.com/prometheus/prometheus/issues/7846 for more context. Experimental. This flag will be removed in a future release.").
-		Hidden().Default("true").BoolVar(&scrape.AlignScrapeTimestamps)
+	const scrapeAdjustTimestampsFlag = "scrape.adjust-timestamps"
+	a.Flag(scrapeAdjustTimestampsFlag, "Adjust scrape timestamps by up to `scrape.timestamp-tolerance` to align them to the intended schedule. See https://github.com/prometheus/prometheus/issues/7846 for more context. Experimental. This flag will be removed in a future release.").
+		Hidden().Default("true").
+		Action(func(*kingpin.ParseContext) error {
+			deprecation.MarkDeprecated("Using the --scrape.adjust-timestamps CLI flag", deprecation.NextMajorRelease)
+			deprecation.Fprint(os.Stderr, "Using the --scrape.adjust-timestamps CLI flag")
+			return nil
+		}).
+		BoolVar(&scrape.AlignScrapeTimestamps)
 
-	a.Flag("scrape.timestamp-tolerance", "Timestamp tolerance. See https://github.com/prometheus/prometheus/issues/7846 for more context. Experimental. This flag will be removed in a future release.").
-		Hidden().Default("2ms").DurationVar(&scrape.ScrapeTimestampTolerance)
+	const scrapeTimestampToleranceFlag = "scrape.timestamp-tolerance"
+	a.Flag(scrapeTimestampToleranceFlag, "Timestamp tolerance. See https://github.com/prometheus/prometheus/issues/7846 for more context. Experimental. This flag will be removed in a future release.").
+		Hidden().Default("2ms").
+		Action(func(*kingpin.ParseContext) error {
+			deprecation.MarkDeprecated("Using the --scrape.timestamp-tolerance CLI flag", deprecation.NextMajorRelease)
+			deprecation.Fprint(os.Stderr, "Using the --scrape.timestamp-tolerance CLI flag")
+			return nil
+		}).
+		DurationVar(&scrape.ScrapeTimestampTolerance)
 
 	serverOnlyFlag(a, "alertmanager.notification-queue-capacity", "The capacity of the queue for pending Alertmanager notifications.").
 		Default("10000").IntVar(&cfg.notifier.QueueCapacity)
@@ -690,7 +723,12 @@ func main() {
 
 	promslogflag.AddFlags(a, &cfg.promslogConfig)
 	a.GetFlag(promslogflag.LevelFlagName).
-		Help(promslogflag.LevelFlagHelp + " Deprecated: set runtime.log_level in the configuration file instead.")
+		Help(promslogflag.LevelFlagHelp + " Deprecated: set runtime.log_level in the configuration file instead.").
+		Action(func(*kingpin.ParseContext) error {
+			deprecation.MarkDeprecated("Using the --log.level CLI flag", deprecation.NextMajorRelease)
+			deprecation.Fprint(os.Stderr, "Using the --log.level CLI flag")
+			return nil
+		})
 
 	a.Flag("write-documentation", "Generate command line documentation. Internal use.").Hidden().Action(func(*kingpin.ParseContext) error {
 		if err := documentcli.GenerateMarkdown(a.Model(), os.Stdout); err != nil {

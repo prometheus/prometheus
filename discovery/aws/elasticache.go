@@ -41,6 +41,7 @@ import (
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/refresh"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"github.com/prometheus/prometheus/util/deprecation"
 	"github.com/prometheus/prometheus/util/strutil"
 )
 
@@ -582,6 +583,9 @@ func (d *ElasticacheDiscovery) refresh(ctx context.Context) ([]*targetgroup.Grou
 		Source: d.region,
 	}
 	for _, cache := range caches {
+		deprecation.MarkDeprecatedInternal("Using the ElastiCache SD serverless cache meta labels", deprecation.FutureMinorRelease)
+		deprecation.Debug(d.logger, "Using the ElastiCache SD serverless cache meta labels",
+			"serverless_cache", aws.ToString(cache.ServerlessCacheName))
 		addServerlessCacheTargets(tg, &cache, tagsByResourceARN[aws.ToString(cache.ARN)])
 	}
 	for _, cluster := range cacheClusters {

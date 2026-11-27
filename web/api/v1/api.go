@@ -62,6 +62,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/util/annotations"
+	"github.com/prometheus/prometheus/util/deprecation"
 	"github.com/prometheus/prometheus/util/features"
 	"github.com/prometheus/prometheus/util/httputil"
 	"github.com/prometheus/prometheus/util/notifications"
@@ -713,7 +714,7 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 			warnings = warnings.Add(errors.New("results truncated due to limit"))
 		}
 	}
-	if warn := api.statsParamWarning(r.FormValue("stats")); warn != nil {
+	if warn := api.statsParamWarning(r); warn != nil {
 		warnings = warnings.Add(warn)
 	}
 	// Optional stats field in response if parameter "stats" is not empty.
@@ -1064,7 +1065,7 @@ func (api *API) queryCost(r *http.Request) apiFuncResult {
 	}
 
 	res := api.estimateCostResult(ctx, r.FormValue("query"), ts, ts, 0, opts)
-	if warn := api.statsParamWarning(r.FormValue("stats")); warn != nil {
+	if warn := api.statsParamWarning(r); warn != nil {
 		res.warnings = res.warnings.Add(warn)
 	}
 	return res
@@ -1129,7 +1130,7 @@ func (api *API) queryRangeCost(r *http.Request) apiFuncResult {
 	}
 
 	res := api.estimateCostResult(ctx, r.FormValue("query"), start, end, step, opts)
-	if warn := api.statsParamWarning(r.FormValue("stats")); warn != nil {
+	if warn := api.statsParamWarning(r); warn != nil {
 		res.warnings = res.warnings.Add(warn)
 	}
 	return res
@@ -1194,14 +1195,18 @@ const (
 // be rejected in the next major release. Embedders that install a custom
 // StatsRenderer define their own vocabulary for the parameter, so no warning
 // is attached then.
-func (api *API) statsParamWarning(s string) error {
+func (api *API) statsParamWarning(r *http.Request) error {
 	if api.customStatsRenderer {
 		return nil
 	}
+	s := r.FormValue("stats")
 	switch s {
 	case "", statsTrue, statsAll:
 		return nil
 	default:
+		deprecation.MarkDeprecated("Using a non-standard /api/v1 query stats parameter", deprecation.NextMajorRelease)
+		deprecation.Debug(api.logger, "Using a non-standard /api/v1 query stats parameter",
+			"value", s, "client", r.RemoteAddr, "url", r.URL.RequestURI(), "user_agent", r.UserAgent())
 		return fmt.Errorf("value %q for parameter \"stats\" is deprecated and will be rejected in the next major release, use %q or %q", s, statsTrue, statsAll)
 	}
 }
@@ -1314,7 +1319,7 @@ func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 			warnings = warnings.Add(errors.New("results truncated due to limit"))
 		}
 	}
-	if warn := api.statsParamWarning(r.FormValue("stats")); warn != nil {
+	if warn := api.statsParamWarning(r); warn != nil {
 		warnings = warnings.Add(warn)
 	}
 

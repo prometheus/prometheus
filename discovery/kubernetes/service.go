@@ -30,6 +30,7 @@ import (
 	"k8s.io/client-go/util/workqueue"
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"github.com/prometheus/prometheus/util/deprecation"
 )
 
 // Service implements discovery of Kubernetes services.
@@ -238,6 +239,11 @@ func (s *Service) buildService(svc *apiv1.Service) *targetgroup.Group {
 		}
 
 		if svc.Spec.Type == apiv1.ServiceTypeLoadBalancer {
+			if svc.Spec.LoadBalancerIP != "" {
+				deprecation.MarkDeprecatedInternal("Using the Kubernetes SD meta label __meta_kubernetes_service_loadbalancer_ip", deprecation.FutureMinorRelease)
+				deprecation.Debug(s.logger, "Using the Kubernetes SD meta label __meta_kubernetes_service_loadbalancer_ip",
+					"namespace", svc.Namespace, "service", svc.Name)
+			}
 			labelSet[serviceLoadBalancerIP] = lv(svc.Spec.LoadBalancerIP)
 			labelSet[serviceLoadBalancerIPs] = lv(loadBalancerIngressIPs(svc))
 		}

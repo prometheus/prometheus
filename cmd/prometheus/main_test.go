@@ -40,6 +40,7 @@ import (
 	"github.com/grafana/regexp"
 	remoteapi "github.com/prometheus/client_golang/exp/api/remote"
 	"github.com/prometheus/client_golang/prometheus"
+	promtestutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
@@ -1575,4 +1576,63 @@ func TestFeatureFlagsDocumented(t *testing.T) {
 	require.NotEmpty(t, docFlags)
 	require.True(t, slices.IsSorted(helpFlags))
 	require.ElementsMatch(t, helpFlags, docFlags)
+}
+
+// TestDeprecationNotices verifies that prometheus_deprecation_notice exposes
+// the expected series for some deprecated CLI flags, feature flags,
+// configuration fields and self-metrics.
+func TestDeprecationNotices(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode.")
+	}
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "prometheus.yml")
+	port := testutil.RandomUnprivilegedPort(t)
+
+	require.NoError(t, os.WriteFile(configFile, fmt.Appendf(nil, `
+remote_write:
+  - url: http://127.0.0.1:1/write
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ['127.0.0.1:%d']
+  - job_name: kubernetes
+    kubernetes_sd_configs:
+      - role: endpoints
+        api_server: http://127.0.0.1:1
+`, port), 0o644))
+
+	prom := prometheusCommandWithLogging(
+		t,
+		configFile,
+		port,
+		fmt.Sprintf("--storage.tsdb.path=%s", tmpDir),
+		"--storage.tsdb.retention.time=15d",
+		"--enable-feature=native-histograms",
+		"--scrape.discovery-reload-interval=100ms",
+	)
+	require.NoError(t, prom.Start())
+
+	const expectedDeprecationNotices = `
+# HELP prometheus_deprecation_notice Whether a deprecated feature, flag, configuration field, or behaviour has been seen in use since startup.
+# TYPE prometheus_deprecation_notice gauge
+prometheus_deprecation_notice{details_url="https://prometheus.io/docs/prometheus/latest/stability/#deprecation-notices",expected_removal_in="future_minor_release",name="Using --enable-feature=native-histograms",scope="user"} 1
+prometheus_deprecation_notice{details_url="https://prometheus.io/docs/prometheus/latest/stability/#deprecation-notices",expected_removal_in="future_minor_release",name="Exposing the prometheus_remote_storage_exemplars_in_total metric",scope="internal"} 1
+prometheus_deprecation_notice{details_url="https://prometheus.io/docs/prometheus/latest/stability/#deprecation-notices",expected_removal_in="future_minor_release",name="Exposing the prometheus_remote_storage_highest_timestamp_in_seconds metric",scope="internal"} 1
+prometheus_deprecation_notice{details_url="https://prometheus.io/docs/prometheus/latest/stability/#deprecation-notices",expected_removal_in="future_minor_release",name="Exposing the prometheus_remote_storage_histograms_in_total metric",scope="internal"} 1
+prometheus_deprecation_notice{details_url="https://prometheus.io/docs/prometheus/latest/stability/#deprecation-notices",expected_removal_in="future_minor_release",name="Exposing the prometheus_remote_storage_samples_in_total metric",scope="internal"} 1
+prometheus_deprecation_notice{details_url="https://prometheus.io/docs/prometheus/latest/stability/#deprecation-notices",expected_removal_in="next_major_release",name="Using the --storage.tsdb.retention.time CLI flag",scope="user"} 1
+prometheus_deprecation_notice{details_url="https://prometheus.io/docs/prometheus/latest/stability/#deprecation-notices",expected_removal_in="future_minor_release",name="Using the kubernetes_sd_configs role: endpoints configuration field",scope="user"} 1
+`
+
+	// /metrics serves before startup finishes, so a scrape taken earlier would
+	// only see the notices marked so far.
+	waitForPrometheusReady(t, port)
+	require.NoError(t, promtestutil.ScrapeAndCompare(
+		fmt.Sprintf("http://127.0.0.1:%d/metrics", port),
+		strings.NewReader(expectedDeprecationNotices),
+		"prometheus_deprecation_notice",
+	))
 }

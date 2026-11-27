@@ -32,6 +32,7 @@ import (
 
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"github.com/prometheus/prometheus/util/deprecation"
 	"github.com/prometheus/prometheus/util/strutil"
 )
 
@@ -136,6 +137,18 @@ func (*SDConfig) Name() string { return "consul" }
 
 // NewDiscoverer returns a Discoverer for the Config.
 func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
+	if c.Username != "" || c.Password != "" {
+		deprecation.MarkDeprecated("Using the consul_sd_configs username or password configuration fields", deprecation.FutureMinorRelease)
+		deprecation.Warn(opts.Logger, "Using the consul_sd_configs username or password configuration fields", "server", c.Server)
+	}
+	if len(c.NodeMeta) > 0 {
+		deprecation.MarkDeprecated("Using the consul_sd_configs node_meta configuration field", deprecation.FutureMinorRelease)
+		deprecation.Warn(opts.Logger, "Using the consul_sd_configs node_meta configuration field", "server", c.Server)
+	}
+	if len(c.ServiceTags) > 0 {
+		deprecation.MarkDeprecated("Using the consul_sd_configs tags configuration field", deprecation.FutureMinorRelease)
+		deprecation.Warn(opts.Logger, "Using the consul_sd_configs tags configuration field", "server", c.Server)
+	}
 	return NewDiscovery(c, opts.Logger, opts.Metrics)
 }
 
