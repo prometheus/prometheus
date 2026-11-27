@@ -2338,6 +2338,58 @@ func funcPredictLinear(vectorVals []Vector, matrixVal Matrix, args parser.Expres
 	return append(enh.Out, Sample{F: slope*duration + intercept}), nil
 }
 
+// === time_to_threshold(Matrix parser.ValueTypeMatrix, threshold parser.ValueTypeScalar) (Vector, Annotations) ===
+// Returns the number of seconds, relative to the current evaluation time,
+// at which a linear-regression extrapolation of the range vector would
+// reach the given threshold. Positive values are in the future; negative
+// values mean the threshold has already been crossed under the same
+// extrapolation. NaN is returned when the regression slope is zero (the
+// extrapolated line never crosses the threshold) or when the range has
+// fewer than two float samples. Non-zero slopes very close to zero can
+// produce very large positive or negative ETAs, matching the underlying
+// linear model.
+//
+// This is the inverse of predict_linear: where predict_linear answers
+// "what value at time now+t", time_to_threshold answers "at what t does
+// the value cross T". For example:
+//
+//	time_to_threshold(node_filesystem_avail_bytes[1h], 0) < 86400
+//
+// lists disks whose free space, extrapolated linearly from the past hour,
+// would hit zero within the next 24 hours.
+//
+// Histogram samples are skipped, mirroring predict_linear. If fewer than two
+// float samples remain, the result is empty; a mixed range emits
+// HistogramIgnoredInMixedRangeInfo.
+func funcTimeToThreshold(vectorVals []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	if len(vectorVals) == 0 || len(vectorVals[0]) == 0 || len(matrixVal) == 0 {
+		return enh.Out, nil
+	}
+	samples := matrixVal[0]
+	threshold := vectorVals[0][0].F
+
+	if len(samples.Floats) < 2 {
+		if len(samples.Floats) == 1 && len(samples.Histograms) > 0 {
+			return enh.Out, annotations.New().Add(annotations.NewHistogramIgnoredInMixedRangeInfo(getMetricName(samples.Metric), args[0].PositionRange()))
+		}
+		return enh.Out, nil
+	}
+
+	slope, intercept := linearRegression(samples.Floats, enh.Ts)
+	var dt float64
+	if slope == 0 {
+		dt = math.NaN()
+	} else {
+		// value(now + dt) = slope*dt + intercept = threshold => dt = (threshold - intercept) / slope.
+		// Very small non-zero slopes intentionally yield very large ETAs.
+		dt = (threshold - intercept) / slope
+	}
+	if len(samples.Histograms) > 0 {
+		return append(enh.Out, Sample{F: dt}), annotations.New().Add(annotations.NewHistogramIgnoredInMixedRangeInfo(getMetricName(samples.Metric), args[0].PositionRange()))
+	}
+	return append(enh.Out, Sample{F: dt}), nil
+}
+
 func simpleHistogramFunc(vectorVals []Vector, enh *EvalNodeHelper, f func(h *histogram.FloatHistogram) float64) Vector {
 	for _, el := range vectorVals[0] {
 		if el.H != nil { // Process only histogram samples.
@@ -3022,6 +3074,7 @@ var FunctionCalls = map[string]FunctionCall{
 	"stddev_over_time":             funcStddevOverTime,
 	"stdvar_over_time":             funcStdvarOverTime,
 	"sum_over_time":                funcSumOverTime,
+	"time_to_threshold":            funcTimeToThreshold,
 	"time":                         funcTime,
 	"timestamp":                    funcTimestamp,
 	"vector":                       funcVector,
@@ -3045,7 +3098,8 @@ var AtModifierUnsafeFunctions = map[string]struct{}{
 	// Step invariant functions.
 	"days_in_month": {}, "day_of_month": {}, "day_of_week": {}, "day_of_year": {},
 	"end": {}, "hour": {}, "minute": {}, "month": {}, "year": {},
-	"predict_linear": {}, "range": {}, "start": {}, "step": {}, "time": {},
+	"predict_linear": {}, "range": {}, "start": {}, "step": {},
+	"time": {}, "time_to_threshold": {},
 	// Uses timestamp of the argument for the result,
 	// hence unsafe to use with @ modifier.
 	"timestamp": {},

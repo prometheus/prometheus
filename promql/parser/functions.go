@@ -492,6 +492,12 @@ var Functions = map[string]*Function{
 		ArgTypes:   []ValueType{ValueTypeVector},
 		ReturnType: ValueTypeVector,
 	},
+	"time_to_threshold": {
+		Name:         "time_to_threshold",
+		ArgTypes:     []ValueType{ValueTypeMatrix, ValueTypeScalar},
+		ReturnType:   ValueTypeVector,
+		Experimental: true,
+	},
 	"time": {
 		Name:       "time",
 		ArgTypes:   []ValueType{},
