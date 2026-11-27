@@ -192,8 +192,16 @@ func NewTemplateExpander(
 				if err != nil {
 					host = hostPort
 				}
-				if _, err := netip.ParseAddr(host); err == nil {
-					return hostPort
+				// Extract inner address for bracketed IPv6 literals without a port.
+				ipHost := host
+				isBracketed := strings.HasPrefix(ipHost, "[") && strings.HasSuffix(ipHost, "]")
+				if isBracketed {
+					ipHost = ipHost[1 : len(ipHost)-1]
+				}
+				if ip, err := netip.ParseAddr(ipHost); err == nil {
+					if !isBracketed || ip.Is6() {
+						return hostPort
+					}
 				}
 				host = strings.Split(host, ".")[0]
 				if port != "" {

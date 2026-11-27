@@ -599,6 +599,38 @@ func TestTemplateExpansion(t *testing.T) {
 			text:   "{{ \"::ffff:192.0.2.1%eth0.100\" | stripDomain }}",
 			output: "::ffff:192.0.2.1%eth0.100",
 		},
+		{
+			// Bracketed IPv6 address without port.
+			text:   "{{ \"[2001:0DB8::1]\" | stripDomain }}",
+			output: "[2001:0DB8::1]",
+		},
+		{
+			// Bracketed IPv6 address with a zone identifier containing dots, without port.
+			text:   "{{ \"[fe80::1%eth0.100]\" | stripDomain }}",
+			output: "[fe80::1%eth0.100]",
+		},
+		{
+			// Bracketed IPv4-mapped IPv6 address without port.
+			text:   "{{ \"[::ffff:192.0.2.1]\" | stripDomain }}",
+			output: "[::ffff:192.0.2.1]",
+		},
+		{
+			// Unbracketed IPv4-mapped IPv6 address without port.
+			text:   "{{ \"::ffff:192.0.2.1\" | stripDomain }}",
+			output: "::ffff:192.0.2.1",
+		},
+		{
+			// Bracketed IPv6 address with a zone identifier containing dots in HTML template.
+			text:   "{{ \"[fe80::1%eth0.100]\" | stripDomain }}",
+			output: "[fe80::1%eth0.100]",
+			html:   true,
+		},
+		{
+			// Bracketed IPv4-mapped IPv6 address without port in HTML template.
+			text:   "{{ \"[::ffff:192.0.2.1]\" | stripDomain }}",
+			output: "[::ffff:192.0.2.1]",
+			html:   true,
+		},
 	})
 }
 
