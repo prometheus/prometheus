@@ -2585,6 +2585,13 @@ datacenter_id: <string>
 # The time after which the servers are refreshed.
 [ refresh_interval: <duration> | default = 60s ]
 
+# Filters can be used optionally to filter the server list by other criteria.
+# Available filter criteria can be found here:
+# https://api.ionos.com/docs/cloud/v6/#tag/Servers/operation/serversGet
+filters:
+  [ - name: <string>
+      values: <string>, [...] ]
+
 # HTTP client settings, including authentication methods (such as basic auth and
 # authorization), proxy configurations, TLS options, custom HTTP headers, etc.
 [ <http_config> ]

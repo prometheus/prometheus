@@ -19,6 +19,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"testing"
 
@@ -274,6 +275,38 @@ func TestIONOSServerRefreshNilContainers(t *testing.T) {
 			require.Equal(t, tc.expected, tgs[0].Targets)
 		})
 	}
+}
+
+// TestIONOSServerRefreshWithFilters confirms configured Filters are sent to
+// the API as repeated filter.<name> query parameters, one per value, matching
+// how the ionos-cloud/sdk-go client itself accumulates repeated Filter() calls.
+func TestIONOSServerRefreshWithFilters(t *testing.T) {
+	t.Parallel()
+
+	var gotQuery url.Values
+	mock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.Query()
+		mockIONOSServers(w, r)
+	}))
+	defer mock.Close()
+
+	cfg := DefaultSDConfig
+	cfg.DatacenterID = ionosTestDatacenterID
+	cfg.HTTPClientConfig.BearerToken = ionosTestBearerToken
+	cfg.ionosEndpoint = mock.URL
+	cfg.Filters = []*Filter{
+		{Name: "metadata.state", Values: []string{"AVAILABLE"}},
+		{Name: "properties.cores", Values: []string{"2", "4"}},
+	}
+
+	d, err := newServerDiscovery(&cfg, nil)
+	require.NoError(t, err)
+
+	_, err = d.refresh(context.Background())
+	require.NoError(t, err)
+
+	require.Equal(t, []string{"AVAILABLE"}, gotQuery["filter.metadata.state"])
+	require.Equal(t, []string{"2", "4"}, gotQuery["filter.properties.cores"])
 }
 
 func mockIONOSServers(w http.ResponseWriter, r *http.Request) {
