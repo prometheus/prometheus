@@ -861,6 +861,7 @@ func (it *chunkedSeriesIterator) Err() error {
 // validateLabelsAndMetricName validates the label names/values and metric names returned from remote read,
 // also making sure that there are no labels with duplicate names.
 func validateLabelsAndMetricName(ls []prompb.Label) error {
+	sorted := true
 	for i, l := range ls {
 		if l.Name == labels.MetricName && !model.UTF8Validation.IsValidMetricName(l.Value) {
 			return fmt.Errorf("invalid metric name: %v", l.Value)
@@ -871,8 +872,22 @@ func validateLabelsAndMetricName(ls []prompb.Label) error {
 		if !model.LabelValue(l.Value).IsValid() {
 			return fmt.Errorf("invalid label value: %v", l.Value)
 		}
-		if i > 0 && l.Name == ls[i-1].Name {
-			return fmt.Errorf("duplicate label with name: %v", l.Name)
+		if i > 0 {
+			if l.Name == ls[i-1].Name {
+				return fmt.Errorf("duplicate label with name: %v", l.Name)
+			}
+			if l.Name < ls[i-1].Name {
+				sorted = false
+			}
+		}
+	}
+	if !sorted {
+		seen := make(map[string]struct{}, len(ls))
+		for _, l := range ls {
+			if _, ok := seen[l.Name]; ok {
+				return fmt.Errorf("duplicate label with name: %v", l.Name)
+			}
+			seen[l.Name] = struct{}{}
 		}
 	}
 	return nil

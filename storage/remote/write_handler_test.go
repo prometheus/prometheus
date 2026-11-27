@@ -31,6 +31,7 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/google/go-cmp/cmp"
 	remoteapi "github.com/prometheus/client_golang/exp/api/remote"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 
@@ -467,6 +468,16 @@ func TestRemoteWriteHandler_V2Message(t *testing.T) {
 			),
 			expectedCode:     http.StatusBadRequest,
 			expectedRespBody: "invalid labels for series, labels {__name__=\"test_metric1\", test_metric1=\"test_metric1\", test_metric1=\"test_metric1\"}, duplicated label test_metric1\n",
+		},
+		{
+			desc: "Partial write; first series with unsorted labels",
+			input: append(
+				// Series with foo="bar",__name__="test_metric1" labels (unsorted).
+				[]writev2.TimeSeries{{LabelsRefs: []uint32{9, 10, 1, 2}, Samples: []writev2.Sample{{Value: 1, Timestamp: 1}}}},
+				writeV2RequestFixture.Timeseries...,
+			),
+			expectedCode:     http.StatusBadRequest,
+			expectedRespBody: "invalid labels for series, labels {__name__=\"test_metric1\", foo=\"bar\"}: labels are not sorted lexicographically\n",
 		},
 		{
 			desc: "Partial write; first series with odd number of label refs",
@@ -2264,4 +2275,292 @@ func TestTimeLimitAppenderV2_LimitExemplars(t *testing.T) {
 		require.Len(t, appendable.exemplars, 1)
 		require.Equal(t, int64(900), appendable.exemplars[0].t)
 	})
+}
+
+func TestRemoteWriteHandler_SortedLabels(t *testing.T) {
+	t.Run("v1", func(t *testing.T) {
+		sendV1 := func(t *testing.T, timeseries []prompb.TimeSeries) (*httptest.ResponseRecorder, *mockAppendable, prometheus.Gatherer) {
+			t.Helper()
+			payload, _, _, err := buildWriteRequest(nil, timeseries, nil, nil, nil, nil, "snappy")
+			require.NoError(t, err)
+
+			req, err := http.NewRequest(http.MethodPost, "", bytes.NewReader(payload))
+			require.NoError(t, err)
+			req.Header.Set("Content-Type", remoteWriteContentTypeHeaders[remoteapi.WriteV1MessageType])
+			req.Header.Set("Content-Encoding", compression.Snappy)
+
+			reg := prometheus.NewRegistry()
+			appendable := &mockAppendable{}
+			handler := NewWriteHandler(promslog.NewNopLogger(), reg, appendable, []remoteapi.WriteMessageType{remoteapi.WriteV1MessageType}, false, false)
+
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, req)
+			return recorder, appendable, reg
+		}
+
+		t.Run("sorted labels with sample, histogram, and exemplar succeed", func(t *testing.T) {
+			rec, app, reg := sendV1(t, []prompb.TimeSeries{
+				{
+					Labels: []prompb.Label{
+						{Name: "__name__", Value: "test_metric"},
+						{Name: "a", Value: "1"},
+						{Name: "b", Value: "2"},
+					},
+					Samples:    []prompb.Sample{{Value: 1, Timestamp: 100}},
+					Histograms: []prompb.Histogram{prompb.FromIntHistogram(200, &testHistogram)},
+					Exemplars: []prompb.Exemplar{{
+						Labels:    []prompb.Label{{Name: "a", Value: "1"}, {Name: "trace_id", Value: "abc"}},
+						Value:     1.5,
+						Timestamp: 100,
+					}},
+				},
+			})
+			require.Equal(t, http.StatusNoContent, rec.Code)
+			require.Len(t, app.samples, 1)
+			require.Len(t, app.histograms, 1)
+			require.Len(t, app.exemplars, 1)
+			require.Equal(t, float64(0), counterValue(t, reg, "prometheus_api_remote_write_invalid_labels_samples_total"))
+		})
+
+		t.Run("unsorted series labels with sample rejected with 400", func(t *testing.T) {
+			rec, app, reg := sendV1(t, []prompb.TimeSeries{
+				{
+					Labels: []prompb.Label{
+						{Name: "b", Value: "2"},
+						{Name: "__name__", Value: "test_metric"},
+					},
+					Samples: []prompb.Sample{{Value: 1, Timestamp: 100}, {Value: 2, Timestamp: 200}},
+				},
+			})
+			require.Equal(t, http.StatusBadRequest, rec.Code)
+			require.Contains(t, rec.Body.String(), errUnsortedLabels.Error())
+			require.Empty(t, app.samples)
+			require.Equal(t, float64(2), counterValue(t, reg, "prometheus_api_remote_write_invalid_labels_samples_total"))
+		})
+
+		t.Run("unsorted series labels with histogram rejected with 400", func(t *testing.T) {
+			rec, app, reg := sendV1(t, []prompb.TimeSeries{
+				{
+					Labels: []prompb.Label{
+						{Name: "z", Value: "1"},
+						{Name: "__name__", Value: "test_hist"},
+					},
+					Histograms: []prompb.Histogram{prompb.FromIntHistogram(200, &testHistogram)},
+				},
+			})
+			require.Equal(t, http.StatusBadRequest, rec.Code)
+			require.Contains(t, rec.Body.String(), errUnsortedLabels.Error())
+			require.Empty(t, app.histograms)
+			require.Equal(t, float64(1), counterValue(t, reg, "prometheus_api_remote_write_invalid_labels_samples_total"))
+		})
+
+		t.Run("unsorted series rolls back prior valid series in v1 batch", func(t *testing.T) {
+			rec, app, reg := sendV1(t, []prompb.TimeSeries{
+				{
+					Labels:  []prompb.Label{{Name: "__name__", Value: "valid_metric"}, {Name: "a", Value: "1"}},
+					Samples: []prompb.Sample{{Value: 1, Timestamp: 100}},
+				},
+				{
+					Labels:  []prompb.Label{{Name: "b", Value: "2"}, {Name: "__name__", Value: "unsorted_metric"}},
+					Samples: []prompb.Sample{{Value: 2, Timestamp: 200}},
+				},
+			})
+			require.Equal(t, http.StatusBadRequest, rec.Code)
+			require.Contains(t, rec.Body.String(), errUnsortedLabels.Error())
+			require.Empty(t, app.samples)
+			require.Equal(t, float64(1), counterValue(t, reg, "prometheus_api_remote_write_invalid_labels_samples_total"))
+		})
+
+		t.Run("unsorted exemplar labels are dropped while valid series sample is ingested", func(t *testing.T) {
+			rec, app, _ := sendV1(t, []prompb.TimeSeries{
+				{
+					Labels:  []prompb.Label{{Name: "__name__", Value: "test_metric"}},
+					Samples: []prompb.Sample{{Value: 1, Timestamp: 100}},
+					Exemplars: []prompb.Exemplar{
+						{
+							Labels:    []prompb.Label{{Name: "z", Value: "1"}, {Name: "a", Value: "2"}},
+							Value:     1.5,
+							Timestamp: 100,
+						},
+						{
+							Labels:    []prompb.Label{{Name: "a", Value: "2"}, {Name: "z", Value: "1"}},
+							Value:     2.5,
+							Timestamp: 200,
+						},
+					},
+				},
+			})
+			require.Equal(t, http.StatusNoContent, rec.Code)
+			require.Len(t, app.samples, 1)
+			require.Len(t, app.exemplars, 1)
+			require.Equal(t, int64(200), app.exemplars[0].t)
+		})
+	})
+
+	t.Run("v2", func(t *testing.T) {
+		sendV2 := func(t *testing.T, timeseries []writev2.TimeSeries, symbols []string, enableTypeAndUnitLabels, appendMetadata bool) (*httptest.ResponseRecorder, *mockAppendable, prometheus.Gatherer) {
+			t.Helper()
+			payload, _, _, _, err := buildV2WriteRequest(promslog.NewNopLogger(), timeseries, symbols, nil, nil, nil, "snappy")
+			require.NoError(t, err)
+
+			req, err := http.NewRequest(http.MethodPost, "", bytes.NewReader(payload))
+			require.NoError(t, err)
+			req.Header.Set("Content-Type", remoteWriteContentTypeHeaders[remoteapi.WriteV2MessageType])
+			req.Header.Set("Content-Encoding", compression.Snappy)
+			req.Header.Set(RemoteWriteVersionHeader, RemoteWriteVersion20HeaderValue)
+
+			reg := prometheus.NewRegistry()
+			appendable := &mockAppendable{}
+			handler := NewWriteHandler(promslog.NewNopLogger(), reg, appendable, []remoteapi.WriteMessageType{remoteapi.WriteV2MessageType}, enableTypeAndUnitLabels, appendMetadata)
+
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, req)
+			return recorder, appendable, reg
+		}
+
+		// Symbols: 0="", 1="__name__", 2="test_metric", 3="a", 4="1", 5="b", 6="2",
+		// 7="trace_id", 8="abc", 9="seconds", 10="help text"
+		symbols := []string{"", "__name__", "test_metric", "a", "1", "b", "2", "trace_id", "abc", "seconds", "help text"}
+
+		t.Run("sorted labels with sample, histogram, exemplar, and metadata succeed", func(t *testing.T) {
+			rec, app, reg := sendV2(t, []writev2.TimeSeries{
+				{
+					LabelsRefs: []uint32{1, 2, 3, 4, 5, 6},
+					Metadata: writev2.Metadata{
+						Type:    writev2.Metadata_METRIC_TYPE_COUNTER,
+						HelpRef: 10,
+						UnitRef: 9,
+					},
+					Samples:    []writev2.Sample{{Timestamp: 100, Value: 1}},
+					Histograms: []writev2.Histogram{writev2.FromIntHistogram(0, 200, &testHistogram)},
+					Exemplars: []writev2.Exemplar{{
+						LabelsRefs: []uint32{3, 4, 7, 8},
+						Value:      1.5,
+						Timestamp:  100,
+					}},
+				},
+			}, symbols, true, true)
+			require.Equal(t, http.StatusNoContent, rec.Code)
+			expectHeaderValue(t, 1, rec.Header().Get(rw20WrittenSamplesHeader))
+			expectHeaderValue(t, 1, rec.Header().Get(rw20WrittenHistogramsHeader))
+			expectHeaderValue(t, 1, rec.Header().Get(rw20WrittenExemplarsHeader))
+			require.Len(t, app.samples, 1)
+			require.Len(t, app.histograms, 1)
+			require.Len(t, app.exemplars, 1)
+			require.Len(t, app.metadata, 1)
+			require.Equal(t, float64(0), counterValue(t, reg, "prometheus_api_remote_write_invalid_labels_samples_total"))
+		})
+
+		t.Run("unsorted series labels with sample, histogram, metadata, and type-and-unit-labels rejected with 400", func(t *testing.T) {
+			rec, app, reg := sendV2(t, []writev2.TimeSeries{
+				{
+					// b="2", __name__="test_metric" (unsorted)
+					LabelsRefs: []uint32{5, 6, 1, 2},
+					Metadata: writev2.Metadata{
+						Type:    writev2.Metadata_METRIC_TYPE_COUNTER,
+						HelpRef: 10,
+						UnitRef: 9,
+					},
+					Samples:    []writev2.Sample{{Timestamp: 100, Value: 1}},
+					Histograms: []writev2.Histogram{writev2.FromIntHistogram(0, 200, &testHistogram)},
+					Exemplars: []writev2.Exemplar{{
+						LabelsRefs: []uint32{7, 8},
+						Value:      1.5,
+						Timestamp:  100,
+					}},
+				},
+			}, symbols, true, true)
+			require.Equal(t, http.StatusBadRequest, rec.Code)
+			require.Contains(t, rec.Body.String(), errUnsortedLabels.Error())
+			expectHeaderValue(t, 0, rec.Header().Get(rw20WrittenSamplesHeader))
+			expectHeaderValue(t, 0, rec.Header().Get(rw20WrittenHistogramsHeader))
+			expectHeaderValue(t, 0, rec.Header().Get(rw20WrittenExemplarsHeader))
+			require.Empty(t, app.samples)
+			require.Empty(t, app.histograms)
+			require.Empty(t, app.exemplars)
+			require.Empty(t, app.metadata)
+			require.Equal(t, float64(2), counterValue(t, reg, "prometheus_api_remote_write_invalid_labels_samples_total"))
+		})
+
+		t.Run("partial write rejects unsorted series while ingesting valid series", func(t *testing.T) {
+			rec, app, reg := sendV2(t, []writev2.TimeSeries{
+				{
+					// Unsorted: a="1", __name__="test_metric"
+					LabelsRefs: []uint32{3, 4, 1, 2},
+					Samples:    []writev2.Sample{{Timestamp: 100, Value: 1}},
+					Histograms: []writev2.Histogram{writev2.FromFloatHistogram(0, 200, testHistogram.ToFloat(nil))},
+				},
+				{
+					// Sorted: __name__="test_metric", b="2"
+					LabelsRefs: []uint32{1, 2, 5, 6},
+					Metadata: writev2.Metadata{
+						Type:    writev2.Metadata_METRIC_TYPE_GAUGE,
+						HelpRef: 10,
+					},
+					Samples:    []writev2.Sample{{Timestamp: 300, Value: 3}},
+					Histograms: []writev2.Histogram{writev2.FromIntHistogram(0, 400, &testHistogram)},
+					Exemplars: []writev2.Exemplar{{
+						LabelsRefs: []uint32{7, 8},
+						Value:      1.5,
+						Timestamp:  300,
+					}},
+				},
+			}, symbols, false, true)
+			require.Equal(t, http.StatusBadRequest, rec.Code)
+			require.Contains(t, rec.Body.String(), errUnsortedLabels.Error())
+			expectHeaderValue(t, 1, rec.Header().Get(rw20WrittenSamplesHeader))
+			expectHeaderValue(t, 1, rec.Header().Get(rw20WrittenHistogramsHeader))
+			expectHeaderValue(t, 1, rec.Header().Get(rw20WrittenExemplarsHeader))
+			require.Len(t, app.samples, 1)
+			require.Equal(t, labels.FromStrings("__name__", "test_metric", "b", "2"), app.samples[0].l)
+			require.Len(t, app.histograms, 1)
+			require.Len(t, app.exemplars, 1)
+			require.Len(t, app.metadata, 1)
+			require.Equal(t, float64(2), counterValue(t, reg, "prometheus_api_remote_write_invalid_labels_samples_total"))
+		})
+
+		t.Run("unsorted exemplar labels rejected with 400 while valid sample and sorted exemplar succeed", func(t *testing.T) {
+			rec, app, _ := sendV2(t, []writev2.TimeSeries{
+				{
+					LabelsRefs: []uint32{1, 2, 3, 4},
+					Samples:    []writev2.Sample{{Timestamp: 100, Value: 1}},
+					Exemplars: []writev2.Exemplar{
+						{
+							// Unsorted: trace_id="abc", a="1"
+							LabelsRefs: []uint32{7, 8, 3, 4},
+							Value:      1.5,
+							Timestamp:  100,
+						},
+						{
+							// Sorted: a="1", trace_id="abc"
+							LabelsRefs: []uint32{3, 4, 7, 8},
+							Value:      2.5,
+							Timestamp:  200,
+						},
+					},
+				},
+			}, symbols, false, false)
+			require.Equal(t, http.StatusBadRequest, rec.Code)
+			require.Contains(t, rec.Body.String(), errUnsortedLabels.Error())
+			expectHeaderValue(t, 1, rec.Header().Get(rw20WrittenSamplesHeader))
+			expectHeaderValue(t, 1, rec.Header().Get(rw20WrittenExemplarsHeader))
+			require.Len(t, app.samples, 1)
+			require.Len(t, app.exemplars, 1)
+			require.Equal(t, int64(200), app.exemplars[0].t)
+		})
+	})
+}
+
+func counterValue(t *testing.T, g prometheus.Gatherer, name string) float64 {
+	t.Helper()
+	mfs, err := g.Gather()
+	require.NoError(t, err)
+	for _, mf := range mfs {
+		if mf.GetName() == name {
+			require.Len(t, mf.GetMetric(), 1)
+			return mf.GetMetric()[0].GetCounter().GetValue()
+		}
+	}
+	t.Fatalf("metric %s not found", name)
+	return 0
 }
