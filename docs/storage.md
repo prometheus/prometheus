@@ -17,7 +17,9 @@ a metadata file,  and an index file (which maps metric names and labels to the t
 in the chunks directory). The samples in the chunks directory are organized into one 
 or more segment files, each up to 512 MB by default. When series are deleted via the API, 
 the deletion records are stored in separate tombstone files rather than being immediately 
-removed from the chunk segments.
+removed from the chunk segments. The maximum segment size can be lowered with
+`--storage.tsdb.max-block-chunk-segment-size` (minimum 1MB). That flag is hidden from
+`--help`.
 
 The current block for incoming samples is kept in memory and is not fully
 persisted. It is secured against crashes by a write-ahead log (WAL) that can be
@@ -131,6 +133,12 @@ local storage as unrecoverable corruptions may happen. NFS filesystems
 (including AWS's EFS) are not supported. NFS could be POSIX-compliant,
 but most implementations are not. It is strongly recommended to use a
 local filesystem for reliability.
+
+On copy-on-write filesystems such as Btrfs, each chunk segment is preallocated
+at the configured maximum size (512 MB by default), so allocated-space tools
+can report far more usage than the samples occupy. If that fills a
+size-limited volume, lower `--storage.tsdb.max-block-chunk-segment-size`
+(minimum 1MB). The flag is hidden from `--help`.
 
 If both time and size retention policies are specified, whichever triggers first
 will be used.
