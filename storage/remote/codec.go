@@ -190,6 +190,10 @@ func FromQueryResult(sortSeries bool, res *prompb.QueryResult) storage.SeriesSet
 			return errSeriesSet{err: err}
 		}
 		lbls := ts.ToLabels(&b, nil)
+		// The check above only sees adjacent duplicates, remote labels need not be sorted.
+		if name, dup := lbls.HasDuplicateLabelNames(); dup {
+			return errSeriesSet{err: fmt.Errorf("duplicate label with name: %v", name)}
+		}
 		series = append(series, &concreteSeries{labels: lbls, floats: ts.Samples, histograms: ts.Histograms})
 	}
 
