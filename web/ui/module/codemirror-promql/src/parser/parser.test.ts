@@ -1246,6 +1246,11 @@ describe('promql operations', () => {
       expectedDiag: [],
     },
     {
+      expr: 'info(foo, {data=~".*"})',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [],
+    },
+    {
       expr: '{"__name__"="foo", __name__="bar"}',
       expectedValueType: ValueType.vector,
       expectedDiag: [
