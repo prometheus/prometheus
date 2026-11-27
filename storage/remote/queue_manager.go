@@ -1793,6 +1793,21 @@ func (s *shards) stop() {
 	s.hardShutdown()
 	<-s.done
 
+	// In this case we drop all samples in the buffer and the queue.
+	// Remove them from pending and mark them as failed.
+	droppedSamples := s.enqueuedSamples.Swap(0)
+	droppedExemplars := s.enqueuedExemplars.Swap(0)
+	droppedHistograms := s.enqueuedHistograms.Swap(0)
+	s.qm.metrics.pendingSamples.Sub(float64(droppedSamples))
+	s.qm.metrics.pendingExemplars.Sub(float64(droppedExemplars))
+	s.qm.metrics.pendingHistograms.Sub(float64(droppedHistograms))
+	s.qm.metrics.failedSamplesTotal.Add(float64(droppedSamples))
+	s.qm.metrics.failedExemplarsTotal.Add(float64(droppedExemplars))
+	s.qm.metrics.failedHistogramsTotal.Add(float64(droppedHistograms))
+	s.samplesDroppedOnHardShutdown.Add(uint32(droppedSamples))
+	s.exemplarsDroppedOnHardShutdown.Add(uint32(droppedExemplars))
+	s.histogramsDroppedOnHardShutdown.Add(uint32(droppedHistograms))
+
 	// Log error for any dropped samples, exemplars, or histograms.
 	logDroppedError := func(t string, counter atomic.Uint32) {
 		if dropped := counter.Load(); dropped > 0 {
@@ -2078,20 +2093,6 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 	for {
 		select {
 		case <-ctx.Done():
-			// In this case we drop all samples in the buffer and the queue.
-			// Remove them from pending and mark them as failed.
-			droppedSamples := int(s.enqueuedSamples.Load())
-			droppedExemplars := int(s.enqueuedExemplars.Load())
-			droppedHistograms := int(s.enqueuedHistograms.Load())
-			s.qm.metrics.pendingSamples.Sub(float64(droppedSamples))
-			s.qm.metrics.pendingExemplars.Sub(float64(droppedExemplars))
-			s.qm.metrics.pendingHistograms.Sub(float64(droppedHistograms))
-			s.qm.metrics.failedSamplesTotal.Add(float64(droppedSamples))
-			s.qm.metrics.failedExemplarsTotal.Add(float64(droppedExemplars))
-			s.qm.metrics.failedHistogramsTotal.Add(float64(droppedHistograms))
-			s.samplesDroppedOnHardShutdown.Add(uint32(droppedSamples))
-			s.exemplarsDroppedOnHardShutdown.Add(uint32(droppedExemplars))
-			s.histogramsDroppedOnHardShutdown.Add(uint32(droppedHistograms))
 			return
 
 		case batch, ok := <-batchQueue:
@@ -2189,6 +2190,23 @@ func (s *shards) updateMetrics(_ context.Context, err error, sampleCount, exempl
 	if exemplarDiff > 0 {
 		s.qm.metrics.failedExemplarsTotal.Add(float64(exemplarDiff))
 	}
+	// Pending samples/exemplars/histograms also should be subtracted, as an error means
+	// they will not be retried.
+	s.qm.metrics.pendingSamples.Sub(float64(sampleCount))
+	s.qm.metrics.pendingExemplars.Sub(float64(exemplarCount))
+	s.qm.metrics.pendingHistograms.Sub(float64(histogramCount))
+	s.enqueuedSamples.Sub(int64(sampleCount))
+	s.enqueuedExemplars.Sub(int64(exemplarCount))
+	s.enqueuedHistograms.Sub(int64(histogramCount))
+
+	// Cancelled context means we're shutting down some shards
+	// and the data being sent by these shards is dropped.
+	if errors.Is(err, context.Canceled) {
+		s.samplesDroppedOnHardShutdown.Add(uint32(max(sampleDiff, 0)))
+		s.exemplarsDroppedOnHardShutdown.Add(uint32(max(exemplarDiff, 0)))
+		s.histogramsDroppedOnHardShutdown.Add(uint32(max(histogramDiff, 0)))
+		return
+	}
 	if err != nil {
 		s.qm.logger.Error("non-recoverable error", "failedSampleCount", sampleDiff, "failedHistogramCount", histogramDiff, "failedExemplarCount", exemplarDiff, "err", err)
 	} else if sampleDiff+exemplarDiff+histogramDiff > 0 {
@@ -2205,15 +2223,6 @@ func (s *shards) updateMetrics(_ context.Context, err error, sampleCount, exempl
 	s.qm.dataOut.incr(int64(sampleCount + exemplarCount + histogramCount))
 	s.qm.dataOutDuration.incr(int64(duration))
 	s.qm.lastSendTimestamp.Store(time.Now().Unix())
-
-	// Pending samples/exemplars/histograms also should be subtracted, as an error means
-	// they will not be retried.
-	s.qm.metrics.pendingSamples.Sub(float64(sampleCount))
-	s.qm.metrics.pendingExemplars.Sub(float64(exemplarCount))
-	s.qm.metrics.pendingHistograms.Sub(float64(histogramCount))
-	s.enqueuedSamples.Sub(int64(sampleCount))
-	s.enqueuedExemplars.Sub(int64(exemplarCount))
-	s.enqueuedHistograms.Sub(int64(histogramCount))
 }
 
 // sendSamplesWithBackoff to the remote storage with backoff for recoverable errors.
