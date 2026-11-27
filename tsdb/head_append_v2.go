@@ -289,7 +289,7 @@ func (a *headAppenderV2) appendFloat(s *memSeries, st, t int64, v float64, fastR
 	}
 	if err == nil {
 		s.markPendingCommit()
-		a.trackSeriesRecord(s, s.lset)
+		a.trackSeriesRecord(s)
 	}
 	s.Unlock()
 	if delta > 0 {
@@ -321,7 +321,7 @@ func (a *headAppenderV2) appendHistogram(s *memSeries, st, t int64, h *histogram
 	}
 	if err == nil {
 		s.markPendingCommit()
-		a.trackSeriesRecord(s, s.lset)
+		a.trackSeriesRecord(s)
 	}
 	s.Unlock()
 	if delta > 0 {
@@ -357,7 +357,7 @@ func (a *headAppenderV2) appendFloatHistogram(s *memSeries, st, t int64, fh *his
 	}
 	if err == nil {
 		s.markPendingCommit()
-		a.trackSeriesRecord(s, s.lset)
+		a.trackSeriesRecord(s)
 	}
 	s.Unlock()
 	if delta > 0 {

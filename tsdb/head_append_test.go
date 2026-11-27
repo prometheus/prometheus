@@ -98,17 +98,118 @@ func TestNewSeriesRecordPrecedesSamplesInWAL(t *testing.T) {
 }
 
 func TestRollbackDoesNotWriteWAL(t *testing.T) {
-	for _, version := range []int{1, 2} {
+	for name, tc := range map[string]struct {
+		version      int
+		withMetadata bool
+	}{
+		"v1": {version: 1},
+		"v2": {version: 2},
+		// Rollback must also release the reservation taken for AppenderV2 metadata.
+		"v2_with_metadata": {version: 2, withMetadata: true},
+	} {
 		for _, compress := range []compression.Type{compression.None, compression.Snappy, compression.Zstd} {
-			t.Run(fmt.Sprintf("v%d/compress=%s", version, compress), func(t *testing.T) {
-				h, wal := newTestHead(t, 1000, compress, false)
-				app, appendSample := newWALSeriesRecordTestAppender(t, h, version)
-				_, err := appendSample(0, labels.FromStrings("a", "b"), 1, 2)
+			t.Run(fmt.Sprintf("%s/compress=%s", name, compress), func(t *testing.T) {
+				opts := newTestHeadDefaultOptions(1000, false)
+				opts.EnableMetadataWALRecords = tc.withMetadata
+				h, wal := newTestHeadWithOptions(t, compress, opts)
+				app, appendSample := newWALSeriesRecordTestAppender(t, h, tc.version)
+				var err error
+				if tc.withMetadata {
+					_, err = app.(storage.AppenderV2).Append(0, labels.FromStrings("a", "b"), 0, 1, 2, nil, nil, storage.AOptions{
+						Metadata: metadata.Metadata{Help: "Test metadata."},
+					})
+				} else {
+					_, err = appendSample(0, labels.FromStrings("a", "b"), 1, 2)
+				}
 				require.NoError(t, err)
 				require.NoError(t, app.Rollback())
 				require.Empty(t, readTestWAL(t, wal.Dir()))
 				h.gc()
 				require.Zero(t, h.NumSeries(), "rollback must release all reservations")
+				require.Zero(t, prom_testutil.ToFloat64(h.metrics.pendingCommitUnderflow))
+			})
+		}
+	}
+}
+
+func TestCommitLogsOnlyReferencedSeries(t *testing.T) {
+	for _, version := range []int{1, 2} {
+		for name, tc := range map[string]struct {
+			appendValidSample bool
+			appendExemplar    bool
+		}{
+			"rejected_only": {},
+			"mixed":         {appendValidSample: true},
+			// An accepted exemplar requires the series record even when its sample was rejected.
+			"rejected_with_exemplar": {appendExemplar: true},
+		} {
+			t.Run(fmt.Sprintf("v%d/%s", version, name), func(t *testing.T) {
+				opts := newTestHeadDefaultOptions(1000, false)
+				opts.OutOfOrderTimeWindow.Store(100)
+				h, wal := newTestHeadWithOptions(t, compression.None, opts)
+				appender, appendSample := newWALSeriesRecordTestAppender(t, h, version)
+				_, err := appendSample(0, labels.FromStrings("series", "existing"), 1000, 1)
+				require.NoError(t, err)
+				require.NoError(t, appender.Commit())
+				before := len(readTestWAL(t, wal.Dir()))
+				require.Equal(t, 2, before)
+
+				appender, appendSample = newWALSeriesRecordTestAppender(t, h, version)
+				rejectedLabels := labels.FromStrings("series", "rejected")
+				_, err = appendSample(0, rejectedLabels, 1, 1)
+				require.ErrorIs(t, err, storage.ErrTooOldSample)
+				require.Equal(t, uint64(2), h.NumSeries(), "the rejected sample must have created an empty series")
+				var ref storage.SeriesRef
+				recordLabels := labels.FromStrings("series", "valid")
+				if tc.appendValidSample {
+					ref, err = appendSample(0, recordLabels, 1000, 1)
+					require.NoError(t, err)
+				}
+				ex := exemplar.Exemplar{Labels: labels.FromStrings("trace_id", "test"), Value: 1, Ts: 1000, HasTs: true}
+				if tc.appendExemplar {
+					recordLabels = rejectedLabels
+					if version == 1 {
+						ref, err = appender.(storage.ExemplarAppender).AppendExemplar(0, rejectedLabels, ex)
+					} else {
+						ref, err = appender.(storage.ExemplarAppenderV2).AppendExemplars(0, rejectedLabels, []exemplar.Exemplar{ex})
+					}
+					require.NoError(t, err)
+				}
+				require.NoError(t, appender.Commit())
+				recs := readTestWAL(t, wal.Dir())[before:]
+				wantSeries := uint64(1)
+				if tc.appendValidSample || tc.appendExemplar {
+					require.Len(t, recs, 2)
+					require.IsType(t, []record.RefSeries{}, recs[0])
+					series := recs[0].([]record.RefSeries)
+					require.Len(t, series, 1)
+					require.Equal(t, chunks.HeadSeriesRef(ref), series[0].Ref)
+					require.True(t, labels.Equal(recordLabels, series[0].Labels))
+					switch rec := recs[1].(type) {
+					case []record.RefSample:
+						require.True(t, tc.appendValidSample, "unexpected sample record")
+						require.Equal(t, []record.RefSample{{Ref: chunks.HeadSeriesRef(ref), T: 1000, V: 1}}, rec)
+					case []record.RefExemplar:
+						require.True(t, tc.appendExemplar, "unexpected exemplar record")
+						require.Len(t, rec, 1)
+						require.Equal(t, chunks.HeadSeriesRef(ref), rec[0].Ref)
+						require.Equal(t, ex.Ts, rec[0].T)
+						require.Equal(t, ex.Value, rec[0].V)
+						require.True(t, labels.Equal(ex.Labels, rec[0].Labels))
+					default:
+						t.Fatalf("unexpected WAL record type: %T", rec)
+					}
+					wantSeries++
+				} else {
+					require.Empty(t, recs)
+				}
+				h.gc()
+				require.Equal(t, wantSeries, h.NumSeries(), "GC must remove series without samples or live exemplars")
+				if tc.appendExemplar {
+					// Expire the exemplar to verify that its reservation was released too.
+					require.NoError(t, h.Truncate(1001))
+					require.Zero(t, h.NumSeries())
+				}
 				require.Zero(t, prom_testutil.ToFloat64(h.metrics.pendingCommitUnderflow))
 			})
 		}
@@ -290,50 +391,60 @@ func TestWALSeriesRecordDuringSeriesPublication(t *testing.T) {
 }
 
 func TestWALSeriesRecordAfterSeriesRemoval(t *testing.T) {
-	for _, removal := range []string{"eviction", "gc"} {
-		t.Run(removal, func(t *testing.T) {
-			opts := newTestHeadDefaultOptions(10000, false)
-			opts.EnableMetadataWALRecords = true
-			h, wal := newTestHeadWithOptions(t, compression.None, opts)
-			h.initTime(0)
-			lset := labels.FromStrings("name", "removed")
-			creator, borrower := h.Appender(t.Context()), h.Appender(t.Context())
-			ref, err := creator.Append(0, lset, 200, 1)
-			require.NoError(t, err)
-			_, err = borrower.UpdateMetadata(ref, lset, metadata.Metadata{Help: "Pending metadata."})
-			require.NoError(t, err)
-			require.NoError(t, wal.Close())
-			require.Error(t, creator.Commit())
-			h.wal, err = wlog.New(nil, nil, filepath.Join(t.TempDir(), "wal"), compression.None)
-			require.NoError(t, err)
-			remove := func(mint int64) {
-				if removal == "gc" {
-					require.NoError(t, h.Truncate(mint))
-					return
-				}
-				_, err := h.gcSeries([]storage.SeriesRef{ref}, math.MaxInt64, func(*memSeries) bool { return true })
+	for _, version := range []int{1, 2} {
+		for name, useGC := range map[string]bool{"eviction": false, "gc": true} {
+			t.Run(fmt.Sprintf("v%d/%s", version, name), func(t *testing.T) {
+				opts := newTestHeadDefaultOptions(10000, false)
+				opts.EnableMetadataWALRecords = true
+				h, wal := newTestHeadWithOptions(t, compression.None, opts)
+				h.initTime(0)
+				lset := labels.FromStrings("name", "removed")
+				firstAppender, appendFirstSample := newWALSeriesRecordTestAppender(t, h, version)
+				secondAppender, _ := newWALSeriesRecordTestAppender(t, h, version)
+				ref, err := appendFirstSample(0, lset, 200, 1)
 				require.NoError(t, err)
-			}
-			remove(160)
-			require.NotNil(t, h.series.getByID(chunks.HeadSeriesRef(ref)), "queued metadata must prevent removal")
-			require.NoError(t, borrower.Rollback())
-			remove(161)
-			require.Nil(t, h.series.getByID(chunks.HeadSeriesRef(ref)), "rollback must release the metadata reservation")
-			replacement := h.Appender(t.Context())
-			newRef, err := replacement.Append(0, lset, 300, 3)
-			require.NoError(t, err)
-			require.NotEqual(t, ref, newRef)
-			require.NoError(t, replacement.Commit())
-			var refs []chunks.HeadSeriesRef
-			for _, rec := range readTestWAL(t, h.wal.Dir()) {
-				if series, ok := rec.([]record.RefSeries); ok {
-					for _, s := range series {
-						refs = append(refs, s.Ref)
+				meta := metadata.Metadata{Help: "Pending metadata."}
+				if version == 1 {
+					_, err = secondAppender.(storage.Appender).UpdateMetadata(ref, lset, meta)
+				} else {
+					// AppenderV2 queues metadata together with a sample.
+					_, err = secondAppender.(storage.AppenderV2).Append(ref, lset, 0, 100, 1, nil, nil, storage.AOptions{Metadata: meta})
+				}
+				require.NoError(t, err)
+				require.NoError(t, wal.Close())
+				require.Error(t, firstAppender.Commit())
+				h.wal, err = wlog.New(nil, nil, filepath.Join(t.TempDir(), "wal"), compression.None)
+				require.NoError(t, err)
+				remove := func(mint int64) {
+					if useGC {
+						require.NoError(t, h.Truncate(mint))
+						return
+					}
+					_, err := h.gcSeries([]storage.SeriesRef{ref}, math.MaxInt64, func(*memSeries) bool { return true })
+					require.NoError(t, err)
+				}
+				remove(160)
+				require.NotNil(t, h.series.getByID(chunks.HeadSeriesRef(ref)), "pending data must prevent removal")
+				require.NoError(t, secondAppender.Rollback())
+				remove(161)
+				require.Nil(t, h.series.getByID(chunks.HeadSeriesRef(ref)), "rollback must release all reservations")
+				replacement, appendReplacement := newWALSeriesRecordTestAppender(t, h, version)
+				newRef, err := appendReplacement(0, lset, 300, 3)
+				require.NoError(t, err)
+				require.NotEqual(t, ref, newRef)
+				require.NoError(t, replacement.Commit())
+				var refs []chunks.HeadSeriesRef
+				for _, rec := range readTestWAL(t, h.wal.Dir()) {
+					if series, ok := rec.([]record.RefSeries); ok {
+						for _, s := range series {
+							refs = append(refs, s.Ref)
+						}
 					}
 				}
-			}
-			require.Equal(t, []chunks.HeadSeriesRef{chunks.HeadSeriesRef(newRef)}, refs, "rollback must not log borrowed series")
-		})
+				require.Equal(t, []chunks.HeadSeriesRef{chunks.HeadSeriesRef(newRef)}, refs, "only the replacement series record should be logged")
+				require.Zero(t, prom_testutil.ToFloat64(h.metrics.pendingCommitUnderflow))
+			})
+		}
 	}
 }
 
@@ -350,25 +461,35 @@ func TestWALSeriesRecordsOverlappingBatches(t *testing.T) {
 				refs[i], err = creator.Append(0, labels.FromStrings("series", strconv.Itoa(i)), 200, 2)
 				require.NoError(t, err)
 			}
-			apps := make([]storage.AppenderTransaction, 2)
-			for i := range apps {
+			batches := [][]storage.SeriesRef{
+				refs[:2],
+				refs[1:],
+				// Use two appenders with only the shared ref so at least one finds it
+				// already logged, regardless of which committer logs it first.
+				refs[1:2],
+				refs[1:2],
+			}
+			apps := make([]storage.AppenderTransaction, len(batches))
+			for i, batch := range batches {
 				var appendSample func(storage.SeriesRef, labels.Labels, int64, float64) (storage.SeriesRef, error)
 				apps[i], appendSample = newWALSeriesRecordTestAppender(t, h, version)
-				for _, ref := range refs[i : i+2] {
+				for _, ref := range batch {
 					_, err := appendSample(ref, labels.EmptyLabels(), 100, 1)
 					require.NoError(t, err)
 				}
 			}
-			start := make(chan struct{})
 			var wg sync.WaitGroup
-			errs := make([]error, 2)
+			errs := make([]error, len(apps))
+			// Hold the series-record lock while starting the committers, yielding
+			// to each so they can wait for it before any series record is logged.
+			h.walSeriesMtx.Lock()
 			for i, app := range apps {
 				wg.Go(func() {
-					<-start
 					errs[i] = app.Commit()
 				})
+				runtime.Gosched()
 			}
-			close(start)
+			h.walSeriesMtx.Unlock()
 			wg.Wait()
 			for _, err := range errs {
 				require.NoError(t, err)
@@ -391,7 +512,7 @@ func TestWALSeriesRecordsOverlappingBatches(t *testing.T) {
 				}
 			}
 			require.Len(t, seen, 3)
-			require.Equal(t, 4, samples)
+			require.Equal(t, 6, samples)
 		})
 	}
 }
@@ -424,7 +545,8 @@ func TestMetadataGCBeforeReservation(t *testing.T) {
 			defer func() { _ = a.Rollback() }()
 			_, err = a.UpdateMetadata(oldRef, lbls, metadata.Metadata{Help: "Late metadata."})
 			require.ErrorContains(t, err, "unknown series")
-			require.NoError(t, a.Rollback())
+			// Commit to expose any metadata mistakenly queued before the error.
+			require.NoError(t, a.Commit())
 			wantSeries := uint64(0)
 			if replacement {
 				wantSeries = 1
@@ -495,44 +617,54 @@ func BenchmarkHeadAppender_WALSeriesRecords(b *testing.B) {
 							app := h.Appender(b.Context())
 							for _, ref := range refs[worker] {
 								if _, err := app.Append(ref, labels.EmptyLabels(), ts, float64(ts)); err != nil {
-									b.Fatal(err)
+									b.Error(errors.Join(err, app.Rollback()))
+									return
 								}
 								if tc.metadata {
 									if _, err := app.UpdateMetadata(ref, labels.EmptyLabels(), meta); err != nil {
-										b.Fatal(err)
+										b.Error(errors.Join(err, app.Rollback()))
+										return
 									}
 								}
 							}
 							for n := range tc.newSeries {
 								lset := labels.FromStrings("worker", workerLabel, "new", strconv.FormatInt(ts*int64(tc.newSeries)+int64(n), 10))
 								if _, err := app.Append(0, lset, ts, float64(ts)); err != nil {
-									b.Fatal(err)
+									b.Error(errors.Join(err, app.Rollback()))
+									return
 								}
 							}
 							if err := app.Commit(); err != nil {
-								b.Fatal(err)
+								b.Error(err)
+								return
 							}
 						} else {
 							app := h.AppenderV2(b.Context())
 							for _, ref := range refs[worker] {
 								if _, err := app.Append(ref, labels.EmptyLabels(), 0, ts, float64(ts), nil, nil, storage.AOptions{Metadata: meta}); err != nil {
-									b.Fatal(err)
+									b.Error(errors.Join(err, app.Rollback()))
+									return
 								}
 							}
 							for n := range tc.newSeries {
 								lset := labels.FromStrings("worker", workerLabel, "new", strconv.FormatInt(ts*int64(tc.newSeries)+int64(n), 10))
 								if _, err := app.Append(0, lset, 0, ts, float64(ts), nil, nil, storage.AOptions{}); err != nil {
-									b.Fatal(err)
+									b.Error(errors.Join(err, app.Rollback()))
+									return
 								}
 							}
 							if err := app.Commit(); err != nil {
-								b.Fatal(err)
+								b.Error(err)
+								return
 							}
 						}
 						ts++
 					}
 				})
 				b.StopTimer()
+				if b.Failed() {
+					return
+				}
 				require.Equal(b, uint64(100*len(refs)+tc.newSeries*b.N), h.NumSeries())
 				require.Zero(b, prom_testutil.ToFloat64(h.metrics.pendingCommitUnderflow))
 				b.ReportMetric(float64(100+tc.newSeries), "sample_appends/op")
