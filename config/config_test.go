@@ -486,6 +486,7 @@ var expectedConf = &Config{
 
 			ServiceDiscoveryConfigs: discovery.Configs{
 				&consul.SDConfig{
+					Role:            consul.DefaultSDConfig.Role,
 					Server:          "localhost:1234",
 					PathPrefix:      "/consul",
 					Token:           "mysecret",
