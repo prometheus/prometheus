@@ -3184,11 +3184,11 @@ func TestGetScrapeConfigs(t *testing.T) {
 			ScrapeProtocols:            opts.ScrapeProtocols,
 			MetricNameValidationScheme: model.UTF8Validation,
 			MetricNameEscapingScheme:   model.AllowUTF8,
-
-			MetricsPath:       "/metrics",
-			Scheme:            "http",
-			EnableCompression: true,
-			HTTPClientConfig:  config.DefaultHTTPClientConfig,
+			LabelValueLengthLimit:      1024 * 1024,
+			MetricsPath:                "/metrics",
+			Scheme:                     "http",
+			EnableCompression:          true,
+			HTTPClientConfig:           config.DefaultHTTPClientConfig,
 			ServiceDiscoveryConfigs: discovery.Configs{
 				discovery.StaticConfig{
 					{
@@ -3277,8 +3277,8 @@ func TestGetScrapeConfigs(t *testing.T) {
 			configFile: "testdata/scrape_config_files_glob.good.yml",
 			expectedResult: []*ScrapeConfig{
 				{
-					JobName: "prometheus",
-
+					JobName:                        "prometheus",
+					LabelValueLengthLimit:          1024 * 1024,
 					HonorTimestamps:                true,
 					ScrapeInterval:                 model.Duration(60 * time.Second),
 					ScrapeTimeout:                  DefaultGlobalConfig.ScrapeTimeout,
@@ -3316,8 +3316,8 @@ func TestGetScrapeConfigs(t *testing.T) {
 					},
 				},
 				{
-					JobName: "node",
-
+					JobName:                        "node",
+					LabelValueLengthLimit:          1024 * 1024,
 					HonorTimestamps:                true,
 					ScrapeInterval:                 model.Duration(15 * time.Second),
 					ScrapeTimeout:                  DefaultGlobalConfig.ScrapeTimeout,
@@ -3770,6 +3770,58 @@ func TestGetScrapeConfigs_Loaded(t *testing.T) {
 		_, err = c.GetScrapeConfigs()
 		require.NoError(t, err)
 	})
+}
+
+func TestScrapeConfigLabelLengthLimits(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		cfg         string
+		expectedErr string
+	}{
+		{
+			name: "label_value_length_limit exceeds 16MB",
+			cfg: `
+scrape_configs:
+  - job_name: test
+    label_value_length_limit: 16777217
+    static_configs:
+      - targets: ['localhost:9090']
+`,
+			expectedErr: "label_value_length_limit (16777217) cannot exceed maximum encodable size of 16MB",
+		},
+		{
+			name: "label_name_length_limit exceeds 16MB",
+			cfg: `
+scrape_configs:
+  - job_name: test
+    label_name_length_limit: 16777217
+    static_configs:
+      - targets: ['localhost:9090']
+`,
+			expectedErr: "label_name_length_limit (16777217) cannot exceed maximum encodable size of 16MB",
+		},
+		{
+			name: "label length limits within 16MB boundary",
+			cfg: `
+scrape_configs:
+  - job_name: test
+    label_name_length_limit: 100
+    label_value_length_limit: 1048576
+    static_configs:
+      - targets: ['localhost:9090']
+`,
+			expectedErr: "",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := Load(tc.cfg, promslog.NewNopLogger())
+			if tc.expectedErr != "" {
+				require.ErrorContains(t, err, tc.expectedErr)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
 }
 
 func TestRemoteWriteConfig_Mode(t *testing.T) {

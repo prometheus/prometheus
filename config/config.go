@@ -172,10 +172,11 @@ var (
 
 	// DefaultGlobalConfig is the default global configuration.
 	DefaultGlobalConfig = GlobalConfig{
-		ScrapeInterval:     model.Duration(1 * time.Minute),
-		ScrapeTimeout:      model.Duration(10 * time.Second),
-		EvaluationInterval: model.Duration(1 * time.Minute),
-		RuleQueryOffset:    model.Duration(0 * time.Minute),
+		LabelValueLengthLimit: 1024 * 1024,
+		ScrapeInterval:        model.Duration(1 * time.Minute),
+		ScrapeTimeout:         model.Duration(10 * time.Second),
+		EvaluationInterval:    model.Duration(1 * time.Minute),
+		RuleQueryOffset:       model.Duration(0 * time.Minute),
 		// This is nil to be able to distinguish between the case when
 		// the normal default should be used and the case when a
 		// new default is needed due to an enabled feature flag.
@@ -681,6 +682,11 @@ func (c *GlobalConfig) UnmarshalYAML(unmarshal func(any) error) error {
 
 	// First set the correct scrape interval, then check that the timeout
 	// (inferred or explicit) is not greater than that.
+
+	if gc.LabelValueLengthLimit == 0 {
+		gc.LabelValueLengthLimit = DefaultGlobalConfig.LabelValueLengthLimit
+	}
+
 	if gc.ScrapeInterval == 0 {
 		gc.ScrapeInterval = DefaultGlobalConfig.ScrapeInterval
 	}
@@ -968,6 +974,17 @@ func (c *ScrapeConfig) Validate(globalConfig GlobalConfig) error {
 	if c.LabelValueLengthLimit == 0 {
 		c.LabelValueLengthLimit = globalConfig.LabelValueLengthLimit
 	}
+
+	const maxEncodableLabelLength = 1 << 24
+
+	if c.LabelValueLengthLimit > maxEncodableLabelLength {
+		return fmt.Errorf("label_value_length_limit (%d) cannot exceed maximum encodable size of 16MB", c.LabelValueLengthLimit)
+	}
+
+	if c.LabelNameLengthLimit > maxEncodableLabelLength {
+		return fmt.Errorf("label_name_length_limit (%d) cannot exceed maximum encodable size of 16MB", c.LabelNameLengthLimit)
+	}
+
 	if c.KeepDroppedTargets == 0 {
 		c.KeepDroppedTargets = globalConfig.KeepDroppedTargets
 	}
