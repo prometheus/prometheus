@@ -2819,7 +2819,7 @@ func (h *Head) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shouldEvict 
 		h.series.pendingTombstones.reserve(len(seriesRefs))
 		defer h.series.pendingTombstones.releaseAll()
 	}
-	deleted, affected, chunksRemoved, staleSeriesDeleted, histogramSeriesDeleted, histogramBucketsDeleted := h.series.gcSeries(seriesRefs, maxt, shouldEvict)
+	deleted, affected, lastExemplarTs, chunksRemoved, staleSeriesDeleted, histogramSeriesDeleted, histogramBucketsDeleted := h.series.gcSeries(seriesRefs, maxt, shouldEvict)
 
 	// Record the deleted series refs in the WAL so that we can ignore them during replay. This is done as soon as
 	// the series are unlinked, before deleting them from the postings, which takes long: the creation of series
@@ -2859,11 +2859,11 @@ func (h *Head) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shouldEvict 
 
 	if h.wal != nil {
 		h.walExpiriesMtx.Lock()
-		// Retain series declarations while WAL samples up to maxt may still be replayed.
-		// Preserve any later expiry already recorded.
+		// Retain series declarations while WAL samples up to maxt, or exemplars after it,
+		// may still be replayed. Preserve any later expiry already recorded.
 		for ref := range deleted {
 			hRef := chunks.HeadSeriesRef(ref)
-			h.walExpiries[hRef] = max(maxt, h.walExpiries[hRef])
+			h.walExpiries[hRef] = max(maxt, lastExemplarTs[hRef], h.walExpiries[hRef])
 		}
 		h.walExpiriesMtx.Unlock()
 	}
@@ -2904,11 +2904,18 @@ func (h *Head) deleteSeriesByID(refs []chunks.HeadSeriesRef) {
 		h.series.hashes[hashStripe].del(hash, series.ref)
 		h.series.locks[hashStripe].Unlock()
 
-		// Keep the series record in checkpoints until its last sample time; while the
-		// WAL may still hold samples for this ref, they can't outlive maxt.
+		// Keep the series record in checkpoints until its last sample or exemplar time,
+		// whichever is later, as the WAL may still hold records for this ref until then.
+		// Exemplar timestamps are not bounded by sample timestamps.
 		if h.wal != nil {
-			if maxt := series.maxTime(); maxt != math.MinInt64 {
-				h.updateWALExpiry(series.ref, maxt)
+			keepUntil := series.maxTime()
+			series.Lock()
+			if series.hasExemplar {
+				keepUntil = max(keepUntil, series.lastExemplarTs)
+			}
+			series.Unlock()
+			if keepUntil != math.MinInt64 {
+				h.updateWALExpiry(series.ref, keepUntil)
 			}
 		}
 
@@ -2958,12 +2965,14 @@ func (h *Head) deleteSeriesByID(refs []chunks.HeadSeriesRef) {
 
 // gcSeries walks all series and removes those whose ref is in seriesRefs, whose maxTime is
 // <= maxt, and for which shouldEvict returns true. Returns the set of deleted refs, the set
-// of label-name/value pairs whose postings are affected, the count of removed chunks, and
-// the number of deleted series that carried a stale-NaN last value.
-func (s *stripeSeries) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shouldEvict func(*memSeries) bool) (_ map[storage.SeriesRef]struct{}, _ map[labels.Label]struct{}, _, _, _, _ int) {
+// of label-name/value pairs whose postings are affected, the last exemplar timestamp of the
+// deleted series whose exemplars are after maxt, the count of removed chunks, and the number
+// of deleted series that carried a stale-NaN last value.
+func (s *stripeSeries) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shouldEvict func(*memSeries) bool) (_ map[storage.SeriesRef]struct{}, _ map[labels.Label]struct{}, _ map[chunks.HeadSeriesRef]int64, _, _, _, _ int) {
 	var (
 		deleted                 = map[storage.SeriesRef]struct{}{}
 		affected                = map[labels.Label]struct{}{}
+		lastExemplarTs          map[chunks.HeadSeriesRef]int64
 		rmChunks                = 0
 		staleSeriesDeleted      = 0
 		histogramSeriesDeleted  = 0
@@ -3011,6 +3020,13 @@ func (s *stripeSeries) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shou
 		}
 
 		deleted[storage.SeriesRef(series.ref)] = struct{}{}
+		// Exemplar timestamps are not bounded by sample timestamps.
+		if series.hasExemplar && series.lastExemplarTs > maxt {
+			if lastExemplarTs == nil {
+				lastExemplarTs = map[chunks.HeadSeriesRef]int64{}
+			}
+			lastExemplarTs[series.ref] = series.lastExemplarTs
+		}
 		// Keep head chunks intact for readers that still reference the series.
 		series.setGCed()
 		stale, isHist, buckets := series.sampleState()
@@ -3031,7 +3047,7 @@ func (s *stripeSeries) gcSeries(seriesRefs []storage.SeriesRef, maxt int64, shou
 
 	s.iterForDeletion(check)
 
-	return deleted, affected, rmChunks, staleSeriesDeleted, histogramSeriesDeleted, histogramBucketsDeleted
+	return deleted, affected, lastExemplarTs, rmChunks, staleSeriesDeleted, histogramSeriesDeleted, histogramBucketsDeleted
 }
 
 // The iterForDeletion function iterates through all series, invoking the checkDeletedFunc for each.

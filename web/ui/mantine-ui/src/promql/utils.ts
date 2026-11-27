@@ -283,8 +283,14 @@ export const labelNameContainsExtendedCharset = (str: string) => {
   return !labelNameCharsetRe.test(str);
 };
 
+// Escapes a string for use inside a double-quoted PromQL string. Besides
+// backslashes and double quotes, line breaks have to be escaped as well, since
+// PromQL does not allow a raw newline inside a double-quoted string.
 export const escapeString = (str: string) => {
-  return str.replace(/([\\"])/g, "\\$1");
+  return str
+    .replace(/([\\"])/g, "\\$1")
+    .replace(/\n/g, "\\n")
+    .replace(/\r/g, "\\r");
 };
 
 export const maybeQuoteLabelName = (str: string) => {

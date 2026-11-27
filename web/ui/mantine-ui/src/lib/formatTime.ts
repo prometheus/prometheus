@@ -58,7 +58,9 @@ const formatDuration = (
   }
 
   const sign = d < 0 ? "-" : "";
-  let ms = Math.abs(d);
+  // Round to whole milliseconds first, so that e.g. 59999.6ms carries over to
+  // "1m" instead of being shown as "60s" (or "59m 60s" for one hour).
+  let ms = Math.round(Math.abs(d));
   const r: string[] = [];
 
   for (const { unit, mult, exact } of [
