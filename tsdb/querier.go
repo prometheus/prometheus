@@ -612,7 +612,10 @@ type blockBaseSeriesSet struct {
 
 	bufChks []chunks.Meta
 	builder labels.ScratchBuilder
-	err     error
+	// Trim intervals for series without tombstones.
+	// We cache these intervals here so multiple series can re-use the same interval slice.
+	trimFrontOnly, trimBackOnly, trimBoth tombstones.Intervals
+	err                                   error
 }
 
 func (b *blockBaseSeriesSet) Next() bool {
@@ -681,11 +684,32 @@ func (b *blockBaseSeriesSet) Next() bool {
 			continue
 		}
 
-		if trimFront {
-			intervals = intervals.Add(tombstones.Interval{Mint: math.MinInt64, Maxt: b.mint - 1})
-		}
-		if trimBack {
-			intervals = intervals.Add(tombstones.Interval{Mint: b.maxt + 1, Maxt: math.MaxInt64})
+		frontInterval := tombstones.Interval{Mint: math.MinInt64, Maxt: b.mint - 1}
+		backInterval := tombstones.Interval{Mint: b.maxt + 1, Maxt: math.MaxInt64}
+		if len(intervals) > 0 {
+			// We have tombstones, we can't use cached trim intervals.
+			if trimFront {
+				intervals = intervals.Add(frontInterval)
+			}
+			if trimBack {
+				intervals = intervals.Add(backInterval)
+			}
+		} else if trimFront || trimBack {
+			// We don't have tombstones, so we can use cached trim intervals.
+			// But first we need to check if these are already cached or not.
+			if b.trimBoth == nil {
+				b.trimFrontOnly = tombstones.Intervals{frontInterval}
+				b.trimBackOnly = tombstones.Intervals{backInterval}
+				b.trimBoth = tombstones.Intervals{frontInterval, backInterval}
+			}
+			switch {
+			case trimFront && trimBack:
+				intervals = b.trimBoth
+			case trimFront:
+				intervals = b.trimFrontOnly
+			default:
+				intervals = b.trimBackOnly
+			}
 		}
 
 		b.curr.labels = b.builder.Labels()
