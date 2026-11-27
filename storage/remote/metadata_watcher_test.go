@@ -153,3 +153,36 @@ func TestWatchScrapeManager_ReadyForCollection(t *testing.T) {
 
 	require.Equal(t, 2, wt.metadataAppended)
 }
+
+func TestWatchScrapeManager_DelayedMetadata(t *testing.T) {
+	wt := newMetadataWriteToMock()
+
+	metadata := &TestMetaStore{}
+	target := &scrape.Target{}
+	target.SetMetadataStore(metadata)
+
+	manager := &fakeManager{
+		activeTargets: map[string][]*scrape.Target{
+			"job": {target},
+		},
+	}
+
+	mw := NewMetadataWatcher(nil, nil, "", wt, interval, deadline)
+	mw.manager = manager
+
+	// No scraped metadata is available initially.
+	mw.collect()
+	require.Equal(t, 0, wt.metadataAppended)
+
+	// Simulate metadata becoming available after startup.
+	metadata.Metadata = []scrape.MetricMetadata{
+		{
+			MetricFamily: "up",
+			Type:         model.MetricTypeGauge,
+			Help:         "Target availability",
+		},
+	}
+
+	mw.collect()
+	require.Equal(t, 1, wt.metadataAppended)
+}
