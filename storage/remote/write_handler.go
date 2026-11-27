@@ -52,6 +52,26 @@ type writeHandler struct {
 
 const maxAheadTime = 10 * time.Minute
 
+var errUnsortedLabels = errors.New("labels are not sorted lexicographically")
+
+func areLabelsSorted(ls []prompb.Label) bool {
+	for i := 1; i < len(ls); i++ {
+		if ls[i].Name < ls[i-1].Name {
+			return false
+		}
+	}
+	return true
+}
+
+func areLabelRefsSorted(labelRefs []uint32, symbols []string) bool {
+	for i := 2; i < len(labelRefs); i += 2 {
+		if symbols[labelRefs[i]] < symbols[labelRefs[i-2]] {
+			return false
+		}
+	}
+	return true
+}
+
 // NewWriteHandler creates a http.Handler that accepts remote write requests with
 // the given message in acceptedMsgs and writes them to the provided appendableV2.
 // The appendableV2's AppenderV2 must also implement storage.ExemplarAppenderV2.
@@ -115,11 +135,13 @@ func (h *writeHandler) Store(r *http.Request, msgType remoteapi.WriteMessageType
 		}
 		if err = h.write(r.Context(), &req); err != nil {
 			switch {
-			case errors.Is(err, storage.ErrOutOfOrderSample), errors.Is(err, storage.ErrOutOfBounds), errors.Is(err, storage.ErrDuplicateSampleForTimestamp), errors.Is(err, storage.ErrTooOldSample):
+			case errors.Is(err, storage.ErrOutOfOrderSample),
+				errors.Is(err, storage.ErrOutOfBounds),
+				errors.Is(err, storage.ErrDuplicateSampleForTimestamp),
+				errors.Is(err, storage.ErrTooOldSample),
+				errors.Is(err, errUnsortedLabels),
+				isHistogramValidationError(err):
 				// Indicated an out-of-order sample is a bad request to prevent retries.
-				wr.SetStatusCode(http.StatusBadRequest)
-				return wr, err
-			case isHistogramValidationError(err):
 				wr.SetStatusCode(http.StatusBadRequest)
 				return wr, err
 			default:
@@ -156,6 +178,9 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 
 	appV2 := h.appendableV2.AppenderV2(ctx)
 	defer func() {
+		if samplesWithInvalidLabels > 0 {
+			h.samplesWithInvalidLabelsTotal.Add(float64(samplesWithInvalidLabels))
+		}
 		if err != nil {
 			_ = appV2.Rollback()
 			return
@@ -187,6 +212,10 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 			h.logger.Warn("Invalid labels for series.", "labels", ls.String(), "duplicated_label", duplicateLabel)
 			samplesWithInvalidLabels++
 			continue
+		} else if !areLabelsSorted(ts.Labels) {
+			h.logger.Warn("Invalid labels for series.", "labels", ls.String(), "err", errUnsortedLabels)
+			samplesWithInvalidLabels += len(ts.Samples) + len(ts.Histograms)
+			return fmt.Errorf("invalid labels for series, labels %v: %w", ls.String(), errUnsortedLabels)
 		}
 
 		ref, err := h.appendV1Samples(app, ts.Samples, ls)
@@ -204,29 +233,32 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 		if len(ts.Exemplars) > 0 {
 			exemplars = exemplars[:0]
 			for _, ep := range ts.Exemplars {
+				if !areLabelsSorted(ep.Labels) {
+					h.logger.Warn("Invalid labels for exemplar.", "series", ls.String(), "err", errUnsortedLabels)
+					continue
+				}
 				exemplars = append(exemplars, ep.ToExemplar(&b, nil))
 			}
 			// AppendExemplars requires exemplars sorted by timestamp.
-			slices.SortFunc(exemplars, exemplar.Compare)
-			if _, err := app.AppendExemplars(ref, ls, exemplars); err != nil {
-				if pErr, ok := errors.AsType[*storage.AppendPartialError](err); ok {
-					for _, eErr := range pErr.ExemplarErrors {
-						if errors.Is(eErr, storage.ErrOutOfOrderExemplar) {
-							outOfOrderExemplarErrs++
+			if len(exemplars) > 0 {
+				slices.SortFunc(exemplars, exemplar.Compare)
+				if _, err := app.AppendExemplars(ref, ls, exemplars); err != nil {
+					if pErr, ok := errors.AsType[*storage.AppendPartialError](err); ok {
+						for _, eErr := range pErr.ExemplarErrors {
+							if errors.Is(eErr, storage.ErrOutOfOrderExemplar) {
+								outOfOrderExemplarErrs++
+							}
 						}
 					}
+					// Since exemplar storage is still experimental, we don't fail the request on ingestion errors.
+					h.logger.Debug("Error while adding exemplars", "series", ls.String(), "exemplars", fmt.Sprintf("%+v", exemplars), "err", err)
 				}
-				// Since exemplar storage is still experimental, we don't fail the request on ingestion errors.
-				h.logger.Debug("Error while adding exemplars", "series", ls.String(), "exemplars", fmt.Sprintf("%+v", exemplars), "err", err)
 			}
 		}
 	}
 
 	if outOfOrderExemplarErrs > 0 {
 		h.logger.Warn("Error on ingesting out-of-order exemplars", "num_dropped", outOfOrderExemplarErrs)
-	}
-	if samplesWithInvalidLabels > 0 {
-		h.samplesWithInvalidLabelsTotal.Add(float64(samplesWithInvalidLabels))
 	}
 	return nil
 }
@@ -364,6 +396,10 @@ func (h *writeHandler) appendV2(app *timeLimitExemplarAppenderV2, req *writev2.R
 			badRequestErrs = append(badRequestErrs, fmt.Errorf("invalid labels for series, labels %v, duplicated label %s", ls.String(), duplicateLabel))
 			samplesWithInvalidLabels += len(ts.Samples) + len(ts.Histograms)
 			continue
+		} else if !areLabelRefsSorted(ts.LabelsRefs, req.Symbols) {
+			badRequestErrs = append(badRequestErrs, fmt.Errorf("invalid labels for series, labels %v: %w", ls.String(), errUnsortedLabels))
+			samplesWithInvalidLabels += len(ts.Samples) + len(ts.Histograms)
+			continue
 		}
 
 		// Validate that the TimeSeries has at least one sample or histogram.
@@ -443,6 +479,10 @@ func (h *writeHandler) appendV2(app *timeLimitExemplarAppenderV2, req *writev2.R
 				e, err := ep.ToExemplar(&b, req.Symbols)
 				if err != nil {
 					badRequestErrs = append(badRequestErrs, fmt.Errorf("parsing exemplar for series %v: %w", ls.String(), err))
+					continue
+				}
+				if !areLabelRefsSorted(ep.LabelsRefs, req.Symbols) {
+					badRequestErrs = append(badRequestErrs, fmt.Errorf("invalid labels for exemplar of series %v: %w", ls.String(), errUnsortedLabels))
 					continue
 				}
 				exemplars = append(exemplars, e)

@@ -295,6 +295,24 @@ func TestValidateLabelsAndMetricName(t *testing.T) {
 			expectedErr: "invalid label name: ",
 			description: "don't report as duplicate label name",
 		},
+		{
+			input: []prompb.Label{
+				{Name: "label2", Value: "v2"},
+				{Name: "__name__", Value: "name"},
+				{Name: "label1", Value: "v1"},
+			},
+			expectedErr: "",
+			description: "unsorted labels without duplicates",
+		},
+		{
+			input: []prompb.Label{
+				{Name: "label2", Value: "v2"},
+				{Name: "label1", Value: "v1"},
+				{Name: "label2", Value: "v3"},
+			},
+			expectedErr: "duplicate label with name: label2",
+			description: "unsorted labels with non-adjacent duplicate label names",
+		},
 	}
 
 	for _, test := range tests {
@@ -307,6 +325,46 @@ func TestValidateLabelsAndMetricName(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestFromQueryResult_UnsortedLabels(t *testing.T) {
+	t.Run("unsorted unique labels are sorted", func(t *testing.T) {
+		res := &prompb.QueryResult{
+			Timeseries: []*prompb.TimeSeries{
+				{
+					Labels: []prompb.Label{
+						{Name: "z", Value: "1"},
+						{Name: "__name__", Value: "test_metric"},
+						{Name: "a", Value: "2"},
+					},
+					Samples: []prompb.Sample{{Value: 1, Timestamp: 100}},
+				},
+			},
+		}
+		ss := FromQueryResult(false, res)
+		require.NoError(t, ss.Err())
+		require.True(t, ss.Next())
+		require.Equal(t, labels.FromStrings("__name__", "test_metric", "a", "2", "z", "1"), ss.At().Labels())
+		require.False(t, ss.Next())
+	})
+
+	t.Run("unsorted non-adjacent duplicate labels return error", func(t *testing.T) {
+		res := &prompb.QueryResult{
+			Timeseries: []*prompb.TimeSeries{
+				{
+					Labels: []prompb.Label{
+						{Name: "z", Value: "1"},
+						{Name: "__name__", Value: "test_metric"},
+						{Name: "z", Value: "2"},
+					},
+					Samples: []prompb.Sample{{Value: 1, Timestamp: 100}},
+				},
+			},
+		}
+		ss := FromQueryResult(false, res)
+		require.False(t, ss.Next())
+		require.EqualError(t, ss.Err(), "duplicate label with name: z")
+	})
 }
 
 func TestConcreteSeriesSet(t *testing.T) {
