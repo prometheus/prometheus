@@ -16,5 +16,12 @@
   "datacenter": "gra3",
   "os": "debian11_64",
   "reverse": "abcde-rev",
-  "serverId": 1234
+  "serverId": 1234,
+  "iam": {
+    "displayName": "abcde",
+    "id": "dedicated-server-id",
+    "state": "test",
+    "tags": {},
+    "urn": "urn:v1:eu:resource:dedicatedServer:abcde"
+  }
 }
