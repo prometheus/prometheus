@@ -40,7 +40,8 @@ import (
 )
 
 var (
-	patFileSDName = regexp.MustCompile(`^[^*]*(\*[^/]*)?\.(json|yml|yaml|JSON|YML|YAML)$`)
+	patFileSDName        = regexp.MustCompile(`^[^*]*(\*[^/]*)?\.(json|yml|yaml|JSON|YML|YAML)$`)
+	patFileSDNameWindows = regexp.MustCompile(`^[^*]*(\*[^/\\]*)?\.(json|yml|yaml|JSON|YML|YAML)$`)
 
 	// DefaultSDConfig is the default file SD configuration.
 	DefaultSDConfig = SDConfig{
@@ -89,8 +90,12 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 	if len(c.Files) == 0 {
 		return errors.New("file service discovery config must contain at least one path name")
 	}
+	pathPattern := patFileSDName
+	if filepath.Separator == '\\' {
+		pathPattern = patFileSDNameWindows
+	}
 	for _, name := range c.Files {
-		if !patFileSDName.MatchString(name) {
+		if !pathPattern.MatchString(name) {
 			return fmt.Errorf("path name %q is not valid for file discovery", name)
 		}
 	}
