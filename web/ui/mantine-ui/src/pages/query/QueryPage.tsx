@@ -18,8 +18,10 @@ import { InstantQueryResult } from "../../api/responseTypes/query";
 import { humanizeDuration } from "../../lib/formatTime";
 import { decodePanelOptionsFromURLParams } from "./urlStateEncoding";
 import { buttonIconStyle } from "../../styles";
+import { useI18n } from "../../i18nContext";
 
 export default function QueryPage() {
+  const { t } = useI18n();
   const panels = useAppSelector((state) => state.queryPage.panels);
   const dispatch = useAppDispatch();
   const [dismissedSample, setDismissedSample] = useState<number | null>(null);
@@ -82,7 +84,7 @@ export default function QueryPage() {
           mb="sm"
           icon={<IconAlertTriangle />}
           color="red"
-          title="Error fetching metrics list"
+          title={t("query.errorMetrics")}
         >
           Unable to fetch list of metric names: {metricNamesError.message}
         </Alert>
@@ -92,7 +94,7 @@ export default function QueryPage() {
           mb="sm"
           icon={<IconAlertTriangle />}
           color="red"
-          title="Error fetching server time"
+          title={t("query.errorServerTime")}
         >
           {timeError.message}
         </Alert>
@@ -100,11 +102,11 @@ export default function QueryPage() {
       {timeDelta > 30 && (
         <Alert
           mb="sm"
-          title="Server time is out of sync"
+          title={t("query.serverTimeOutOfSync")}
           color="red"
           icon={<IconAlertCircle />}
           withCloseButton
-          closeButtonLabel="Close"
+          closeButtonLabel={t("query.close")}
           onClose={() => setDismissedSample(timeResult!.receivedAtMs)}
         >
           Detected a time difference of{" "}
@@ -130,7 +132,7 @@ export default function QueryPage() {
         leftSection={<IconPlus style={buttonIconStyle} />}
         onClick={() => dispatch(addPanel())}
       >
-        Add query
+        {t("query.add")}
       </Button>
     </Box>
   );

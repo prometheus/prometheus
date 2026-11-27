@@ -29,6 +29,7 @@ import panelClasses from "../../Panel.module.css";
 import TargetLabels from "./TargetLabels";
 import ScrapeTimingDetails from "./ScrapeTimingDetails";
 import { targetPoolDisplayLimit } from "./TargetsPage";
+import { useI18n } from "../../i18nContext";
 
 type ScrapePool = {
   targets: Target[];
@@ -136,6 +137,7 @@ type ScrapePoolListProp = {
 
 const ScrapePoolList: FC<ScrapePoolListProp> = memo(
   ({ poolNames, selectedPool, healthFilter, searchFilter }) => {
+    const { t } = useI18n();
     // Based on the selected pool (if any), load the list of targets.
     const {
       data: {
@@ -181,8 +183,8 @@ const ScrapePoolList: FC<ScrapePoolListProp> = memo(
     return (
       <Stack>
         {allPoolNames.length === 0 ? (
-          <Alert title="No scrape pools found" icon={<IconInfoCircle />}>
-            No scrape pools found.
+          <Alert title={t("targets.noPools")} icon={<IconInfoCircle />}>
+            {t("targets.noPools")}.
           </Alert>
         ) : (
           !showEmptyPools &&
@@ -191,10 +193,11 @@ const ScrapePoolList: FC<ScrapePoolListProp> = memo(
               title="Hiding pools with no matching targets"
               icon={<IconInfoCircle />}
             >
-              Hiding {allPoolNames.length - shownPoolNames.length} empty pools
-              due to filters or no targets.
+              {t("targets.hidingPools", {
+                count: allPoolNames.length - shownPoolNames.length,
+              })}
               <Anchor ml="md" fz="1em" onClick={() => setShowEmptyPools(true)}>
-                Show empty pools
+                {t("targets.showEmptyPools")}
               </Anchor>
             </Alert>
           )
@@ -250,7 +253,7 @@ const ScrapePoolList: FC<ScrapePoolListProp> = memo(
                         aria-expanded={configExpanded}
                         aria-controls={configId}
                       >
-                        {configExpanded ? "Hide config" : "Show config"}
+                        {configExpanded ? t("targets.hideConfig") : t("targets.showConfig")}
                       </Anchor>
                       <Text c="gray.6">
                         {pool.upCount} / {pool.count} up
@@ -287,19 +290,19 @@ const ScrapePoolList: FC<ScrapePoolListProp> = memo(
                     id={configId}
                   />
                   {pool.count === 0 ? (
-                    <Alert title="No targets" icon={<IconInfoCircle />}>
-                      No active targets in this scrape pool.
+                    <Alert title={t("targets.noTargets")} icon={<IconInfoCircle />}>
+                      {t("targets.noTargetsActive")}
                       <Anchor
                         ml="md"
                         fz="1em"
                         onClick={() => setShowEmptyPools(false)}
                       >
-                        Hide empty pools
+                        {t("targets.hideEmptyPools")}
                       </Anchor>
                     </Alert>
                   ) : pool.targets.length === 0 ? (
                     <Alert
-                      title="No matching targets"
+                      title={t("targets.noMatching")}
                       icon={<IconInfoCircle />}
                     >
                       No targets in this pool match your filter criteria
@@ -309,7 +312,7 @@ const ScrapePoolList: FC<ScrapePoolListProp> = memo(
                         fz="1em"
                         onClick={() => setShowEmptyPools(false)}
                       >
-                        Hide empty pools
+                        {t("targets.hideEmptyPools")}
                       </Anchor>
                     </Alert>
                   ) : (
@@ -319,10 +322,10 @@ const ScrapePoolList: FC<ScrapePoolListProp> = memo(
                         <Table>
                           <Table.Thead>
                             <Table.Tr>
-                              <Table.Th w="25%">Endpoint</Table.Th>
-                              <Table.Th>Labels</Table.Th>
-                              <Table.Th w={230}>Last scrape</Table.Th>
-                              <Table.Th w={100}>State</Table.Th>
+                              <Table.Th w="25%">{t("targets.endpoint")}</Table.Th>
+                              <Table.Th>{t("targets.labels")}</Table.Th>
+                              <Table.Th w={230}>{t("targets.lastScrape")}</Table.Th>
+                              <Table.Th w={100}>{t("targets.state")}</Table.Th>
                             </Table.Tr>
                           </Table.Thead>
                           <Table.Tbody>
@@ -370,7 +373,7 @@ const ScrapePoolList: FC<ScrapePoolListProp> = memo(
                                         mb="sm"
                                         icon={<IconAlertTriangle />}
                                       >
-                                        <strong>Error scraping target:</strong>{" "}
+                                      <strong>{t("targets.errorScraping")}</strong>{" "}
                                         {target.lastError}
                                       </Alert>
                                     </Table.Td>

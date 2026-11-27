@@ -5,6 +5,7 @@ import { ActionIcon, Collapse, Group, Stack, Text } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
 import { IconChevronDown, IconChevronUp } from "@tabler/icons-react";
 import { actionIconStyle } from "../../styles";
+import { useI18n } from "../../i18nContext";
 
 type TargetLabelsProps = {
   labels: Labels;
@@ -12,6 +13,7 @@ type TargetLabelsProps = {
 };
 
 const TargetLabels: FC<TargetLabelsProps> = ({ discoveredLabels, labels }) => {
+  const { t } = useI18n();
   const [showDiscovered, { toggle: toggleDiscovered }] = useDisclosure(false);
 
   return (
@@ -24,7 +26,9 @@ const TargetLabels: FC<TargetLabelsProps> = ({ discoveredLabels, labels }) => {
           color="gray"
           variant="light"
           onClick={toggleDiscovered}
-          title={`${showDiscovered ? "Hide" : "Show"} discovered (pre-relabeling) labels`}
+          title={t("targets.discoveredLabelsToggle", {
+            action: t(showDiscovered ? "targets.hide" : "targets.show"),
+          })}
         >
           {showDiscovered ? (
             <IconChevronUp style={actionIconStyle} />
@@ -39,7 +43,7 @@ const TargetLabels: FC<TargetLabelsProps> = ({ discoveredLabels, labels }) => {
         {showDiscovered && (
           <>
             <Text fw={700} size="1em" my="lg" c="gray.7">
-              Discovered labels:
+              {t("targets.discoveredLabels")}
             </Text>
             <LabelBadges
               labels={discoveredLabels}

@@ -20,6 +20,7 @@ import { useSuspenseAPIQuery } from "../api/api";
 import InfoPageStack from "../components/InfoPageStack";
 import InfoPageCard from "../components/InfoPageCard";
 import { inputIconStyle } from "../styles";
+import { useI18n } from "../i18nContext";
 
 interface RowData {
   flag: string;
@@ -85,6 +86,7 @@ function sortData(
 }
 
 export default function FlagsPage() {
+  const { t } = useI18n();
   const { data } = useSuspenseAPIQuery<Record<string, string>>({
     path: `/status/flags`,
   });
@@ -129,7 +131,7 @@ export default function FlagsPage() {
     <InfoPageStack>
       <InfoPageCard>
         <TextInput
-          placeholder="Filter by flag name or value"
+          placeholder={t("flags.filter")}
           mb="md"
           autoFocus
           leftSection={<IconSearch style={inputIconStyle} />}
@@ -149,7 +151,7 @@ export default function FlagsPage() {
                 reversed={reverseSortDirection}
                 onSort={() => setSorting("flag")}
               >
-                Flag
+                {t("flags.flag")}
               </Th>
 
               <Th
@@ -157,7 +159,7 @@ export default function FlagsPage() {
                 reversed={reverseSortDirection}
                 onSort={() => setSorting("value")}
               >
-                Value
+                {t("flags.value")}
               </Th>
             </Table.Tr>
           </Table.Tbody>
@@ -168,7 +170,7 @@ export default function FlagsPage() {
               <Table.Tr>
                 <Table.Td colSpan={2}>
                   <Text fw={500} ta="center">
-                    Nothing found
+                    {t("flags.nothingFound")}
                   </Text>
                 </Table.Td>
               </Table.Tr>

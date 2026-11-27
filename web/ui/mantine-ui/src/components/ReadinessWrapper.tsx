@@ -6,14 +6,15 @@ import { useSuspenseAPIQuery } from "../api/api";
 import { WALReplayStatus } from "../api/responseTypes/walreplay";
 import { Progress, Alert, Stack } from "@mantine/core";
 import { useSuspenseQuery } from "@tanstack/react-query";
-
-const STATUS_STARTING = "is starting up...";
-const STATUS_STOPPING = "is shutting down...";
-const STATUS_LOADING = "is not ready...";
+import { useI18n } from "../i18nContext";
 
 const ReadinessLoader: FC = () => {
   const { pathPrefix, agentMode } = useSettings();
   const dispatch = useAppDispatch();
+  const { t } = useI18n();
+  const statusStarting = t("status.starting");
+  const statusStopping = t("status.stopping");
+  const statusLoading = t("status.loading");
 
   // Query key is incremented every second to retrigger the status fetching.
   const [queryKey, setQueryKey] = useState(0);
@@ -39,9 +40,9 @@ const ReadinessLoader: FC = () => {
           case 503:
             // Check the custom header `X-Prometheus-Stopping` for stopping information.
             if (res.headers.get("X-Prometheus-Stopping") === "true") {
-              setStatusMessage(STATUS_STOPPING);
+              setStatusMessage(statusStopping);
             } else {
-              setStatusMessage(STATUS_STARTING);
+              setStatusMessage(statusStarting);
             }
 
             return false;
@@ -57,7 +58,7 @@ const ReadinessLoader: FC = () => {
   });
 
   // Only call WAL replay status API if the service is starting up.
-  const shouldQueryWALReplay = statusMessage === STATUS_STARTING;
+  const shouldQueryWALReplay = statusMessage === statusStarting;
 
   const { data: walData, isSuccess: walSuccess } =
     useSuspenseAPIQuery<WALReplayStatus>({
@@ -83,7 +84,7 @@ const ReadinessLoader: FC = () => {
       title={
         "Prometheus " +
         ((agentMode && "Agent ") || "") +
-        (statusMessage || STATUS_LOADING)
+        (statusMessage || statusLoading)
       }
       icon={<IconAlertTriangle />}
       maw={500}
@@ -93,7 +94,7 @@ const ReadinessLoader: FC = () => {
       {shouldQueryWALReplay && walSuccess && walData && (
         <Stack>
           <strong>
-            Replaying WAL ({walData.data.current}/{walData.data.max})
+            {t("status.replayingWal")} ({walData.data.current}/{walData.data.max})
           </strong>
           <Progress
             size="xl"

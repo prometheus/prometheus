@@ -3,22 +3,21 @@ import { IconSpy } from "@tabler/icons-react";
 import { FC } from "react";
 import InfoPageStack from "../components/InfoPageStack";
 import InfoPageCard from "../components/InfoPageCard";
+import { useI18n } from "../i18nContext";
 
 const AgentPage: FC = () => {
+  const { t } = useI18n();
   return (
     <InfoPageStack>
       <InfoPageCard
-        title="Prometheus Agent"
+        title={t("agent.title")}
         icon={IconSpy}
       >
       <Text p="md">
-        This Prometheus instance is running in <strong>agent mode</strong>. In
-        this mode, Prometheus is only used to scrape discovered targets and
-        forward the scraped metrics to remote write endpoints.
+        {t("agent.description")}
       </Text>
       <Text p="md">
-        Some features are not available in this mode, such as querying and
-          alerting.
+        {t("agent.limitations")}
         </Text>
       </InfoPageCard>
     </InfoPageStack>

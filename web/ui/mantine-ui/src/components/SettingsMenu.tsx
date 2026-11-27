@@ -6,12 +6,14 @@ import {
   Stack,
   Group,
   NumberInput,
+  Select,
 } from "@mantine/core";
 import { IconSettings } from "@tabler/icons-react";
 import { FC } from "react";
 import { useAppDispatch } from "../state/hooks";
 import { updateSettings, useSettings } from "../state/settingsSlice";
 import { actionIconStyle } from "../styles";
+import { useI18n } from "../i18nContext";
 
 const SettingsMenu: FC = () => {
   const {
@@ -27,14 +29,15 @@ const SettingsMenu: FC = () => {
     alertGroupsPerPage,
   } = useSettings();
   const dispatch = useAppDispatch();
+  const { locale, setLocale, t } = useI18n();
 
   return (
     <Popover position="bottom" withArrow shadow="md">
       <Popover.Target>
         <ActionIcon
           color="gray"
-          title="Settings"
-          aria-label="Settings"
+          title={t("settings.settings")}
+          aria-label={t("settings.settings")}
           size={32}
         >
           <IconSettings style={actionIconStyle} />
@@ -43,10 +46,23 @@ const SettingsMenu: FC = () => {
       <Popover.Dropdown>
         <Group align="flex-start">
           <Stack>
-            <Fieldset p="md" legend="Global settings">
+            <Fieldset p="md" legend={t("settings.global")}>
+              <Select
+                label={t("settings.language")}
+                data={[
+                  { value: "en", label: t("settings.english") },
+                  { value: "sv", label: t("settings.swedish") },
+                ]}
+                value={locale}
+                onChange={(value) => {
+                  if (value === "en" || value === "sv") {
+                    setLocale(value);
+                  }
+                }}
+              />
               <Checkbox
                 checked={useLocalTime}
-                label="Use local time"
+                label={t("settings.useLocalTime")}
                 onChange={(event) =>
                   dispatch(
                     updateSettings({
@@ -57,11 +73,11 @@ const SettingsMenu: FC = () => {
               />
             </Fieldset>
 
-            <Fieldset p="md" legend="Query page settings">
+            <Fieldset p="md" legend={t("settings.queryPage")}>
               <Stack>
                 <Checkbox
                   checked={enableQueryHistory}
-                  label="Enable query history"
+                  label={t("settings.enableQueryHistory")}
                   onChange={(event) =>
                     dispatch(
                       updateSettings({
@@ -72,7 +88,7 @@ const SettingsMenu: FC = () => {
                 />
                 <Checkbox
                   checked={enableAutocomplete}
-                  label="Enable autocomplete"
+                  label={t("settings.enableAutocomplete")}
                   onChange={(event) =>
                     dispatch(
                       updateSettings({
@@ -83,7 +99,7 @@ const SettingsMenu: FC = () => {
                 />
                 <Checkbox
                   checked={enableSyntaxHighlighting}
-                  label="Enable syntax highlighting"
+                  label={t("settings.enableSyntaxHighlighting")}
                   onChange={(event) =>
                     dispatch(
                       updateSettings({
@@ -94,7 +110,7 @@ const SettingsMenu: FC = () => {
                 />
                 <Checkbox
                   checked={enableLinter}
-                  label="Enable linter"
+                  label={t("settings.enableLinter")}
                   onChange={(event) =>
                     dispatch(
                       updateSettings({
@@ -105,7 +121,7 @@ const SettingsMenu: FC = () => {
                 />
                 <Checkbox
                   checked={showQueryWarnings}
-                  label="Show query warnings"
+                  label={t("settings.showQueryWarnings")}
                   onChange={(event) =>
                     dispatch(
                       updateSettings({
@@ -116,7 +132,7 @@ const SettingsMenu: FC = () => {
                 />
                 <Checkbox
                   checked={showQueryInfoNotices}
-                  label="Show query info notices"
+                  label={t("settings.showQueryInfoNotices")}
                   onChange={(event) =>
                     dispatch(
                       updateSettings({
@@ -130,11 +146,11 @@ const SettingsMenu: FC = () => {
           </Stack>
 
           <Stack>
-            <Fieldset p="md" legend="Alerts page settings">
+            <Fieldset p="md" legend={t("settings.alertsPage")}>
               <Stack>
                 <Checkbox
                   checked={showAnnotations}
-                  label="Show expanded annotations"
+                  label={t("settings.showExpandedAnnotations")}
                   onChange={(event) =>
                     dispatch(
                       updateSettings({
@@ -146,7 +162,7 @@ const SettingsMenu: FC = () => {
                 <NumberInput
                   min={1}
                   allowDecimal={false}
-                  label="Alert groups per page"
+                  label={t("settings.alertGroupsPerPage")}
                   value={alertGroupsPerPage}
                   onChange={(value) => {
                     if (typeof value !== "number") {
@@ -162,11 +178,11 @@ const SettingsMenu: FC = () => {
                 />
               </Stack>
             </Fieldset>
-            <Fieldset p="md" legend="Rules page settings">
+            <Fieldset p="md" legend={t("settings.rulesPage")}>
               <NumberInput
                 min={1}
                 allowDecimal={false}
-                label="Rule groups per page"
+                label={t("settings.ruleGroupsPerPage")}
                 value={ruleGroupsPerPage}
                 onChange={(value) => {
                   if (typeof value !== "number") {
