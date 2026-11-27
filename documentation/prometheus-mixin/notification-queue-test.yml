@@ -1,0 +1,36 @@
+rule_files: []
+evaluation_interval: 1m
+
+tests:
+  - name: single alertmanager queue labels
+    interval: 1m
+    input_series:
+      - series: 'prometheus_notifications_queue_length{job="prometheus",alertmanager="am1"}'
+        values: '900 900 900 900 900 900'
+      - series: 'prometheus_notifications_queue_capacity{job="prometheus"}'
+        values: '100 100 100 100 100 100'
+    promql_expr_test:
+      - expr: 'predict_linear(prometheus_notifications_queue_length{job="prometheus"}[5m], 60 * 30) > min_over_time(prometheus_notifications_queue_capacity{job="prometheus"}[5m])'
+        eval_time: 5m
+        exp_samples: []
+      - expr: 'max without (alertmanager) (predict_linear(prometheus_notifications_queue_length{job="prometheus"}[5m], 60 * 30)) > min_over_time(prometheus_notifications_queue_capacity{job="prometheus"}[5m])'
+        eval_time: 5m
+        exp_samples:
+          - labels: '{job="prometheus"}'
+            value: 900
+
+  - name: multiple alertmanagers queue labels
+    interval: 1m
+    input_series:
+      - series: 'prometheus_notifications_queue_length{job="prometheus",alertmanager="am1"}'
+        values: '900 900 900 900 900 900'
+      - series: 'prometheus_notifications_queue_length{job="prometheus",alertmanager="am2"}'
+        values: '800 800 800 800 800 800'
+      - series: 'prometheus_notifications_queue_capacity{job="prometheus"}'
+        values: '100 100 100 100 100 100'
+    promql_expr_test:
+      - expr: 'max without (alertmanager) (predict_linear(prometheus_notifications_queue_length{job="prometheus"}[5m], 60 * 30)) > min_over_time(prometheus_notifications_queue_capacity{job="prometheus"}[5m])'
+        eval_time: 5m
+        exp_samples:
+          - labels: '{job="prometheus"}'
+            value: 900
