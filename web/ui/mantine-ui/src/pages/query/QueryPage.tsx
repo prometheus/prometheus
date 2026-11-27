@@ -28,9 +28,7 @@ export default function QueryPage() {
   useEffect(() => {
     const handleURLChange = () => {
       const panels = decodePanelOptionsFromURLParams(window.location.search);
-      if (panels.length > 0) {
-        dispatch(setPanels(panels));
-      }
+      dispatch(setPanels(panels.length === 0 ? [newDefaultPanel()] : panels));
     };
 
     handleURLChange();
