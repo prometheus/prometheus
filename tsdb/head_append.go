@@ -507,7 +507,7 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 			return 0, storage.ErrOutOfOrderSample
 		}
 		s.markPendingCommit()
-		a.trackSeriesRecord(s, s.lset)
+		a.trackSeriesRecord(s)
 	}
 	if delta > 0 {
 		a.head.metrics.oooHistogram.Observe(float64(delta) / 1000)
@@ -566,7 +566,7 @@ func (a *headAppender) AppendSTZeroSample(ref storage.SeriesRef, lset labels.Lab
 		return storage.SeriesRef(s.ref), storage.ErrOutOfOrderST
 	}
 	s.markPendingCommit()
-	a.trackSeriesRecord(s, s.lset)
+	a.trackSeriesRecord(s)
 	s.Unlock()
 
 	b := a.getCurrentBatch(stFloat, s.ref)
@@ -947,7 +947,7 @@ func (a *headAppenderBase) reserveSeriesForExemplar(s *memSeries, ts int64) *mem
 		if !s.isGCed() {
 			s.updateExemplarTimestampLocked(ts)
 			s.markPendingCommit()
-			a.trackSeriesRecord(s, s.lset)
+			a.trackSeriesRecord(s)
 			s.Unlock()
 			return s
 		}
@@ -1000,7 +1000,7 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 		_, delta, err := s.appendableHistogram(t, h, a.headMaxt, a.minValidTime, a.oooTimeWindow, a.head)
 		if err == nil {
 			s.markPendingCommit()
-			a.trackSeriesRecord(s, s.lset)
+			a.trackSeriesRecord(s)
 		}
 		s.Unlock()
 		if delta > 0 {
@@ -1036,7 +1036,7 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 		_, delta, err := s.appendableFloatHistogram(t, fh, a.headMaxt, a.minValidTime, a.oooTimeWindow, a.head)
 		if err == nil {
 			s.markPendingCommit()
-			a.trackSeriesRecord(s, s.lset)
+			a.trackSeriesRecord(s)
 		}
 		s.Unlock()
 		if delta > 0 {
@@ -1115,7 +1115,7 @@ func (a *headAppender) AppendHistogramSTZeroSample(ref storage.SeriesRef, lset l
 		}
 
 		s.markPendingCommit()
-		a.trackSeriesRecord(s, s.lset)
+		a.trackSeriesRecord(s)
 		s.Unlock()
 		sTyp := stHistogram
 		if h.UsesCustomBuckets() {
@@ -1160,7 +1160,7 @@ func (a *headAppender) AppendHistogramSTZeroSample(ref storage.SeriesRef, lset l
 		}
 
 		s.markPendingCommit()
-		a.trackSeriesRecord(s, s.lset)
+		a.trackSeriesRecord(s)
 		s.Unlock()
 		sTyp := stFloatHistogram
 		if fh.UsesCustomBuckets() {
@@ -1207,7 +1207,7 @@ func (a *headAppender) UpdateMetadata(ref storage.SeriesRef, lset labels.Labels,
 	}
 	// Keep the series until the metadata record is committed or rolled back.
 	s.markPendingCommit()
-	a.trackSeriesRecord(s, s.lset)
+	a.trackSeriesRecord(s)
 	s.Unlock()
 
 	b := a.getCurrentBatch(stNone, s.ref)
@@ -1241,7 +1241,7 @@ const (
 // trackSeriesRecord buffers a candidate WAL series record if the series still needs one.
 // The caller must hold the series lock and keep a pending-commit reservation on s
 // until Commit or Rollback so the series stays in Head while its record may be logged.
-func (a *headAppenderBase) trackSeriesRecord(s *memSeries, lset labels.Labels) {
+func (a *headAppenderBase) trackSeriesRecord(s *memSeries) {
 	if s.walState.Load() == seriesWALLogged {
 		return
 	}
@@ -1250,7 +1250,7 @@ func (a *headAppenderBase) trackSeriesRecord(s *memSeries, lset labels.Labels) {
 	if n := len(a.seriesRecordCandidates); n > 0 && a.seriesRecordCandidates[n-1].series == s {
 		return
 	}
-	a.seriesRecordCandidates = append(a.seriesRecordCandidates, seriesRecordCandidate{series: s, lset: lset})
+	a.seriesRecordCandidates = append(a.seriesRecordCandidates, seriesRecordCandidate{series: s, lset: s.lset})
 }
 
 // filterSeriesRecords keeps the candidates whose series match keep, reporting how many remain.

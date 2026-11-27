@@ -464,8 +464,9 @@ func TestWALSeriesRecordsOverlappingBatches(t *testing.T) {
 			batches := [][]storage.SeriesRef{
 				refs[:2],
 				refs[1:],
-				// With only the shared ref, this appender can find all its series
-				// records already logged after waiting for walSeriesMtx.
+				// Use two appenders with only the shared ref so at least one finds it
+				// already logged, regardless of which committer logs it first.
+				refs[1:2],
 				refs[1:2],
 			}
 			apps := make([]storage.AppenderTransaction, len(batches))
@@ -511,7 +512,7 @@ func TestWALSeriesRecordsOverlappingBatches(t *testing.T) {
 				}
 			}
 			require.Len(t, seen, 3)
-			require.Equal(t, 5, samples)
+			require.Equal(t, 6, samples)
 		})
 	}
 }
