@@ -25,6 +25,10 @@ export interface GraphProps {
     resultType: string;
     result: Array<{ metric: Metric; values?: [number, string][]; histograms?: [number, Histogram][] }>;
   };
+  startTimestamps?: {
+    resultType: string;
+    result: Array<{ metric: Metric; values?: [number, string][] }>;
+  };
   exemplars: ExemplarData;
   displayMode: GraphDisplayMode;
   useLocalTime: boolean;
@@ -39,6 +43,9 @@ export interface GraphSeries {
   color: string;
   data: (number | null)[][]; // [x,y][]
   index: number;
+  startTimestamp?: boolean;
+  points?: { show: boolean; radius: number; symbol: (ctx: CanvasRenderingContext2D, x: number, y: number) => void };
+  lines?: { show: boolean };
 }
 
 export interface GraphExemplar {
@@ -52,6 +59,7 @@ export interface GraphExemplar {
 
 export interface GraphData {
   series: GraphSeries[];
+  startTimestamps: GraphSeries[];
   exemplars: GraphExemplar[];
 }
 
@@ -96,7 +104,11 @@ class Graph extends PureComponent<GraphProps, GraphState> {
     if (prevProps.showExemplars !== showExemplars && !showExemplars) {
       this.setState(
         {
-          chartData: { series: this.state.chartData.series, exemplars: [] },
+          chartData: {
+            series: this.state.chartData.series,
+            startTimestamps: this.state.chartData.startTimestamps,
+            exemplars: [],
+          },
           selectedExemplarLabels: { exemplar: {}, series: {} },
         },
         () => {
@@ -139,7 +151,11 @@ class Graph extends PureComponent<GraphProps, GraphState> {
   }
 
   plot = (
-    data: (GraphSeries | GraphExemplar)[] = [...this.state.chartData.series, ...this.state.chartData.exemplars]
+    data: (GraphSeries | GraphExemplar)[] = [
+      ...this.state.chartData.series,
+      ...(this.props.displayMode === GraphDisplayMode.Heatmap ? [] : this.state.chartData.startTimestamps),
+      ...this.state.chartData.exemplars,
+    ]
   ): void => {
     if (!this.chartRef.current) {
       return;
@@ -167,7 +183,11 @@ class Graph extends PureComponent<GraphProps, GraphState> {
   };
 
   plotSetAndDraw(
-    data: (GraphSeries | GraphExemplar)[] = [...this.state.chartData.series, ...this.state.chartData.exemplars]
+    data: (GraphSeries | GraphExemplar)[] = [
+      ...this.state.chartData.series,
+      ...(this.props.displayMode === GraphDisplayMode.Heatmap ? [] : this.state.chartData.startTimestamps),
+      ...this.state.chartData.exemplars,
+    ]
   ): void {
     if (isPresent(this.$chart)) {
       this.$chart.setData(data);
@@ -181,10 +201,12 @@ class Graph extends PureComponent<GraphProps, GraphState> {
       this.selectedSeriesIndexes.length === 1 && this.selectedSeriesIndexes.includes(selectedIndex)
         ? [
             ...chartData.series.map(toHoverColor(selectedIndex, this.props.displayMode === GraphDisplayMode.Stacked)),
+            ...chartData.startTimestamps,
             ...chartData.exemplars,
           ]
         : [
             ...chartData.series.filter((_, i) => selected.includes(i)),
+            ...chartData.startTimestamps,
             ...chartData.exemplars.filter((exemplar) => {
               series: for (const i in selected) {
                 for (const name in chartData.series[selected[i]].labels) {
@@ -208,6 +230,7 @@ class Graph extends PureComponent<GraphProps, GraphState> {
     this.rafID = requestAnimationFrame(() => {
       this.plotSetAndDraw([
         ...this.state.chartData.series.map(toHoverColor(index, this.props.displayMode === GraphDisplayMode.Stacked)),
+        ...this.state.chartData.startTimestamps,
         ...this.state.chartData.exemplars,
       ]);
     });
