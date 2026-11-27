@@ -3849,6 +3849,8 @@ anchored on both ends. To un-anchor the regex, use `.*<regex>.*`.
 * `keepequal`: Drop targets for which the concatenated `source_labels` do not match `target_label`.
 * `dropequal`: Drop targets for which the concatenated `source_labels` do match `target_label`.
 * `hashmod`: Set `target_label` to the `modulus` of a hash of the concatenated `source_labels`.
+   The hash uses the label values at that point in the relabel list, so put `hashmod`
+   after any rule that rewrites its source labels.
 * `labelmap`: Match `regex` against all source label names, not just those specified in `source_labels`. Then
    copy the values of the matching labels  to label names given by `replacement` with match
    group references (`${1}`, `${2}`, ...) in `replacement` substituted by their value.
