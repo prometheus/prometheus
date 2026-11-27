@@ -724,14 +724,14 @@ func ensureMonotonicAndIgnoreSmallDeltas(buckets Buckets, tolerance float64) (
 	return forcedMonotonic, fixedPrecision, minBucket, maxBucket, maxDiff
 }
 
-// quantile calculates the given quantile of a vector of samples.
+// quantile calculates the given quantile of a slice of values.
 //
-// The Vector will be sorted.
+// The slice will be sorted in place, NaNs first.
 // If 'values' has zero elements, NaN is returned.
 // If q==NaN, NaN is returned.
 // If q<0, -Inf is returned.
 // If q>1, +Inf is returned.
-func quantile(q float64, values vectorByValueHeap) float64 {
+func quantile(q float64, values []float64) float64 {
 	if len(values) == 0 || math.IsNaN(q) {
 		return math.NaN()
 	}
@@ -741,7 +741,7 @@ func quantile(q float64, values vectorByValueHeap) float64 {
 	if q > 1 {
 		return math.Inf(+1)
 	}
-	sort.Sort(values)
+	slices.Sort(values)
 
 	n := float64(len(values))
 	// When the quantile lies between two samples,
@@ -753,10 +753,10 @@ func quantile(q float64, values vectorByValueHeap) float64 {
 
 	weight := rank - math.Floor(rank)
 	if weight == 0 {
-		return values[int(lowerIndex)].F
+		return values[int(lowerIndex)]
 	}
-	lower := values[int(lowerIndex)].F
-	upper := values[int(upperIndex)].F
+	lower := values[int(lowerIndex)]
+	upper := values[int(upperIndex)]
 	// Identical samples do not need interpolation; returning one avoids rounding error and underflow.
 	// Comparing bits distinguishes negative zero from positive zero.
 	if lower == upper && math.Float64bits(lower) == math.Float64bits(upper) {

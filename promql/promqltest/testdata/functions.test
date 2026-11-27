@@ -1592,6 +1592,16 @@ eval instant at 70s mad_over_time(metric_histogram{type="mix"}[70s])
 	expect info
 	{type="mix"} 0
 
+# The values of a window must not leak into the next step or series.
+clear
+load 1m
+	metric{series="long"} 5 1 4 2 3 9
+	metric{series="short"} _ _ 7 _ _ 6
+
+eval range from 2m to 5m step 1m mad_over_time(metric[3m])
+	{series="long"} 1 1 1 1
+	{series="short"} 0 0 0 0
+
 # Tests for ts_of_max_over_time and ts_of_min_over_time. Using odd scrape interval to test for rounding bugs.
 clear
 load 10s53ms
@@ -1723,6 +1733,16 @@ eval instant at 1m quantile_over_time(0.5, data_histogram{test="mix samples"}[2m
 # Scalar arguments to range-vector functions must be refreshed for every step.
 eval range from 10s to 30s step 10s quantile_over_time(time() / 100, data{test="three samples"}[20s])
 	{test="three samples"} 0.1 1.2 2
+
+# The values of a window must not leak into the next step or series.
+clear
+load 1m
+	data{series="long"} 5 1 4 2 3 9
+	data{series="short"} _ _ 7 _ _ 6
+
+eval range from 2m to 5m step 1m quantile_over_time(0.5, data[3m])
+	{series="long"} 4 2 3 3
+	{series="short"} 7 7 7 6
 
 # Exact-ranked infinities in quantile_over_time must not become NaN.
 clear
