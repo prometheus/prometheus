@@ -1981,6 +1981,42 @@ func TestRemoteWriteRetryOnRateLimit(t *testing.T) {
 	require.False(t, got.RemoteWriteConfigs[1].QueueConfig.RetryOnRateLimit)
 }
 
+func TestRemoteWriteMetadataConfigNotSent(t *testing.T) {
+	// The metadata_config limits only apply when metadata is sent on its own,
+	// so a zero send_interval is fine when that does not happen.
+	for _, tc := range []struct {
+		name string
+		yaml string
+	}{
+		{
+			name: "send disabled",
+			yaml: `
+remote_write:
+  - url: http://remote1/api/v1/write
+    metadata_config:
+      send: false
+      send_interval: 0s
+      max_samples_per_send: 0
+`,
+		},
+		{
+			name: "remote write 2.0",
+			yaml: `
+remote_write:
+  - url: http://remote1/api/v1/write
+    protobuf_message: io.prometheus.write.v2.Request
+    metadata_config:
+      send_interval: 0s
+`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := Load(tc.yaml, promslog.NewNopLogger())
+			require.NoError(t, err)
+		})
+	}
+}
+
 func TestRemoteWriteFailedRequestLogging(t *testing.T) {
 	cfgYAML := `
 remote_write:
@@ -2643,6 +2679,14 @@ var expectedErrors = []struct {
 	{
 		filename: "remote_write_queue_max_backoff_less_than_min.bad.yml",
 		errMsg:   `remote write queue max_backoff must not be less than min_backoff`,
+	},
+	{
+		filename: "remote_write_metadata_send_interval_zero.bad.yml",
+		errMsg:   `remote write metadata send_interval must be positive`,
+	},
+	{
+		filename: "remote_write_metadata_max_samples_per_send_zero.bad.yml",
+		errMsg:   `remote write metadata max_samples_per_send must be positive`,
 	},
 	{
 		filename: "remote_read_dup.bad.yml",

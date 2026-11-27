@@ -1607,6 +1607,14 @@ func (c *RemoteWriteConfig) UnmarshalYAML(unmarshal func(any) error) error {
 		return err
 	}
 
+	// Metadata is only sent on its own schedule with Remote Write 1.0. Remote Write 2.0
+	// sends it with the samples and ignores metadata_config.
+	if c.ProtobufMessage == remoteapi.WriteV1MessageType {
+		if err := c.MetadataConfig.Validate(); err != nil {
+			return err
+		}
+	}
+
 	return validateAuthConfigs(c)
 }
 
@@ -1731,6 +1739,21 @@ type MetadataConfig struct {
 	SendInterval model.Duration `yaml:"send_interval"`
 	// Maximum number of samples per send.
 	MaxSamplesPerSend int `yaml:"max_samples_per_send,omitempty"`
+}
+
+// Validate checks that metadata can be sent with the configured interval and batch size.
+// Nothing is checked when sending metadata is disabled.
+func (c *MetadataConfig) Validate() error {
+	if !c.Send {
+		return nil
+	}
+	if c.SendInterval <= 0 {
+		return errors.New("remote write metadata send_interval must be positive")
+	}
+	if c.MaxSamplesPerSend <= 0 {
+		return errors.New("remote write metadata max_samples_per_send must be positive")
+	}
+	return nil
 }
 
 const (
