@@ -225,6 +225,13 @@ export class Parser {
       this.addDiagnostic(node, 'unable to find the parameter for the expression');
       return;
     }
+    // Aggregations with a parameter take it as the first of two arguments, the others take one argument.
+    const withParam = [Topk, Bottomk, LimitK, LimitRatio, Quantile, CountValues].includes(aggregateOp.type.id);
+    const desiredArgs = withParam ? 2 : 1;
+    if (params.length !== desiredArgs) {
+      this.addDiagnostic(node, `wrong number of arguments for aggregate expression provided, expected ${desiredArgs}, got ${params.length}`);
+      return;
+    }
     this.expectType(params[params.length - 1], ValueType.vector, 'aggregation expression');
     // get the parameter of the aggregation operator
     if (
