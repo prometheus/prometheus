@@ -646,6 +646,66 @@ func (m *SDMock) HandleDropletsList() {
 	})
 }
 
+// HandleDropletsListByTag mocks a tag-filtered droplet list. It only responds
+// when the request carries the expected tag_name query parameter, so tests
+// using it fail loudly if the tag filter isn't actually sent to the API.
+func (m *SDMock) HandleDropletsListByTag(tagName string) {
+	m.Mux.HandleFunc("/v2/droplets", func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != fmt.Sprintf("Bearer %s", tokenID) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		if got := r.URL.Query().Get("tag_name"); got != tagName {
+			w.WriteHeader(http.StatusBadRequest)
+			fmt.Fprintf(w, `{"id": "bad_request", "message": "unexpected tag_name %q"}`, got)
+			return
+		}
+
+		w.Header().Add("content-type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprint(w, `
+{
+  "droplets": [
+    {
+      "id": 3164494,
+      "name": "prometheus",
+      "status": "active",
+      "features": [],
+      "image": {
+        "id": 6918990,
+        "slug": "ubuntu-16-04-x64",
+        "name": "14.04 x64"
+      },
+      "size_slug": "s-1vcpu-1gb",
+      "networks": {
+        "v4": [
+          {
+            "ip_address": "104.131.186.241",
+            "netmask": "255.255.240.0",
+            "gateway": "104.131.176.1",
+            "type": "public"
+          }
+        ],
+        "v6": []
+      },
+      "region": {
+        "slug": "nyc3"
+      },
+      "tags": [
+        "monitor"
+      ],
+      "vpc_uuid": "f9b0769c-e118-42fb-a0c4-fed15ef69662"
+    }
+  ],
+  "links": {},
+  "meta": {
+    "total": 1
+  }
+}
+`)
+	})
+}
+
 // HandleDatabasesList mocks database clusters list.
 func (m *SDMock) HandleDatabasesList() {
 	m.Mux.HandleFunc("/v2/databases", func(w http.ResponseWriter, r *http.Request) {
