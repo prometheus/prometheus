@@ -1834,6 +1834,12 @@ type EvalNodeHelper struct {
 
 	// StartTimestamps optionally provides sample start timestamps aligned with matrix samples.
 	StartTimestamps *StartTimestamps
+
+	// NodeCache is opaque per-node state cached across range-query steps.
+	// Currently used by timeseries_gen; future stateful functions may reuse it.
+	// Exported so functions implemented in separate files (e.g. timeseries_gen.go)
+	// can read and write it without an exported accessor.
+	NodeCache any
 }
 
 func (enh *EvalNodeHelper) resetSigsPresent() []bool {

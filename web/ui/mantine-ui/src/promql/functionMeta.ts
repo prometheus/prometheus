@@ -97,6 +97,7 @@ export const functionDescriptions: Record<string, string> = {
   stdvar_over_time: 'calculate the standard variation within input series over time',
   sum_over_time: 'calculate the sum over the values of input series over time',
   time: 'return the Unix timestamp at the current evaluation time',
+  timeseries_gen: 'emit a synthetic instant vector from a Go text/template (experimental)',
   timestamp: 'return the Unix timestamp for the samples in the input vector',
   vector: 'convert a scalar value into a single-element series vector',
   year: 'return the year for provided timestamps',

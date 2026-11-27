@@ -966,6 +966,99 @@ expression is to be evaluated.
 the given vector as the number of seconds since January 1, 1970 UTC. It acts on
 float and histogram samples in the same way.
 
+## `timeseries_gen()`
+
+**This function has to be enabled via the [feature
+flag](../feature_flags.md#experimental-promql-functions)
+`--enable-feature=promql-experimental-functions`.**
+
+`timeseries_gen(tpl string, metric_name ...string)` emits a synthetic
+instant vector built from a Go [`text/template`][gotpl] supplied as `tpl`.
+Its primary use case is providing inline "filter" series for `*` / `on(...)`
+joins without precomputing them via recording rules or storage:
+
+```
+metric * on(env) timeseries_gen(`{{rangeSeries "env" "prod,stage,canary" 1.0}}`)
+```
+
+The optional `metric_name` argument controls the `__name__` label on
+emitted series:
+
+- If omitted (or empty), emitted series have no `__name__` label. This is
+  the usual case for join-filter usage where vector matching ignores
+  `__name__` anyway.
+- If provided and non-empty, every emitted series gets
+  `__name__=<metric_name>`.
+
+The template runs **once per query** and the result is cached, so range queries
+do not re-execute the template at every step. Output cardinality is capped at
+10000 series; exceeding the cap aborts the query.
+
+### Template helpers
+
+Labels are supplied as flat `key, value, key, value, ...` variadic pairs — no
+embedded label-string grammar, no escape hell.
+
+| Helper | Signature | Effect |
+| --- | --- | --- |
+| `series` | `series(value float, kvPairs ...string)` | Emit one sample. Pairs must be even length. |
+| `rangeSeries` | `rangeSeries(fanoutLabel string, csv string, value float, kvPairs ...string)` | Emit one sample per comma-separated value of `csv`, with `fanoutLabel` set to that value and any extra `kvPairs` attached to every emitted sample. Empty entries in `csv` are skipped. |
+| `seq` | `seq(start, end int)` | Inclusive integer range. |
+| `split` | `split(s, sep string) []string` | Same as Go's `strings.Split`. |
+| `lower` / `upper` | `lower(s) string` / `upper(s) string` | Case conversion. |
+| `replace` | `replace(s, old, new string) string` | Same as Go's `strings.ReplaceAll`. |
+| `trim` | `trim(s string) string` | Same as Go's `strings.TrimSpace`. |
+| `add` / `sub` / `mul` / `div` / `mod` | `(a, b numeric) float` | Binary math; operands accept any integer or float type. `div` and `mod` reject a zero divisor. |
+| `int` | `(v numeric) int` | Truncate toward zero. Useful for feeding `printf "%d"` because the binary math helpers always return float64. |
+| `float` | `(v string or numeric) float` | Parse a string as a float (Go `strconv.ParseFloat` syntax, including `NaN` and `Inf`; surrounding whitespace is ignored) or convert a number. Useful for turning values produced by `split` into sample values. |
+| `abs` / `floor` / `ceil` / `round` | `(v numeric) float` | `math.Abs` / `math.Floor` / `math.Ceil` / `math.Round`. |
+| `min` / `max` | `(a, b numeric) float` | `math.Min` / `math.Max`. |
+| `printf` | (built-in) | Standard Go template `printf`. |
+
+Examples:
+
+```
+# One sample, two labels, with an explicit metric name.
+timeseries_gen(`{{series 1.0 "env" "prod" "job" "api"}}`, "f")
+
+# Fan-out across env values plus a fixed job label (no __name__).
+timeseries_gen(`{{rangeSeries "env" "prod,stage,dev" 1.0 "job" "api"}}`)
+
+# Indexed series via seq + printf.
+timeseries_gen(`{{range $i := seq 1 5}}{{series 1.0 "i" (printf "%d" $i)}}{{end}}`)
+
+# Sample value parsed from the same string as the label, via float.
+timeseries_gen(`{{range $r := split "0.236,0.382,0.5,0.618" ","}}{{series (float $r) "ratio" $r}}{{end}}`)
+
+# Label-to-value table from two parallel lists, via the built-in index.
+timeseries_gen(`{{$t := split "0.999,0.99,0.9" ","}}{{range $i, $s := split "api,web,db" ","}}{{series (float (index $t $i)) "service" $s}}{{end}}`)
+```
+
+When pairing parallel lists with `index`, keep them the same length: a shorter
+value list fails the query with an out-of-range error, while extra values are
+silently ignored.
+
+### Restrictions
+
+- The `{{define}}` and `{{template}}` template actions are rejected at parse
+  time to prevent recursive expansion.
+- When the `metric_name` argument is provided, the template MUST NOT set
+  `__name__` (via `kvPairs` or as a `rangeSeries` `fanoutLabel`) — the
+  function argument is the single source of truth.
+- When `metric_name` is omitted, the template MAY set `__name__` on a
+  per-series basis via `kvPairs`, or fan out over multiple metric names
+  via `rangeSeries "__name__" "a,b,c" ...`. This lets a single call emit
+  several related metrics.
+- Each call must produce a unique label set; duplicates are a hard error.
+- `seq` ranges are capped at 10000 items; exceeding the cap aborts the query.
+- Label names are validated under Prometheus' UTF-8 label-name scheme,
+  so dotted OpenTelemetry-style names such as `http.method`,
+  `service.name`, and `deployment.environment` are accepted alongside
+  the legacy `[a-zA-Z_][a-zA-Z0-9_]*` form. Dotted names must be quoted
+  in PromQL selectors, e.g. `{"http.method"="GET"}`.
+
+[gotpl]: https://pkg.go.dev/text/template
+
 ## `vector()`
 
 `vector(s scalar)` converts the scalar `s` to a float sample and returns it as
