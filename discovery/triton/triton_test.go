@@ -206,6 +206,27 @@ func TestTritonSDRefreshCancelled(t *testing.T) {
 	m.Unregister()
 }
 
+func TestTritonSDRefreshNon2xxStatus(t *testing.T) {
+	t.Parallel()
+	td, m, err := newTritonDiscovery(conf)
+	require.NoError(t, err)
+	defer m.Unregister()
+
+	s := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		fmt.Fprintln(w, `{"code":"InternalError","message":"boom"}`)
+	}))
+	defer s.Close()
+
+	u, err := url.Parse(s.URL)
+	require.NoError(t, err)
+	td.sdConfig.Port, err = strconv.Atoi(u.Port())
+	require.NoError(t, err)
+
+	_, err = td.refresh(context.Background())
+	require.ErrorContains(t, err, "non 2xx status '500' response during triton service discovery")
+}
+
 func TestTritonSDRefreshCNsUUIDOnly(t *testing.T) {
 	t.Parallel()
 	dstr := `{"cns":[
