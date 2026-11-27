@@ -366,7 +366,10 @@ class Cache {
 
   setLabelNames(labelNames: string[], metricName?: string): void {
     if (metricName && metricName.length > 0) {
+      // The names of one metric are only a subset of all label names: don't let them
+      // replace the list used when no metric is selected.
       this.setLabelNamesAssociation(metricName, labelNames);
+      return;
     }
     this.labelNames = labelNames;
   }
@@ -381,7 +384,9 @@ class Cache {
 
   setLabelValues(labelName: string, labelValues: string[], metricName?: string): void {
     if (metricName && metricName.length > 0) {
+      // Same as for label names: values seen for one metric are not all values of the label.
       this.setLabelValuesAssociation(metricName, labelName, labelValues);
+      return;
     }
     this.labelValues.set(labelName, labelValues);
   }
