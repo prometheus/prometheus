@@ -38,17 +38,17 @@ This skill generates a GitHub-flavored Markdown PR Triage Board for any GitHub r
 Run `scripts/generate_triage_board.py` (requires `gh` CLI authenticated and `python3`):
 
 ```bash
-# Generate triage board for prometheus/prometheus (default 100 most recently active open PRs)
+# Generate triage board for prometheus/prometheus (default 150 most recently active open PRs)
 python3 .agents/skills/pr-triage-board/scripts/generate_triage_board.py \
   --repo prometheus/prometheus \
-  --limit 100 \
+  --limit 150 \
   --output /tmp/triage_board.md
 ```
 
 ### Common flags
 
 - `--repo <owner/name>` (`-r`): Target repository. Can be passed multiple times to aggregate across repos. If omitted, detects the current git directory's GitHub repo or defaults to `prometheus/prometheus`.
-- `--limit <N>` (`-l`): Maximum number of open PRs to inspect per repo (default: `100`).
+- `--limit <N>` (`-l`): Maximum number of open PRs to inspect per repo (default: `150`).
 - `--maintainer <handle>` (`-m`): Filter the board to PRs where `<handle>` is a current or proposed owner.
 - `--output <path>` (`-o`): Save the generated Markdown to a file.
 - `--update-issue <number>`: Automatically update the description of a pinned GitHub issue in the target repository via `gh issue edit`.
