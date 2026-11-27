@@ -105,6 +105,8 @@ type OpenMetricsParser struct {
 	// Start timestamp parsing state.
 	st        int64
 	stHashSet uint64
+	// stBuf is reused across StartTimestamp calls when hashing series labels.
+	stBuf []byte
 	// ignoreExemplar instructs the parser to not overwrite exemplars (to keep them while peeking ahead).
 	ignoreExemplar bool
 	// visitedMFName is the metric family name of the last visited metric when peeking ahead
@@ -294,10 +296,7 @@ func (p *OpenMetricsParser) StartTimestamp() int64 {
 		return 0
 	}
 
-	var (
-		buf      []byte
-		currName []byte
-	)
+	var currName []byte
 	if len(p.series) > 1 && p.series[0] == '{' && p.series[1] == '"' {
 		// special case for UTF-8 encoded metric family names.
 		currName = p.series[p.offsets[0]-p.start : p.mfNameLen+2]
@@ -305,27 +304,21 @@ func (p *OpenMetricsParser) StartTimestamp() int64 {
 		currName = p.series[p.offsets[0]-p.start : p.mfNameLen]
 	}
 
-	currHash := p.seriesHash(&buf, currName)
+	currHash := p.seriesHash(&p.stBuf, currName)
 	// Check cache, perhaps we fetched something already.
 	if currHash == p.stHashSet && p.st > 0 {
 		return p.st
 	}
 
-	// Create a new lexer and other core state details to reset the parser once this function is done executing.
-	resetLexer := &openMetricsLexer{
-		b:     p.l.b,
-		i:     p.l.i,
-		start: p.l.start,
-		err:   p.l.err,
-		state: p.l.state,
-	}
+	// Save lexer and other core state details to reset the parser once this function is done executing.
+	savedLexer := *p.l
 	resetStart := p.start
 	resetMType := p.mtype
 
 	p.skipSTSeries = false
 	p.ignoreExemplar = true
 	defer func() {
-		p.l = resetLexer
+		*p.l = savedLexer
 		p.start = resetStart
 		p.mtype = resetMType
 		p.ignoreExemplar = false
@@ -354,7 +347,7 @@ func (p *OpenMetricsParser) StartTimestamp() int64 {
 		}
 
 		// Remove _created suffix.
-		peekedHash := p.seriesHash(&buf, peekedName[:len(peekedName)-8])
+		peekedHash := p.seriesHash(&p.stBuf, peekedName[:len(peekedName)-8])
 		if peekedHash != currHash {
 			// Found ST line for a different series, for our series no ST.
 			p.resetSTParseValues()
@@ -378,6 +371,7 @@ var (
 // of label names and values from the parsed OpenMetrics data. It skips quantile
 // and le labels for summaries and histograms respectively.
 func (p *OpenMetricsParser) seriesHash(offsetsArr *[]byte, metricFamilyName []byte) uint64 {
+	*offsetsArr = (*offsetsArr)[:0]
 	// Iterate through p.offsets to find the label names and values.
 	for i := 2; i < len(p.offsets); i += 4 {
 		lStart := p.offsets[i] - p.start
