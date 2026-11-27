@@ -534,12 +534,21 @@ func TestDB_Snapshot_AppendV2(t *testing.T) {
 	}
 
 	cases := []struct {
-		name        string
-		opts        *Options
-		inOrder     []point
-		outOfOrder  []point
+		name       string
+		opts       *Options
+		inOrder    []point
+		outOfOrder []point
+		// wantSamples and wantSum are the samples a DB reopened from the
+		// snapshot must return.
 		wantSamples int
 		wantSum     float64
+		// wantOOOMmapped requires the case to reach the m-mapped out-of-order
+		// chunks, so that the oooMmappedChunks path is exercised instead of
+		// only the in-memory out-of-order head chunk.
+		wantOOOMmapped bool
+		// wantOOOBlocks is the number of blocks carrying the from-out-of-order
+		// compaction hint that the snapshot must contain.
+		wantOOOBlocks int
 	}{
 		{
 			name: "in-order samples",
@@ -569,9 +578,64 @@ func TestDB_Snapshot_AppendV2(t *testing.T) {
 			}(),
 			// Samples older than the latest in-order sample end up in the
 			// out-of-order head instead of the in-order head block.
-			outOfOrder:  []point{{ts: mint + 5500, value: 2}},
-			wantSamples: 11,
-			wantSum:     12,
+			outOfOrder:    []point{{ts: mint + 5500, value: 2}},
+			wantSamples:   11,
+			wantSum:       12,
+			wantOOOBlocks: 1,
+		},
+		{
+			name: "out-of-order m-mapped chunks",
+			opts: func() *Options {
+				opts := DefaultOptions()
+				opts.OutOfOrderTimeWindow = 60 * time.Minute.Milliseconds()
+				return opts
+			}(),
+			inOrder: func() []point {
+				points := make([]point, 0, 10)
+				for i := range 10 {
+					points = append(points, point{ts: mint + int64(i)*1000, value: 1})
+				}
+				return points
+			}(),
+			// More out-of-order samples than OutOfOrderCapMax (32) force the
+			// in-memory out-of-order chunk to be cut and m-mapped, so most of
+			// the samples are only reachable through the oooMmappedChunks path.
+			outOfOrder: func() []point {
+				points := make([]point, 0, 40)
+				for i := range 40 {
+					points = append(points, point{ts: mint - 3000000 + int64(i), value: 2})
+				}
+				return points
+			}(),
+			wantSamples:    50,
+			wantSum:        90,
+			wantOOOMmapped: true,
+			wantOOOBlocks:  1,
+		},
+		{
+			name: "out-of-order head across two block ranges",
+			opts: func() *Options {
+				opts := DefaultOptions()
+				opts.OutOfOrderTimeWindow = 6 * time.Hour.Milliseconds()
+				return opts
+			}(),
+			inOrder: func() []point {
+				points := make([]point, 0, 10)
+				for i := range 10 {
+					points = append(points, point{ts: mint + int64(i)*1000, value: 1})
+				}
+				return points
+			}(),
+			// The out-of-order samples are more than one head chunk range
+			// (which equals the 2h block range) apart, so the snapshot must
+			// write one out-of-order block per block range they fall into.
+			outOfOrder: []point{
+				{ts: mint - 4*time.Hour.Milliseconds(), value: 2},
+				{ts: mint - 30*time.Minute.Milliseconds(), value: 2},
+			},
+			wantSamples:   12,
+			wantSum:       14,
+			wantOOOBlocks: 2,
 		},
 	}
 
@@ -600,14 +664,19 @@ func TestDB_Snapshot_AppendV2(t *testing.T) {
 			}
 			require.NoError(t, app.Commit())
 
+			if c.wantOOOMmapped {
+				require.NotZero(t, countOOOMmappedChunks(t, db), "the case must reach the m-mapped out-of-order chunks")
+			}
+
 			// Create a snapshot and reopen the DB from it.
 			snap := t.TempDir()
 			require.NoError(t, db.Snapshot(snap, true))
 			require.NoError(t, db.Close())
 
 			db = newTestDB(t, withDir(snap), withOpts(opts))
+			require.Equal(t, c.wantOOOBlocks, countOutOfOrderBlocks(db))
 
-			querier, err := db.Querier(mint, mint+10000)
+			querier, err := db.Querier(mint-24*time.Hour.Milliseconds(), mint+10000)
 			require.NoError(t, err)
 			defer func() { require.NoError(t, querier.Close()) }()
 
@@ -637,7 +706,7 @@ func TestDB_Snapshot_AppendV2(t *testing.T) {
 // snapshot must not m-map the in-memory out-of-order head chunk and must not cut
 // new WBL segments: the WBL is not truncated afterwards, so a restarted DB would
 // replay those samples into the head a second time.
-func TestDB_Snapshot_OutOfOrderHeadNoSideEffects(t *testing.T) {
+func TestDB_Snapshot_OutOfOrderHeadNoSideEffects_AppendV2(t *testing.T) {
 	opts := DefaultOptions()
 	opts.OutOfOrderTimeWindow = 60 * time.Minute.Milliseconds()
 	db := newTestDB(t, withOpts(opts))
@@ -692,30 +761,66 @@ func countWBLSegments(t *testing.T, db *DB) int {
 	return len(entries)
 }
 
-// countHeadOOOSamples returns the number of samples held in the out-of-order
-// part of the head, both in memory and m-mapped.
-func countHeadOOOSamples(t *testing.T, db *DB) int {
+// forEachHeadSeriesOOO calls f with every head series that has data in the head
+// index. The series is locked for the duration of the call.
+func forEachHeadSeriesOOO(t *testing.T, db *DB, f func(ms *memSeries)) {
 	t.Helper()
 	name, value := index.AllPostingsKey()
 	p := db.head.postings.Postings(context.Background(), name, value)
-	n := 0
 	for p.Next() {
 		ms := db.head.series.getByID(chunks.HeadSeriesRef(p.At()))
 		if ms == nil {
 			continue
 		}
 		ms.Lock()
-		if ms.ooo != nil {
-			if c := ms.ooo.oooHeadChunk; c != nil {
-				n += len(c.chunk.samples)
-			}
-			for _, c := range ms.ooo.oooMmappedChunks {
-				n += int(c.numSamples)
-			}
-		}
+		f(ms)
 		ms.Unlock()
 	}
 	require.NoError(t, p.Err())
+}
+
+// countHeadOOOSamples returns the number of samples held in the out-of-order
+// part of the head, both in memory and m-mapped.
+func countHeadOOOSamples(t *testing.T, db *DB) int {
+	t.Helper()
+	n := 0
+	forEachHeadSeriesOOO(t, db, func(ms *memSeries) {
+		if ms.ooo == nil {
+			return
+		}
+		if c := ms.ooo.oooHeadChunk; c != nil {
+			n += len(c.chunk.samples)
+		}
+		for _, c := range ms.ooo.oooMmappedChunks {
+			n += int(c.numSamples)
+		}
+	})
+	return n
+}
+
+// countOOOMmappedChunks returns the number of m-mapped out-of-order chunks held
+// by the head.
+func countOOOMmappedChunks(t *testing.T, db *DB) int {
+	t.Helper()
+	n := 0
+	forEachHeadSeriesOOO(t, db, func(ms *memSeries) {
+		if ms.ooo != nil {
+			n += len(ms.ooo.oooMmappedChunks)
+		}
+	})
+	return n
+}
+
+// countOutOfOrderBlocks returns the number of blocks of db that were created
+// from out-of-order data.
+func countOutOfOrderBlocks(db *DB) int {
+	n := 0
+	for _, b := range db.Blocks() {
+		meta := b.Meta()
+		if meta.Compaction.FromOutOfOrder() {
+			n++
+		}
+	}
 	return n
 }
 

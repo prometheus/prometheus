@@ -2601,7 +2601,7 @@ func (db *DB) ForceHeadMMap() {
 
 // Snapshot writes the current data to the directory. If withHead is set to true it
 // will create a new block containing all data that's currently in the memory buffer/WAL.
-func (db *DB) Snapshot(dir string, withHead bool) error {
+func (db *DB) Snapshot(dir string, withHead bool) (returnErr error) {
 	if dir == db.dir {
 		return errors.New("cannot snapshot into base directory")
 	}
@@ -2629,11 +2629,29 @@ func (db *DB) Snapshot(dir string, withHead bool) error {
 	mint := db.head.MinTime()
 	maxt := db.head.MaxTime()
 	head := NewRangeHead(db.head, mint, maxt)
+
+	// Keep track of the blocks written for the head so that a failure does not
+	// leave a partial snapshot behind. Blocks copied from db.blocks above are
+	// complete and are left untouched.
+	var writtenULIDs []ulid.ULID
+	defer func() {
+		if returnErr == nil {
+			return
+		}
+		// Best effort removal of the blocks written by this snapshot attempt,
+		// the same way compactOOO removes its partial blocks on error.
+		for _, uid := range writtenULIDs {
+			_ = os.RemoveAll(filepath.Join(dir, uid.String()))
+		}
+	}()
+
 	// Add +1 millisecond to block maxt because block intervals are half-open: [b.MinTime, b.MaxTime).
 	// Because of this block intervals are always +1 than the total samples it includes.
-	if _, err := db.compactor.Write(dir, head, mint, maxt+1, nil); err != nil {
+	uids, err := db.compactor.Write(dir, head, mint, maxt+1, nil)
+	if err != nil {
 		return fmt.Errorf("snapshot head block: %w", err)
 	}
+	writtenULIDs = append(writtenULIDs, uids...)
 
 	// The range head used above only covers the samples in the in-order head, so the samples
 	// still in the out-of-order head need their own blocks, the same way compactOOO writes them.
@@ -2645,7 +2663,11 @@ func (db *DB) Snapshot(dir string, withHead bool) error {
 			return fmt.Errorf("get ooo head for snapshot: %w", err)
 		}
 		if oooHead.MinTime() != math.MaxInt64 {
-			if _, err := db.writeOOOHeadBlocks(dir, oooHead); err != nil {
+			uids, err := db.writeOOOHeadBlocks(dir, oooHead)
+			// Track the partial blocks as well, so the deferred cleanup can
+			// remove them if writeOOOHeadBlocks failed midway.
+			writtenULIDs = append(writtenULIDs, uids...)
+			if err != nil {
 				return fmt.Errorf("snapshot ooo head blocks: %w", err)
 			}
 		}
