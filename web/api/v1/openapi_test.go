@@ -182,9 +182,6 @@ func TestOpenAPISchemaCompleteness(t *testing.T) {
 	}
 }
 
-// TODO: Add test to verify all routes from api.go Register() are covered in OpenAPI spec.
-// Consider wrapping Router to track registered paths and cross-check with OpenAPI paths.
-
 // TestOpenAPIShouldIncludePath verifies the shouldIncludePath method correctly
 // matches paths against the IncludePaths filter configuration.
 func TestOpenAPIShouldIncludePath(t *testing.T) {
