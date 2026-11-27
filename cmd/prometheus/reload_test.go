@@ -21,9 +21,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -208,6 +210,12 @@ func captureLogsToTLog(t testing.TB, r io.Reader) {
 	}
 }
 
+// gracefulShutdownTimeout bounds how long commandWithLogging waits for the
+// process to exit after SIGTERM. It must exceed the default
+// --storage.remote.flush-deadline (1m), which Prometheus may spend flushing
+// remote write queues on shutdown.
+const gracefulShutdownTimeout = 2 * time.Minute
+
 func commandWithLogging(t testing.TB, logProcessor func(testing.TB, io.Reader), name string, args ...string) *exec.Cmd {
 	if logProcessor == nil {
 		logProcessor = captureLogsToTLog
@@ -225,19 +233,50 @@ func commandWithLogging(t testing.TB, logProcessor func(testing.TB, io.Reader), 
 
 	go func() {
 		defer wg.Done()
+		defer func() { _, _ = io.Copy(io.Discard, stdoutPipe) }()
 		logProcessor(t, stdoutPipe)
 	}()
 	go func() {
 		defer wg.Done()
+		defer func() { _, _ = io.Copy(io.Discard, stderrPipe) }()
 		logProcessor(t, stderrPipe)
 	}()
 
 	t.Cleanup(func() {
-		cmd.Process.Kill()
-		cmd.Wait()
-		stdoutWriter.Close()
-		stderrWriter.Close()
-		wg.Wait()
+		// Close the writers and wait for the log processors on every path, so
+		// that all output reaches the test log before the test completes.
+		defer func() {
+			stdoutWriter.Close()
+			stderrWriter.Close()
+			wg.Wait()
+		}()
+
+		// Terminate the process gracefully, as that's the expected shutdown path.
+		// Prometheus must handle this signal cleanly.
+		if runtime.GOOS != "windows" {
+			if err := cmd.Process.Signal(syscall.SIGTERM); err != nil {
+				// The process may already be exiting, for example because the test
+				// sent it os.Interrupt. Its exit status decides.
+				t.Logf("sending SIGTERM: %v", err)
+			}
+			done := make(chan error, 1)
+			go func() { done <- cmd.Wait() }()
+			select {
+			case err := <-done:
+				if err != nil {
+					t.Errorf("process did not exit cleanly after SIGTERM: %v", err)
+				}
+			case <-time.After(gracefulShutdownTimeout):
+				// SIGQUIT makes the Go runtime write all goroutine stacks to stderr,
+				// which ends up in the test log, and exit.
+				t.Errorf("process did not exit within %v of SIGTERM, sending SIGQUIT", gracefulShutdownTimeout)
+				cmd.Process.Signal(syscall.SIGQUIT)
+				<-done
+			}
+		} else {
+			cmd.Process.Kill()
+			cmd.Wait()
+		}
 	})
 	return cmd
 }
@@ -247,6 +286,7 @@ func prometheusCommandWithLogging(t testing.TB, configFilePath string, port int,
 		"-test.main",
 		"--config.file=" + configFilePath,
 		"--web.listen-address=0.0.0.0:" + strconv.Itoa(port),
+		"--log.level=debug",
 	}
 	args = append(args, extraArgs...)
 	return commandWithLogging(t, nil, promPath, args...)
