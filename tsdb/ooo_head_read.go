@@ -348,12 +348,13 @@ func (cr *HeadAndOOOChunkReader) Close() error {
 }
 
 type OOOCompactionHead struct {
-	head        *Head
-	lastMmapRef chunks.ChunkDiskMapperRef
-	lastWBLFile int
-	postings    []storage.SeriesRef
-	chunkRange  int64
-	mint, maxt  int64 // Among all the compactable chunks.
+	head                        *Head
+	lastMmapRef                 chunks.ChunkDiskMapperRef
+	lastGarbageCollectedMmapRef chunks.ChunkDiskMapperRef
+	lastWBLFile                 int
+	postings                    []storage.SeriesRef
+	chunkRange                  int64
+	mint, maxt                  int64 // Among all the compactable chunks.
 }
 
 // NewOOOCompactionHead does the following:
@@ -403,6 +404,73 @@ func NewOOOCompactionHead(ctx context.Context, head *Head) (*OOOCompactionHead, 
 	}
 
 	return ch, nil
+}
+
+// newOOOSnapshotHead collects read-only references to all uncompacted out-of-order
+// chunks (both mmapped and in-memory head chunks) without rotating the WBL or
+// mmapping in-memory chunks so Snapshot remains non-destructive.
+func newOOOSnapshotHead(ctx context.Context, head *Head, lastGarbageCollectedMmapRef chunks.ChunkDiskMapperRef) (*OOOCompactionHead, *oooIsolationState, error) {
+	ch := &OOOCompactionHead{
+		head:                        head,
+		lastGarbageCollectedMmapRef: lastGarbageCollectedMmapRef,
+		chunkRange:                  head.chunkRange.Load(),
+		mint:                        math.MaxInt64,
+		maxt:                        math.MinInt64,
+	}
+
+	oooIsoState := head.oooIso.TrackReadAfter(lastGarbageCollectedMmapRef)
+
+	hr := headIndexReader{head: head, mint: ch.mint, maxt: ch.maxt}
+	n, v := index.AllPostingsKey()
+	p, err := hr.Postings(ctx, n, v)
+	if err != nil {
+		oooIsoState.Close()
+		return nil, nil, err
+	}
+	p = hr.SortedPostings(ctx, p)
+
+	for p.Next() {
+		seriesRef := p.At()
+		ms := head.series.getByID(chunks.HeadSeriesRef(seriesRef))
+		if ms == nil {
+			continue
+		}
+
+		ch.collectSnapshotOOOSeries(ms, seriesRef, lastGarbageCollectedMmapRef)
+	}
+	if err := p.Err(); err != nil {
+		oooIsoState.Close()
+		return nil, nil, fmt.Errorf("iterate postings: %w", err)
+	}
+
+	return ch, oooIsoState, nil
+}
+
+func (ch *OOOCompactionHead) collectSnapshotOOOSeries(ms *memSeries, seriesRef storage.SeriesRef, lastGarbageCollectedMmapRef chunks.ChunkDiskMapperRef) {
+	ms.Lock()
+	defer ms.Unlock()
+
+	if ms.ooo == nil {
+		return
+	}
+
+	hasSamples := false
+	for _, c := range ms.ooo.oooMmappedChunks {
+		if lastGarbageCollectedMmapRef != 0 && !c.ref.GreaterThan(lastGarbageCollectedMmapRef) {
+			continue
+		}
+		hasSamples = true
+		ch.mint = min(ch.mint, c.minTime)
+		ch.maxt = max(ch.maxt, c.maxTime)
+	}
+	if c := ms.ooo.oooHeadChunk; c != nil && c.chunk.NumSamples() > 0 {
+		hasSamples = true
+		ch.mint = min(ch.mint, c.minTime)
+		ch.maxt = max(ch.maxt, c.maxTime)
+	}
+	if hasSamples {
+		ch.postings = append(ch.postings, seriesRef)
+	}
 }
 
 // mmapOOOSeriesChunk m-maps OOO chunks for a single series during compaction head creation.
@@ -480,12 +548,13 @@ func (ch *OOOCompactionHead) Meta() BlockMeta {
 // Only the method of BlockReader interface are valid for the cloned OOOCompactionHead.
 func (ch *OOOCompactionHead) CloneForTimeRange(mint, maxt int64) *OOOCompactionHead {
 	return &OOOCompactionHead{
-		head:        ch.head,
-		lastMmapRef: ch.lastMmapRef,
-		postings:    ch.postings,
-		chunkRange:  ch.chunkRange,
-		mint:        mint,
-		maxt:        maxt,
+		head:                        ch.head,
+		lastMmapRef:                 ch.lastMmapRef,
+		lastGarbageCollectedMmapRef: ch.lastGarbageCollectedMmapRef,
+		postings:                    ch.postings,
+		chunkRange:                  ch.chunkRange,
+		mint:                        mint,
+		maxt:                        maxt,
 	}
 }
 
@@ -552,7 +621,7 @@ func (ir *OOOCompactionHeadIndexReader) Series(ref storage.SeriesRef, builder *l
 		return nil
 	}
 
-	getOOOSeriesChunks(s, ir.ch.head.opts.UseXOR2FloatEncoding(), ir.ch.head.opts.EnableHistogramSTEncoding.Load(), ir.ch.mint, ir.ch.maxt, 0, ir.ch.lastMmapRef, false, 0, chks, nil)
+	getOOOSeriesChunks(s, ir.ch.head.opts.UseXOR2FloatEncoding(), ir.ch.head.opts.EnableHistogramSTEncoding.Load(), ir.ch.mint, ir.ch.maxt, ir.ch.lastGarbageCollectedMmapRef, ir.ch.lastMmapRef, false, 0, chks, nil)
 	return nil
 }
 

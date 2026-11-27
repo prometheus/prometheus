@@ -1755,14 +1755,19 @@ func (db *DB) compactOOO(dest string, oooHead *OOOCompactionHead) (_ []ulid.ULID
 		if err != nil {
 			// Best effort removal of created block on any error.
 			for _, uid := range ulids {
-				_ = os.RemoveAll(filepath.Join(db.dir, uid.String()))
+				_ = os.RemoveAll(filepath.Join(dest, uid.String()))
 			}
 		}
 	}()
 
 	meta := &BlockMeta{}
 	meta.Compaction.SetOutOfOrder()
-	for t := blockSize * (oooHeadMint / blockSize); t <= oooHeadMaxt; t += blockSize {
+	// Floor division so negative timestamps (e.g. -1) align to the preceding block boundary.
+	firstBlockMin := blockSize * (oooHeadMint / blockSize)
+	if oooHeadMint < 0 && oooHeadMint%blockSize != 0 {
+		firstBlockMin -= blockSize
+	}
+	for t := firstBlockMin; t <= oooHeadMaxt; t += blockSize {
 		mint, maxt := t, t+blockSize
 		// Block intervals are half-open: [b.MinTime, b.MaxTime). Block intervals are always +1 than the total samples it includes.
 		uids, err := db.compactor.Write(dest, oooHead.CloneForTimeRange(mint, maxt-1), mint, maxt, meta)
@@ -2620,11 +2625,26 @@ func (db *DB) Snapshot(dir string, withHead bool) error {
 
 	mint := db.head.MinTime()
 	maxt := db.head.MaxTime()
-	head := NewRangeHead(db.head, mint, maxt)
-	// Add +1 millisecond to block maxt because block intervals are half-open: [b.MinTime, b.MaxTime).
-	// Because of this block intervals are always +1 than the total samples it includes.
-	if _, err := db.compactor.Write(dir, head, mint, maxt+1, nil); err != nil {
-		return fmt.Errorf("snapshot head block: %w", err)
+	if maxt >= mint {
+		head := NewRangeHead(db.head, mint, maxt)
+		// Add +1 millisecond to block maxt because block intervals are half-open: [b.MinTime, b.MaxTime).
+		// Because of this block intervals are always +1 than the total samples it includes.
+		if _, err := db.compactor.Write(dir, head, mint, maxt+1, nil); err != nil {
+			return fmt.Errorf("snapshot head block: %w", err)
+		}
+	}
+
+	if db.oooWasEnabled.Load() {
+		oooHead, oooIso, err := newOOOSnapshotHead(context.Background(), db.head, db.lastGarbageCollectedMmapRef)
+		if err != nil {
+			return fmt.Errorf("snapshot ooo head: %w", err)
+		}
+		defer oooIso.Close()
+		if len(oooHead.postings) > 0 {
+			if _, err := db.compactOOO(dir, oooHead); err != nil {
+				return fmt.Errorf("snapshot ooo head block: %w", err)
+			}
+		}
 	}
 	return nil
 }

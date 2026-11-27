@@ -298,6 +298,119 @@ func TestDBSnapshotJSONLoggerBlock(t *testing.T) {
 	require.True(t, found, "snapshot block log not found")
 }
 
+func TestDBSnapshotWithOOOHead(t *testing.T) {
+	t.Parallel()
+
+	opts := DefaultOptions()
+	opts.OutOfOrderCapMax = 3
+	opts.OutOfOrderTimeWindow = 300 * time.Minute.Milliseconds()
+
+	db := newTestDB(t, withOpts(opts))
+	db.DisableCompactions()
+
+	mixedSeries := labels.FromStrings("__name__", "metric_mixed")
+	oooOnlySeries := labels.FromStrings("__name__", "metric_ooo_only")
+
+	ctx := context.Background()
+	app := db.AppenderV2(ctx)
+	// Establish in-order head horizon at 200m for mixedSeries.
+	_, err := app.Append(0, mixedSeries, 0, 200*time.Minute.Milliseconds(), 1.0, nil, nil, storage.AOptions{})
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	// Append enough OOO samples on mixedSeries to spill into oooMmappedChunks and keep an active oooHeadChunk,
+	// plus an OOO-only series whose samples live strictly in oooHeadChunk.
+	oooTimestamps := []int64{10, 20, 30, 40, 50}
+	app = db.AppenderV2(ctx)
+	for i, m := range oooTimestamps {
+		ts := m * time.Minute.Milliseconds()
+		_, err = app.Append(0, mixedSeries, 0, ts, float64(10+i), nil, nil, storage.AOptions{})
+		require.NoError(t, err)
+	}
+	_, err = app.Append(0, oooOnlySeries, 0, 60*time.Minute.Milliseconds(), 99.0, nil, nil, storage.AOptions{})
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	// Snapshot with skipHead=true (withHead=false) must omit uncompacted OOO head samples.
+	snapNoHead := t.TempDir()
+	require.NoError(t, db.Snapshot(snapNoHead, false))
+	dbNoHead := newTestDB(t, withDir(snapNoHead))
+	qNoHead, err := dbNoHead.Querier(math.MinInt64, math.MaxInt64)
+	require.NoError(t, err)
+	gotNoHead := query(t, qNoHead, labels.MustNewMatcher(labels.MatchRegexp, "__name__", "metric_.*"))
+	require.Empty(t, gotNoHead)
+
+	expected := map[string][]chunks.Sample{
+		mixedSeries.String(): {
+			sample{0, 10 * time.Minute.Milliseconds(), 10.0, nil, nil},
+			sample{0, 20 * time.Minute.Milliseconds(), 11.0, nil, nil},
+			sample{0, 30 * time.Minute.Milliseconds(), 12.0, nil, nil},
+			sample{0, 40 * time.Minute.Milliseconds(), 13.0, nil, nil},
+			sample{0, 50 * time.Minute.Milliseconds(), 14.0, nil, nil},
+			sample{0, 200 * time.Minute.Milliseconds(), 1.0, nil, nil},
+		},
+		oooOnlySeries.String(): {
+			sample{0, 60 * time.Minute.Milliseconds(), 99.0, nil, nil},
+		},
+	}
+
+	// Snapshot withHead=true must persist both in-order and uncompacted OOO head samples non-destructively.
+	for i := range 2 {
+		snapDir := t.TempDir()
+		require.NoError(t, db.Snapshot(snapDir, true))
+
+		snapDB := newTestDB(t, withDir(snapDir))
+		q, err := snapDB.Querier(math.MinInt64, math.MaxInt64)
+		require.NoError(t, err)
+		got := query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "__name__", "metric_.*"))
+		require.Equalf(t, expected, got, "snapshot iteration %d mismatch", i)
+	}
+
+	// Live DB must retain all OOO samples intact after snapshots.
+	liveQ, err := db.Querier(math.MinInt64, math.MaxInt64)
+	require.NoError(t, err)
+	gotLive := query(t, liveQ, labels.MustNewMatcher(labels.MatchRegexp, "__name__", "metric_.*"))
+	require.Equal(t, expected, gotLive)
+}
+
+func TestDBSnapshotWithNegativeTimestampOOOHead(t *testing.T) {
+	t.Parallel()
+
+	opts := DefaultOptions()
+	opts.OutOfOrderTimeWindow = 300 * time.Minute.Milliseconds()
+
+	db := newTestDB(t, withOpts(opts))
+	db.DisableCompactions()
+
+	s := labels.FromStrings("__name__", "metric_neg_ooo")
+	ctx := context.Background()
+
+	app := db.AppenderV2(ctx)
+	_, err := app.Append(0, s, 0, 0, 1.0, nil, nil, storage.AOptions{})
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	// Append negative OOO timestamp not aligned on chunkRange boundary.
+	app = db.AppenderV2(ctx)
+	_, err = app.Append(0, s, 0, -1, 2.0, nil, nil, storage.AOptions{})
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	snapDir := t.TempDir()
+	require.NoError(t, db.Snapshot(snapDir, true))
+
+	snapDB := newTestDB(t, withDir(snapDir))
+	q, err := snapDB.Querier(math.MinInt64, math.MaxInt64)
+	require.NoError(t, err)
+	got := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "__name__", "metric_neg_ooo"))
+	require.Equal(t, map[string][]chunks.Sample{
+		s.String(): {
+			sample{0, -1, 2.0, nil, nil},
+			sample{0, 0, 1.0, nil, nil},
+		},
+	}, got)
+}
+
 // TestTombstoneCleanFail tests that a failing TombstoneClean doesn't leave any blocks behind.
 // When TombstoneClean errors the original block that should be rebuilt doesn't get deleted so
 // if TombstoneClean leaves any blocks behind these will overlap.
