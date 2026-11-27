@@ -112,6 +112,10 @@ func (g *RuleGroups) Validate(node ruleGroups, nameValidationScheme model.Valida
 			errs = append(errs, fmt.Errorf("%d:%d: Groupname must not be empty", node.Groups[j].Line, node.Groups[j].Column))
 		}
 
+		if g.Limit < 0 {
+			errs = append(errs, fmt.Errorf("%d:%d: group %q: limit must not be negative", node.Groups[j].Line, node.Groups[j].Column, g.Name))
+		}
+
 		if _, ok := set[g.Name]; ok {
 			errs = append(
 				errs,
