@@ -1428,20 +1428,38 @@ func BenchmarkWAL_HistogramEncoding(b *testing.B) {
 			for _, labelCount := range []int{0, 10, 50} {
 				for _, histograms := range []int{10, 100, 1000} {
 					for _, buckets := range []int{0, 1, 10, 100} {
-						b.Run(fmt.Sprintf("type=%s/labels=%d/histograms=%d/buckets=%d", maker.name, labelCount, histograms, buckets), func(b *testing.B) {
+						b.Run(fmt.Sprintf("type=%s/labels=%d/histograms=%d/buckets=%d/stStorage=%t", maker.name, labelCount, histograms, buckets, enableSTStorage), func(b *testing.B) {
 							series, samples, nhcbs := maker.make(labelCount, histograms, buckets)
 							enc := Encoder{EnableSTStorage: enableSTStorage}
+							var (
+								buf         []byte
+								recordBytes int
+							)
+							// Mirror headAppenderBase.log: skip empty slices, since the
+							// encoders emit a record header even for no samples, and reuse
+							// one buffer across records.
 							for b.Loop() {
-								var buf []byte
-								enc.Series(series, buf)
-								enc.Samples(samples, buf)
-								var leftOver []RefHistogramSample
-								_, leftOver = enc.HistogramSamples(nhcbs, buf)
-								if len(leftOver) > 0 {
-									enc.CustomBucketsHistogramSamples(leftOver, buf)
+								recordBytes = 0
+								if len(series) > 0 {
+									buf = enc.Series(series, buf[:0])
+									recordBytes += len(buf)
 								}
-								b.ReportMetric(float64(len(buf)), "recordBytes/ops")
+								if len(samples) > 0 {
+									buf = enc.Samples(samples, buf[:0])
+									recordBytes += len(buf)
+								}
+								if len(nhcbs) > 0 {
+									var leftOver []RefHistogramSample
+									buf, leftOver = enc.HistogramSamples(nhcbs, buf[:0])
+									recordBytes += len(buf)
+									if len(leftOver) > 0 {
+										buf = enc.CustomBucketsHistogramSamples(leftOver, buf[:0])
+										recordBytes += len(buf)
+									}
+								}
 							}
+							require.Positive(b, recordBytes)
+							b.ReportMetric(float64(recordBytes), "recordBytes/ops")
 						})
 					}
 				}
