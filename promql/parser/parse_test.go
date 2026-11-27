@@ -6659,6 +6659,21 @@ func TestNewParser(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestParseExpressionNestingDepthLimit(t *testing.T) {
+	p := NewParser(Options{})
+	depth := maxExpressionNestingDepth + 1
+	input := strings.Repeat("sum(", depth) + "up" + strings.Repeat(")", depth)
+
+	expr, err := p.ParseExpr(input)
+	require.ErrorContains(t, err, "expression exceeds maximum nesting depth")
+	require.Nil(t, expr, "an over-depth AST must not be returned to callers")
+
+	// Reusing the parser after an over-depth expression must work normally.
+	expr, err = p.ParseExpr("up")
+	require.NoError(t, err)
+	require.NotNil(t, expr)
+}
+
 func TestParseBitwiseOperators(t *testing.T) {
 	for _, op := range []ItemType{BITAND, BITOR, BITXOR} {
 		t.Run(op.String(), func(t *testing.T) {

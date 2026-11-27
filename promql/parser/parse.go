@@ -71,6 +71,7 @@ type Parser interface {
 	// Expr may still be non-nil and hold the partially-built AST, so that tooling
 	// (such as a language server) can inspect or print what was parsed. A partial
 	// AST is well-formed for inspection and printing but must not be evaluated.
+	// It returns a nil expression if the AST exceeds the maximum nesting depth.
 	ParseExpr(input string) (Expr, error)
 	ParseMetric(input string) (labels.Labels, error)
 	// ParseMetricSelector parses the input as a metric selector and returns its
@@ -86,6 +87,9 @@ type Parser interface {
 type promQLParser struct {
 	options Options
 }
+
+// maxExpressionNestingDepth bounds AST depth before recursive type checking.
+const maxExpressionNestingDepth = 50000
 
 // NewParser returns a new PromQL Parser configured with the given options.
 func NewParser(opts Options) Parser {
@@ -222,6 +226,11 @@ func (p *parser) parseExpr() (expr Expr, err error) {
 	if parseResult != nil {
 		expr = parseResult.(Expr)
 	}
+	if expr != nil && exceedsMaxExpressionDepth(expr) {
+		p.addParseErrf(posrange.PositionRange{Start: 0, End: posrange.Pos(len(p.lex.input))},
+			"expression exceeds maximum nesting depth of %d", maxExpressionNestingDepth)
+		return nil, p.parseErrors
+	}
 
 	// Only typecheck when there are no syntax errors.
 	if len(p.parseErrors) == 0 {
@@ -233,6 +242,53 @@ func (p *parser) parseExpr() (expr Expr, err error) {
 	}
 
 	return expr, err
+}
+
+// exceedsMaxExpressionDepth checks AST depth iteratively so it is safe for
+// expressions deeper than the recursive semantic checker can handle.
+func exceedsMaxExpressionDepth(expr Expr) bool {
+	type entry struct {
+		node  Node
+		depth int
+	}
+	var buf [16]entry
+	pending := append(buf[:0], entry{node: expr, depth: 1})
+	for len(pending) > 0 {
+		current := pending[len(pending)-1]
+		pending = pending[:len(pending)-1]
+		if current.node == nil {
+			continue
+		}
+		if current.depth > maxExpressionNestingDepth {
+			return true
+		}
+		depth := current.depth + 1
+		switch n := current.node.(type) {
+		case *DurationExpr:
+			pending = append(pending, entry{node: n.LHS, depth: depth}, entry{node: n.RHS, depth: depth})
+		case *VectorSelector:
+			if n.OriginalOffsetExpr != nil {
+				pending = append(pending, entry{node: n.OriginalOffsetExpr, depth: depth})
+			}
+		case *MatrixSelector:
+			pending = append(pending, entry{node: n.VectorSelector, depth: depth})
+			if n.RangeExpr != nil {
+				pending = append(pending, entry{node: n.RangeExpr, depth: depth})
+			}
+		case *SubqueryExpr:
+			pending = append(pending, entry{node: n.Expr, depth: depth})
+			for _, duration := range [...]*DurationExpr{n.RangeExpr, n.StepExpr, n.OriginalOffsetExpr} {
+				if duration != nil {
+					pending = append(pending, entry{node: duration, depth: depth})
+				}
+			}
+		default:
+			for child := range ChildrenIter(current.node) {
+				pending = append(pending, entry{node: child, depth: depth})
+			}
+		}
+	}
+	return false
 }
 
 func (p *parser) Close() {
