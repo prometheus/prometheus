@@ -14,6 +14,8 @@
 package storage
 
 import (
+	"fmt"
+	"math"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -24,6 +26,53 @@ import (
 )
 
 func TestMemoizedSeriesIterator(t *testing.T) {
+	t.Run("retaining seek at minimum timestamp", func(t *testing.T) {
+		for _, kind := range []chunkenc.ValueType{chunkenc.ValFloat, chunkenc.ValHistogram, chunkenc.ValFloatHistogram} {
+			for _, delta := range []int64{0, 1, 2} {
+				for _, target := range []int64{math.MinInt64, math.MinInt64 + 1, math.MinInt64 + 2, -1} {
+					t.Run(fmt.Sprintf("%s/delta%d/target%d", kind, delta, target), func(t *testing.T) {
+						var source samples
+						wantType := chunkenc.ValFloatHistogram
+						for i := range 2 {
+							timestamp := int64(i + 1)
+							switch kind {
+							case chunkenc.ValFloat:
+								wantType = chunkenc.ValFloat
+								source = append(source, fSample{t: timestamp, f: float64(42 + i)})
+							case chunkenc.ValHistogram:
+								source = append(source, hSample{t: timestamp, h: &histogram.Histogram{CounterResetHint: histogram.GaugeType, Schema: 0, ZeroThreshold: 1, ZeroCount: 1, Count: uint64(3 + i), Sum: 4.5 + 1.5*float64(i), PositiveSpans: []histogram.Span{{Offset: 1, Length: 1}}, PositiveBuckets: []int64{int64(2 + i)}}})
+							case chunkenc.ValFloatHistogram:
+								source = append(source, fhSample{t: timestamp, fh: &histogram.FloatHistogram{CounterResetHint: histogram.GaugeType, Schema: 0, ZeroThreshold: 1, ZeroCount: 1, Count: float64(3 + i), Sum: 4.5 + 1.5*float64(i), PositiveSpans: []histogram.Span{{Offset: 1, Length: 1}}, PositiveBuckets: []float64{float64(2 + i)}}})
+							}
+						}
+						it := NewMemoizedIterator(NewListSeriesIterator(source), delta)
+						require.Equal(t, wantType, it.Next())
+						for range 2 {
+							require.Equal(t, wantType, it.Seek(target))
+							require.Equal(t, int64(2), it.AtT())
+							if wantType == chunkenc.ValFloat {
+								ts, v := it.At()
+								require.Equal(t, int64(2), ts)
+								require.Equal(t, float64(43), v)
+							} else {
+								ts, h := it.AtFloatHistogram()
+								require.Equal(t, int64(2), ts)
+								require.Equal(t, float64(4), h.Count)
+								require.Equal(t, float64(6), h.Sum)
+								require.Equal(t, []float64{3}, h.PositiveBuckets)
+							}
+							_, previous, _, _, ok := it.PeekPrev()
+							require.True(t, ok)
+							require.Equal(t, int64(1), previous)
+						}
+						require.Equal(t, chunkenc.ValNone, it.Next())
+						require.NoError(t, it.Err())
+					})
+				}
+			}
+		}
+	})
+
 	var it *MemoizedSeriesIterator
 
 	sampleEq := func(est, ets int64, ev float64, efh *histogram.FloatHistogram) {
