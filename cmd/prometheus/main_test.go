@@ -732,24 +732,39 @@ func getCurrentGaugeValuesFor(t *testing.T, reg prometheus.Gatherer, metricNames
 	return res
 }
 
-func TestAgentSuccessfulStartup(t *testing.T) {
+func TestAlertmanagerDiscoveryMetric(t *testing.T) {
 	t.Parallel()
 
-	prom := exec.Command(promPath, "-test.main", "--agent", "--web.listen-address=0.0.0.0:0", "--config.file="+agentConfig)
-	require.NoError(t, prom.Start())
+	for _, tc := range []struct {
+		name       string
+		configFile string
+	}{
+		{name: "server", configFile: promConfig},
+		{name: "agent", configFile: agentConfig},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			storageDir := t.TempDir()
+			args := []string{"--storage.tsdb.path=" + storageDir}
+			if tc.name == "agent" {
+				args = []string{"--agent", "--storage.agent.path=" + storageDir}
+			}
+			port := testutil.RandomUnprivilegedPort(t)
+			prom := prometheusCommandWithLogging(t, tc.configFile, port, args...)
+			require.NoError(t, prom.Start())
+			waitForPrometheusReady(t, port)
 
-	actualExitStatus := 0
-	done := make(chan error, 1)
+			resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/metrics", port))
+			require.NoError(t, err)
+			defer resp.Body.Close()
+			require.Equal(t, http.StatusOK, resp.StatusCode)
+			body, err := io.ReadAll(resp.Body)
+			require.NoError(t, err)
 
-	go func() { done <- prom.Wait() }()
-	select {
-	case err := <-done:
-		t.Logf("prometheus agent exited early: %v", err)
-		actualExitStatus = prom.ProcessState.ExitCode()
-	case <-time.After(startupTime):
-		prom.Process.Kill()
+			const metric = "prometheus_notifications_alertmanagers_discovered"
+			exposed := strings.Contains(string(body), "\n"+metric+" ")
+			require.Equal(t, tc.name == "server", exposed, "unexpected exposure of %s", metric)
+		})
 	}
-	require.Equal(t, 0, actualExitStatus)
 }
 
 func TestAgentFailedStartupWithServerFlag(t *testing.T) {

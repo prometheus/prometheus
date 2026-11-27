@@ -1008,10 +1008,10 @@ func main() {
 		ctxWeb, cancelWeb = context.WithCancel(context.Background())
 		ctxRule           = context.Background()
 
-		notifierManager = notifier.NewManager(&cfg.notifier, cfgFile.GlobalConfig.MetricNameValidationScheme, logger.With("component", "notifier"))
+		notifierManager *notifier.Manager
 
 		ctxScrape, cancelScrape = context.WithCancel(context.Background())
-		ctxNotify, cancelNotify = context.WithCancel(context.Background())
+		cancelNotify            context.CancelFunc
 		discoveryManagerScrape  *discovery.Manager
 		discoveryManagerNotify  *discovery.Manager
 	)
@@ -1039,10 +1039,17 @@ func main() {
 		os.Exit(1)
 	}
 
-	discoveryManagerNotify = discovery.NewManager(ctxNotify, logger.With("component", "discovery manager notify"), prometheus.DefaultRegisterer, sdMetrics, discovery.Name("notify"), discovery.FeatureRegistry(features.DefaultRegistry))
-	if discoveryManagerNotify == nil {
-		logger.Error("failed to create a discovery manager notify")
-		os.Exit(1)
+	if !agentMode {
+		var ctxNotify context.Context
+		ctxNotify, cancelNotify = context.WithCancel(context.Background())
+
+		notifierManager = notifier.NewManager(&cfg.notifier, cfgFile.GlobalConfig.MetricNameValidationScheme, logger.With("component", "notifier"))
+		discoveryManagerNotify = discovery.NewManager(ctxNotify, logger.With("component", "discovery manager notify"), prometheus.DefaultRegisterer, sdMetrics, discovery.Name("notify"), discovery.FeatureRegistry(features.DefaultRegistry))
+		if discoveryManagerNotify == nil {
+			cancelNotify()
+			logger.Error("failed to create a discovery manager notify")
+			os.Exit(1)
+		}
 	}
 
 	scrapeManager, err := scrape.NewManager(
@@ -1238,8 +1245,7 @@ func main() {
 				return nil
 			},
 		}, {
-			// The Scrape and notifier managers need to reload before the Discovery manager as
-			// they need to read the most updated config when receiving the new targets list.
+			// Reload the scrape manager before its discovery manager delivers new targets.
 			name:     "scrape",
 			reloader: scrapeManager.ApplyConfig,
 		}, {
@@ -1255,49 +1261,50 @@ func main() {
 				}
 				return discoveryManagerScrape.ApplyConfig(c)
 			},
-		}, {
-			name:     "notify",
-			reloader: notifierManager.ApplyConfig,
-		}, {
-			name: "notify_sd",
-			reloader: func(cfg *config.Config) error {
-				c := make(map[string]discovery.Configs)
-				for k, v := range cfg.AlertingConfig.AlertmanagerConfigs.ToMap() {
-					c[k] = v.ServiceDiscoveryConfigs
-				}
-				return discoveryManagerNotify.ApplyConfig(c)
-			},
-		}, {
-			name: "rules",
-			reloader: func(cfg *config.Config) error {
-				if agentMode {
-					// No-op in Agent mode
-					return nil
-				}
-
-				// Get all rule files matching the configuration paths.
-				var files []string
-				for _, pat := range cfg.RuleFiles {
-					fs, err := filepath.Glob(pat)
-					if err != nil {
-						// The only error can be a bad pattern.
-						return fmt.Errorf("error retrieving rule files for %s: %w", pat, err)
-					}
-					files = append(files, fs...)
-				}
-				return ruleManager.Update(
-					time.Duration(cfg.GlobalConfig.EvaluationInterval),
-					files,
-					cfg.GlobalConfig.ExternalLabels,
-					externalURL,
-					nil,
-				)
-			},
-		}, {
-			name:     "tracing",
-			reloader: tracingManager.ApplyConfig,
 		},
 	}
+	if !agentMode {
+		// Reload the notifier before Alertmanager discovery delivers new targets.
+		reloaders = append(reloaders,
+			reloader{
+				name:     "notify",
+				reloader: notifierManager.ApplyConfig,
+			}, reloader{
+				name: "notify_sd",
+				reloader: func(cfg *config.Config) error {
+					c := make(map[string]discovery.Configs)
+					for k, v := range cfg.AlertingConfig.AlertmanagerConfigs.ToMap() {
+						c[k] = v.ServiceDiscoveryConfigs
+					}
+					return discoveryManagerNotify.ApplyConfig(c)
+				},
+			}, reloader{
+				name: "rules",
+				reloader: func(cfg *config.Config) error {
+					// Get all rule files matching the configuration paths.
+					var files []string
+					for _, pat := range cfg.RuleFiles {
+						fs, err := filepath.Glob(pat)
+						if err != nil {
+							// The only error can be a bad pattern.
+							return fmt.Errorf("error retrieving rule files for %s: %w", pat, err)
+						}
+						files = append(files, fs...)
+					}
+					return ruleManager.Update(
+						time.Duration(cfg.GlobalConfig.EvaluationInterval),
+						files,
+						cfg.GlobalConfig.ExternalLabels,
+						externalURL,
+						nil,
+					)
+				},
+			})
+	}
+	reloaders = append(reloaders, reloader{
+		name:     "tracing",
+		reloader: tracingManager.ApplyConfig,
+	})
 
 	prometheus.MustRegister(configSuccess)
 	prometheus.MustRegister(configSuccessTime)
@@ -1375,7 +1382,7 @@ func main() {
 			},
 		)
 	}
-	{
+	if !agentMode {
 		// Notify discovery manager.
 		g.Add(
 			func() error {
@@ -1388,8 +1395,7 @@ func main() {
 				cancelNotify()
 			},
 		)
-	}
-	if !agentMode {
+
 		// Rule manager.
 		g.Add(
 			func() error {
@@ -1697,7 +1703,7 @@ func main() {
 			},
 		)
 	}
-	{
+	if !agentMode {
 		// Notifier.
 
 		// Calling notifier.Stop() before ruleManager.Stop() will cause a panic if the ruleManager isn't running,
