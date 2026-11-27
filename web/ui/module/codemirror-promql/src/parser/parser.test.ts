@@ -1207,6 +1207,35 @@ describe('promql operations', () => {
       ],
     },
     {
+      expr: 'foo and fill(0) bar',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [
+        {
+          from: 0,
+          to: 19,
+          message: 'filling in missing series not allowed for set operators',
+          severity: 'error',
+        },
+      ],
+    },
+    {
+      expr: '1 + fill(0) foo',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [
+        {
+          from: 0,
+          to: 15,
+          message: 'filling in missing series only allowed between instant vectors',
+          severity: 'error',
+        },
+      ],
+    },
+    {
+      expr: 'foo + on(a) fill_left(1) bar',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [],
+    },
+    {
       expr: '{"__name__"="foo", __name__="bar"}',
       expectedValueType: ValueType.vector,
       expectedDiag: [
