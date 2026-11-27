@@ -4654,6 +4654,18 @@ func TestParseTime(t *testing.T) {
 			input:  MaxTime.Format(time.RFC3339Nano),
 			result: MaxTime,
 		},
+		{
+			input: "1e100",
+			fail:  true,
+		},
+		{
+			input: "NaN",
+			fail:  true,
+		},
+		{
+			input: "Inf",
+			fail:  true,
+		},
 	}
 
 	for _, test := range tests {
