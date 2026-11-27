@@ -180,7 +180,9 @@ func includeStaleNaNs(s []Sample) bool {
 
 // Appendable is a storage.Appendable mock.
 // It allows recording all samples that were added through the appender and injecting errors.
-// Appendable will panic if more than one Appender is open.
+// Appendable does not support opening more than one Appender at a time:
+// any appender opened while another one is still open returns an error instead
+// of recording samples.
 type Appendable struct {
 	appendErrFn          func(ls labels.Labels) error             // If non-nil, inject appender error on every Append, AppendHistogram and ST zero calls.
 	refFn                func(ls labels.Labels) storage.SeriesRef // If non-nil, decides the storage.SeriesRef returned by the appender.
