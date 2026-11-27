@@ -1239,6 +1239,53 @@ func funcDoubleExponentialSmoothing(vectorVals []Vector, matrixVal Matrix, args 
 	return append(enh.Out, Sample{F: s1}), nil
 }
 
+// === ewma_over_time(Matrix parser.ValueTypeMatrix, alpha parser.ValueTypeScalar) (Vector, Annotations) ===
+// Returns the exponentially-weighted moving average of float samples in the
+// range vector for a smoothing factor alpha in (0, 1]:
+//
+//	s[0] = x[0]
+//	s[i] = alpha * x[i] + (1 - alpha) * s[i-1]
+//
+// Higher alpha = more responsive to the latest sample; lower alpha = heavier
+// smoothing of older history. Compared to avg_over_time, EWMA weights recent
+// observations more so that it tracks gradual drifts while damping noise.
+// Compared to double_exponential_smoothing, this is a simpler one-parameter
+// smoother without a separate trend term, suited to signals where noise
+// reduction is the goal.
+//
+// alpha must be in (0, 1]. Out-of-range alpha yields NaN per series and a
+// warning-level annotation. Histogram samples are skipped, and a mixed
+// range emits HistogramIgnoredInMixedRangeInfo.
+func funcEwmaOverTime(vectorVals []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	if len(vectorVals) == 0 || len(matrixVal) == 0 || len(vectorVals[0]) == 0 {
+		return enh.Out, nil
+	}
+	samples := matrixVal[0]
+	if len(samples.Floats) == 0 {
+		return enh.Out, nil
+	}
+	alpha := vectorVals[0][0].F
+	// NaN comparisons are always false, so check IsNaN explicitly.
+	invalidAlpha := math.IsNaN(alpha) || alpha <= 0 || alpha > 1
+	var annos annotations.Annotations
+	if invalidAlpha {
+		annos.Add(annotations.NewInvalidSmoothingFactorWarning(alpha, args[1].PositionRange()))
+	}
+	if len(samples.Histograms) > 0 {
+		annos.Add(annotations.NewHistogramIgnoredInMixedRangeInfo(getMetricName(samples.Metric), args[0].PositionRange()))
+	}
+	var s float64
+	if invalidAlpha {
+		s = math.NaN()
+	} else {
+		s = samples.Floats[0].F
+		for i := 1; i < len(samples.Floats); i++ {
+			s = alpha*samples.Floats[i].F + (1-alpha)*s
+		}
+	}
+	return append(enh.Out, Sample{F: s}), annos
+}
+
 // filterFloats filters out histogram samples from the vector in-place.
 func filterFloats(v Vector) Vector {
 	floats := v[:0]
@@ -2973,6 +3020,7 @@ var FunctionCalls = map[string]FunctionCall{
 	"end":                          nil, // Folded into NumberLiteral by foldQueryContextFunctions.
 	"delta":                        funcDelta,
 	"deriv":                        funcDeriv,
+	"ewma_over_time":               funcEwmaOverTime,
 	"first_over_time":              funcFirstOverTime,
 	"histogram_avg":                funcHistogramAvg,
 	"histogram_count":              funcHistogramCount,

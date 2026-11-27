@@ -147,6 +147,7 @@ var (
 	InvalidIntegralStrategy                 = fmt.Errorf("%w: strategy should be 0, 1, or 2 (default), using 2", PromQLWarning)
 	InvalidRatioWarning                     = fmt.Errorf("%w: ratio value should be between -1 and 1", PromQLWarning)
 	InvalidQuantileWarning                  = fmt.Errorf("%w: quantile value should be between 0 and 1", PromQLWarning)
+	InvalidSmoothingFactorWarning           = fmt.Errorf("%w: smoothing factor alpha must be in (0, 1]", PromQLWarning)
 	BadBucketLabelWarning                   = fmt.Errorf("%w: bucket label %q is missing or has a malformed value", PromQLWarning, model.BucketLabel)
 	MixedFloatsHistogramsWarning            = fmt.Errorf("%w: encountered a mix of histograms and floats for", PromQLWarning)
 	MixedClassicNativeHistogramsWarning     = fmt.Errorf("%w: vector contains a mix of classic and native histograms", PromQLWarning)
@@ -225,6 +226,15 @@ func NewInvalidQuantileWarning(q float64, pos posrange.PositionRange) error {
 	return &annoErr{
 		PositionRange: pos,
 		Err:           fmt.Errorf("%w, got %g", InvalidQuantileWarning, q),
+	}
+}
+
+// NewInvalidSmoothingFactorWarning is used when the user specifies an invalid
+// smoothing factor (alpha) for ewma_over_time, i.e. a float outside (0, 1] or NaN.
+func NewInvalidSmoothingFactorWarning(alpha float64, pos posrange.PositionRange) error {
+	return &annoErr{
+		PositionRange: pos,
+		Err:           fmt.Errorf("%w, got %g", InvalidSmoothingFactorWarning, alpha),
 	}
 }
 

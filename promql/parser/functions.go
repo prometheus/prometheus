@@ -160,6 +160,12 @@ var Functions = map[string]*Function{
 		ArgTypes:   []ValueType{ValueTypeMatrix},
 		ReturnType: ValueTypeVector,
 	},
+	"ewma_over_time": {
+		Name:         "ewma_over_time",
+		ArgTypes:     []ValueType{ValueTypeMatrix, ValueTypeScalar},
+		ReturnType:   ValueTypeVector,
+		Experimental: true,
+	},
 	"exp": {
 		Name:       "exp",
 		ArgTypes:   []ValueType{ValueTypeVector},

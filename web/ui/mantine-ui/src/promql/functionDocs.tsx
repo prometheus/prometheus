@@ -1147,6 +1147,45 @@ const funcDocs: Record<string, React.ReactNode> = {
       </p>
     </>
   ),
+  ewma_over_time: (
+    <>
+      <p>
+        <strong>
+          This function has to be enabled via the{" "}
+          <a href="../feature_flags.md#experimental-promql-functions">feature flag</a>
+          <code>--enable-feature=promql-experimental-functions</code>.
+        </strong>
+      </p>
+
+      <p>
+        <code>ewma_over_time(v range-vector, alpha scalar)</code> returns the exponentially-weighted moving average of
+        the float samples in the range vector for a smoothing factor <code>alpha</code> in <code>(0, 1]</code>:
+      </p>
+
+      <pre>
+        <code>s[i] = alpha * x[i] + (1 - alpha) * s[i-1], with s[0] = x[0]</code>
+      </pre>
+
+      <p>
+        Higher <code>alpha</code> tracks the most recent samples more responsively; lower <code>alpha</code>
+        applies heavier smoothing of older history. Compared to <code>avg_over_time</code>, EWMA weights recent
+        observations more, so it can track gradual drifts while damping per-scrape noise.
+      </p>
+
+      <p>
+        Returns <code>NaN</code> per series for an out-of-range or <code>NaN</code> <code>alpha</code>, with a
+        warning-level annotation. Histogram samples are skipped. Ranges containing only histogram samples are silently
+        removed from the output, while ranges containing a mix of float and histogram samples use only the float samples
+        and emit an info-level annotation.
+      </p>
+
+      <p>For example, to track sustained request-latency drift while dampening per-scrape noise:</p>
+
+      <pre>
+        <code>ewma_over_time(http_request_duration_seconds[30m], 0.2)</code>
+      </pre>
+    </>
+  ),
   exp: (
     <>
       <p>
