@@ -185,9 +185,15 @@ export class Parser {
         }
         break;
       }
-      case MatrixSelector:
-        this.checkAST(node.getChild('Expr'));
+      case MatrixSelector: {
+        const expr = node.getChild('Expr');
+        this.checkAST(expr);
+        // Like Prometheus, only a vector selector can take a range: sum(foo)[5m] or (foo)[5m] are invalid.
+        if (expr && expr.type.id !== VectorSelector) {
+          this.addDiagnostic(node, 'ranges only allowed for vector selectors');
+        }
         break;
+      }
       case VectorSelector:
         this.checkVectorSelector(node);
         break;

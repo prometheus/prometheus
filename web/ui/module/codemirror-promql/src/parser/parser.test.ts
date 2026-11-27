@@ -1207,6 +1207,47 @@ describe('promql operations', () => {
       ],
     },
     {
+      expr: 'sum(foo)[5m]',
+      expectedValueType: ValueType.matrix,
+      expectedDiag: [
+        {
+          from: 0,
+          to: 12,
+          message: 'ranges only allowed for vector selectors',
+          severity: 'error',
+        },
+      ],
+    },
+    {
+      expr: '(foo)[5m]',
+      expectedValueType: ValueType.matrix,
+      expectedDiag: [
+        {
+          from: 0,
+          to: 9,
+          message: 'ranges only allowed for vector selectors',
+          severity: 'error',
+        },
+      ],
+    },
+    {
+      expr: 'foo[5m][5m]',
+      expectedValueType: ValueType.matrix,
+      expectedDiag: [
+        {
+          from: 0,
+          to: 11,
+          message: 'ranges only allowed for vector selectors',
+          severity: 'error',
+        },
+      ],
+    },
+    {
+      expr: 'foo[5m] offset 1m',
+      expectedValueType: ValueType.matrix,
+      expectedDiag: [],
+    },
+    {
       expr: '{"__name__"="foo", __name__="bar"}',
       expectedValueType: ValueType.vector,
       expectedDiag: [
