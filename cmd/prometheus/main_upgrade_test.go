@@ -17,7 +17,10 @@ import (
 	"archive/tar"
 	"bufio"
 	"compress/gzip"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -39,10 +42,16 @@ import (
 
 const prometheusDownloadManifestURL = "https://prometheus.io/download.json"
 
+// prometheusUpgradeCacheEnv overrides the directory where release archives are
+// cached between test runs. CI sets it to a path covered by its cache.
+const prometheusUpgradeCacheEnv = "PROMETHEUS_UPGRADE_TEST_CACHE_DIR"
+
 // ltsRelease identifies an LTS release and where to download it for the current OS/arch.
 type ltsRelease struct {
-	version  string
-	assetURL string
+	version     string
+	assetURL    string
+	assetSHA256 string
+	assetSize   int64
 }
 
 // fetchLTSReleases fetches all current LTS releases and their download URLs for the
@@ -61,10 +70,12 @@ func fetchLTSReleases(t *testing.T) []ltsRelease {
 			Version string `json:"version"`
 			LTS     bool   `json:"lts"`
 			Files   []struct {
-				URL  string `json:"url"`
-				OS   string `json:"os"`
-				Arch string `json:"arch"`
-				Kind string `json:"kind"`
+				URL    string `json:"url"`
+				OS     string `json:"os"`
+				Arch   string `json:"arch"`
+				Kind   string `json:"kind"`
+				SHA256 string `json:"sha256"`
+				Size   int64  `json:"size"`
 			} `json:"files"`
 		} `json:"prometheus"`
 	}
@@ -77,14 +88,19 @@ func fetchLTSReleases(t *testing.T) []ltsRelease {
 		}
 		var found bool
 		for _, f := range r.Files {
-			if f.Kind == "archive" && f.OS == runtime.GOOS && f.Arch == runtime.GOARCH {
-				releases = append(releases, ltsRelease{
-					version:  strings.TrimPrefix(r.Version, "v"),
-					assetURL: f.URL,
-				})
-				found = true
-				break
+			if f.Kind != "archive" || f.OS != runtime.GOOS || f.Arch != runtime.GOARCH {
+				continue
 			}
+			require.NotEmpty(t, f.SHA256, "no sha256 for archive of LTS release %s", r.Version)
+			require.NotZero(t, f.Size, "no size for archive of LTS release %s", r.Version)
+			releases = append(releases, ltsRelease{
+				version:     strings.TrimPrefix(r.Version, "v"),
+				assetURL:    f.URL,
+				assetSHA256: f.SHA256,
+				assetSize:   f.Size,
+			})
+			found = true
+			break
 		}
 		require.True(t, found, "no archive found for current OS/arch in LTS release %s (os=%s arch=%s)", r.Version, runtime.GOOS, runtime.GOARCH)
 	}
@@ -109,7 +125,7 @@ func getPrometheusMetricValue(t *testing.T, port int, metricType model.MetricTyp
 type versionChangeTest struct {
 	start time.Time
 
-	ltsAssetURL       string
+	lts               ltsRelease
 	ltsVersionBinPath string
 
 	prometheusPort           int
@@ -122,12 +138,19 @@ type versionChangeTest struct {
 func (c versionChangeTest) downloadAndExtractLatestLTS(t *testing.T) {
 	const prometheusBinName = "prometheus"
 
-	resp, err := http.Get(c.ltsAssetURL)
+	archivePath, fromCache, err := cacheLTSArchive(c.lts)
 	require.NoError(t, err)
-	defer resp.Body.Close()
-	require.Equal(t, http.StatusOK, resp.StatusCode)
+	if fromCache {
+		t.Logf("using cached release archive %s", archivePath)
+	} else {
+		t.Logf("downloaded release archive to %s", archivePath)
+	}
 
-	gzReader, err := gzip.NewReader(resp.Body)
+	archive, err := os.Open(archivePath)
+	require.NoError(t, err)
+	defer archive.Close()
+
+	gzReader, err := gzip.NewReader(archive)
 	require.NoError(t, err)
 	defer gzReader.Close()
 
@@ -149,7 +172,207 @@ func (c versionChangeTest) downloadAndExtractLatestLTS(t *testing.T) {
 			return
 		}
 	}
-	require.FailNow(t, "prometheus binary not found in LTS tarball", "URL", c.ltsAssetURL)
+	require.FailNow(t, "prometheus binary not found in LTS tarball", "URL", c.lts.assetURL)
+}
+
+// cacheLTSArchive returns the path to a local copy of the LTS release archive,
+// downloading it when it is missing or does not match the manifest checksum.
+// The second return value reports whether the archive was already cached.
+func cacheLTSArchive(lts ltsRelease) (string, bool, error) {
+	dir, err := upgradeTestCacheDir()
+	if err != nil {
+		return "", false, err
+	}
+
+	path := filepath.Join(dir, lts.assetSHA256+".tar.gz")
+	if cachedArchiveMatches(path, lts.assetSHA256, lts.assetSize) {
+		return path, true, nil
+	}
+
+	resp, err := http.Get(lts.assetURL)
+	if err != nil {
+		return "", false, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", false, fmt.Errorf("downloading %s: unexpected status %s", lts.assetURL, resp.Status)
+	}
+
+	tmp, err := os.CreateTemp(dir, ".prometheus-*.tar.gz")
+	if err != nil {
+		return "", false, err
+	}
+	tmpPath := tmp.Name()
+	defer func() {
+		_ = tmp.Close()
+		_ = os.Remove(tmpPath)
+	}()
+
+	hash := sha256.New()
+	size, err := io.Copy(io.MultiWriter(tmp, hash), resp.Body)
+	if err != nil {
+		return "", false, fmt.Errorf("downloading %s: %w", lts.assetURL, err)
+	}
+	if err := tmp.Close(); err != nil {
+		return "", false, err
+	}
+	if got := hex.EncodeToString(hash.Sum(nil)); got != lts.assetSHA256 {
+		return "", false, fmt.Errorf("downloading %s: sha256 mismatch: got %s, want %s", lts.assetURL, got, lts.assetSHA256)
+	}
+	if size != lts.assetSize {
+		return "", false, fmt.Errorf("downloading %s: size mismatch: got %d, want %d", lts.assetURL, size, lts.assetSize)
+	}
+
+	if err := os.Rename(tmpPath, path); err != nil {
+		// Windows does not replace an existing file on rename.
+		if removeErr := os.Remove(path); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+			return "", false, err
+		}
+		if err := os.Rename(tmpPath, path); err != nil {
+			return "", false, err
+		}
+	}
+	return path, false, nil
+}
+
+// cachedArchiveMatches reports whether path holds the expected release archive.
+func cachedArchiveMatches(path, wantSHA256 string, wantSize int64) bool {
+	st, err := os.Stat(path)
+	if err != nil || !st.Mode().IsRegular() || st.Size() != wantSize {
+		return false
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+
+	hash := sha256.New()
+	if _, err := io.Copy(hash, f); err != nil {
+		return false
+	}
+	return hex.EncodeToString(hash.Sum(nil)) == wantSHA256
+}
+
+// upgradeTestCacheDir returns the directory used to cache release archives
+// between test runs.
+func upgradeTestCacheDir() (string, error) {
+	if dir := os.Getenv(prometheusUpgradeCacheEnv); dir != "" {
+		return dir, os.MkdirAll(dir, 0o755)
+	}
+	if base, err := os.UserCacheDir(); err == nil {
+		dir := filepath.Join(base, "prometheus", "upgrade-tests")
+		if err := os.MkdirAll(dir, 0o755); err == nil {
+			return dir, nil
+		}
+	}
+	// Without a writable cache directory the test still works, it just
+	// downloads the archive every time.
+	return os.MkdirTemp("", "prometheus-upgrade-tests-")
+}
+
+func TestCacheLTSArchive(t *testing.T) {
+	payload := []byte("prometheus release archive")
+	sum := sha256.Sum256(payload)
+	sha := hex.EncodeToString(sum[:])
+	size := int64(len(payload))
+
+	// serveArchive returns a server that serves body with status and counts
+	// the requests it receives.
+	serveArchive := func(t *testing.T, status int, body []byte) (*httptest.Server, *int) {
+		t.Helper()
+		var hits int
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			hits++
+			w.WriteHeader(status)
+			_, _ = w.Write(body)
+		}))
+		t.Cleanup(srv.Close)
+		return srv, &hits
+	}
+
+	t.Run("downloads once and then uses the cache", func(t *testing.T) {
+		t.Setenv(prometheusUpgradeCacheEnv, t.TempDir())
+		srv, hits := serveArchive(t, http.StatusOK, payload)
+		release := ltsRelease{assetURL: srv.URL, assetSHA256: sha, assetSize: size}
+
+		path, fromCache, err := cacheLTSArchive(release)
+		require.NoError(t, err)
+		require.False(t, fromCache)
+		require.Equal(t, 1, *hits)
+		require.Equal(t, filepath.Join(os.Getenv(prometheusUpgradeCacheEnv), sha+".tar.gz"), path)
+		got, err := os.ReadFile(path)
+		require.NoError(t, err)
+		require.Equal(t, payload, got)
+
+		cachedPath, fromCache, err := cacheLTSArchive(release)
+		require.NoError(t, err)
+		require.True(t, fromCache)
+		require.Equal(t, path, cachedPath)
+		require.Equal(t, 1, *hits)
+	})
+
+	t.Run("redownloads a truncated cache entry", func(t *testing.T) {
+		dir := t.TempDir()
+		t.Setenv(prometheusUpgradeCacheEnv, dir)
+		srv, hits := serveArchive(t, http.StatusOK, payload)
+		release := ltsRelease{assetURL: srv.URL, assetSHA256: sha, assetSize: size}
+		require.NoError(t, os.WriteFile(filepath.Join(dir, sha+".tar.gz"), payload[:4], 0o644))
+
+		path, fromCache, err := cacheLTSArchive(release)
+		require.NoError(t, err)
+		require.False(t, fromCache)
+		require.Equal(t, 1, *hits)
+		got, err := os.ReadFile(path)
+		require.NoError(t, err)
+		require.Equal(t, payload, got)
+	})
+
+	t.Run("rejects a checksum mismatch without caching", func(t *testing.T) {
+		dir := t.TempDir()
+		t.Setenv(prometheusUpgradeCacheEnv, dir)
+		srv, _ := serveArchive(t, http.StatusOK, payload)
+		release := ltsRelease{assetURL: srv.URL, assetSHA256: strings.Repeat("0", 64), assetSize: size}
+
+		_, _, err := cacheLTSArchive(release)
+		require.ErrorContains(t, err, "sha256 mismatch")
+		entries, err := os.ReadDir(dir)
+		require.NoError(t, err)
+		require.Empty(t, entries)
+	})
+
+	t.Run("rejects a size mismatch without caching", func(t *testing.T) {
+		dir := t.TempDir()
+		t.Setenv(prometheusUpgradeCacheEnv, dir)
+		srv, _ := serveArchive(t, http.StatusOK, payload)
+		release := ltsRelease{assetURL: srv.URL, assetSHA256: sha, assetSize: size + 1}
+
+		_, _, err := cacheLTSArchive(release)
+		require.ErrorContains(t, err, "size mismatch")
+		entries, err := os.ReadDir(dir)
+		require.NoError(t, err)
+		require.Empty(t, entries)
+	})
+
+	t.Run("creates a nested cache directory", func(t *testing.T) {
+		dir := filepath.Join(t.TempDir(), "a", "b")
+		t.Setenv(prometheusUpgradeCacheEnv, dir)
+		srv, _ := serveArchive(t, http.StatusOK, payload)
+		release := ltsRelease{assetURL: srv.URL, assetSHA256: sha, assetSize: size}
+
+		path, _, err := cacheLTSArchive(release)
+		require.NoError(t, err)
+		require.Equal(t, filepath.Join(dir, sha+".tar.gz"), path)
+	})
+
+	t.Run("returns an error for a failed request", func(t *testing.T) {
+		t.Setenv(prometheusUpgradeCacheEnv, t.TempDir())
+		srv, _ := serveArchive(t, http.StatusInternalServerError, payload)
+		release := ltsRelease{assetURL: srv.URL, assetSHA256: sha, assetSize: size}
+
+		_, _, err := cacheLTSArchive(release)
+		require.ErrorContains(t, err, "unexpected status")
+	})
 }
 
 // ensureHealthyMetrics polls metrics until all health invariants are satisfied. It checks
@@ -349,7 +572,7 @@ func testUpgradeDowngradeLTS(t *testing.T, start time.Time, lts ltsRelease) {
 	c := versionChangeTest{
 		start: start,
 
-		ltsAssetURL: lts.assetURL,
+		lts: lts,
 
 		ltsVersionBinPath: filepath.Join(rootDir, fmt.Sprintf("prometheus-%s", lts.version)),
 
@@ -360,10 +583,9 @@ func testUpgradeDowngradeLTS(t *testing.T, start time.Time, lts ltsRelease) {
 		remoteWriteURL:           rwServer.URL,
 	}
 
-	t.Logf("[%s] downloading and preparing LTS %s", time.Since(start), lts.version)
-	// TODO: Cache if downloads are expensive in CI.
+	t.Logf("[%s] preparing LTS %s", time.Since(start), lts.version)
 	c.downloadAndExtractLatestLTS(t)
-	t.Logf("[%s] downloaded and prepared LTS %s at %s", time.Since(start), lts.version, c.ltsVersionBinPath)
+	t.Logf("[%s] prepared LTS %s at %s", time.Since(start), lts.version, c.ltsVersionBinPath)
 
 	c.generatePrometheusConfig(t)
 

@@ -101,9 +101,16 @@ jobs:
       - uses: prometheus/promci-setup@55bd31fe92710532260eb57c554f2697363285c5 # v0.2.2
         with:
           cache_key_suffix: upgrade
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # zizmor: ignore[cache-poisoning] -- archives are verified against the manifest sha256 before use # v6.1.0
+        with:
+          # The upgrade test caches release archives here; key on the LTS
+          # version so each matrix entry restores its own archive.
+          path: ${{ github.workspace }}/.upgrade-test-cache
+          key: prometheus-upgrade-${{ runner.os }}-${{ runner.arch }}-${{ matrix.lts_version }}
       - run: go test -v --race ./cmd/prometheus/ --test.version-upgrade=true --test.lts-version="${LTS_VERSION}" -run TestVersionUpgrade
         env:
           LTS_VERSION: ${{ matrix.lts_version }}
+          PROMETHEUS_UPGRADE_TEST_CACHE_DIR: ${{ github.workspace }}/.upgrade-test-cache
 
   list_oldest_go_version:
     name: List the oldest supported Go version
