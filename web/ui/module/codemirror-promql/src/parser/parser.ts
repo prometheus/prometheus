@@ -294,9 +294,13 @@ export class Parser {
       this.addDiagnostic(rExpr, 'binary expression must contain only scalar and instant vector types');
     }
 
+    const hasFill = vectorMatching !== null && (vectorMatching.fill.lhs !== null || vectorMatching.fill.rhs !== null);
     if ((lt !== ValueType.vector || rt !== ValueType.vector) && vectorMatching !== null) {
       if (vectorMatching.matchingLabels.length > 0) {
         this.addDiagnostic(node, 'vector matching only allowed between instant vectors');
+      }
+      if (hasFill) {
+        this.addDiagnostic(node, 'filling in missing series only allowed between instant vectors');
       }
     } else {
       if (isSetOperator) {
@@ -305,6 +309,9 @@ export class Parser {
         }
         if (vectorMatching?.card !== VectorMatchCardinality.CardManyToMany) {
           this.addDiagnostic(node, 'set operations must always be many-to-many');
+        }
+        if (hasFill) {
+          this.addDiagnostic(node, 'filling in missing series not allowed for set operators');
         }
       }
     }
