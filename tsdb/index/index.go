@@ -1195,10 +1195,15 @@ func (s Symbols) Lookup(o uint32) (string, error) {
 		B: s.bs.Range(0, s.bs.Len()),
 	}
 
+	// Check the unsigned reference before converting it to int, which can wrap on 32-bit systems.
 	if s.version == FormatV1 {
+		if uint64(o) > uint64(len(d.B)) {
+			return "", encoding.ErrInvalidSize
+		}
 		d.Skip(int(o))
 	} else {
-		if int(o) >= s.seen {
+		// The on-disk symbol count is uint32, so this conversion does not truncate s.seen.
+		if o >= uint32(s.seen) {
 			return "", fmt.Errorf("unknown symbol offset %d", o)
 		}
 		d.Skip(s.offsets[int(o/symbolFactor)])
