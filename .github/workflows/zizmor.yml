@@ -1,0 +1,84 @@
+---
+# This workflow runs zizmor to find security issues in GitHub Actions workflows.
+# It is synchronized from https://github.com/prometheus/prometheus.
+#
+# If the "GitHub Actions Security" check fails:
+#
+# 1. Open the "Run zizmor" step in the failed job. Each finding identifies
+#    a rule, the affected file and line, and the reason for the finding.
+#    The scan can report existing issues in files your PR did not change.
+#
+# 2. Find guidance for the reported rule at https://docs.zizmor.sh/audits/.
+#    Fix the affected workflow and push your changes to rerun the check.
+#
+# 3. To reproduce locally, install the zizmor version specified below using
+#    the instructions at https://docs.zizmor.sh/installation/.
+#    From the repository root, run `zizmor .`.
+#    Some findings can be fixed with `zizmor --fix=safe .`.
+#    Review the resulting diff and verify that the workflows still work.
+#
+# If a finding appears incorrect or a fix is unclear, ask the repository
+# maintainers before adding an exception. Document the reason for any exception
+# and keep it scoped to the specific finding. See the configuration reference
+# at https://docs.zizmor.sh/configuration/.
+#
+# Propose changes to this shared workflow in prometheus/prometheus so they
+# can be synchronized across repositories.
+name: GitHub Actions Security
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - master
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  zizmor:
+    name: Run zizmor
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Run zizmor
+        id: zizmor
+        uses: zizmorcore/zizmor-action@85b2b9fb8e3325e7a23d7d0a9d7ba5ae0f999e3e # v0.7.1
+        with:
+          advanced-security: false
+          version: 1.31.1
+
+      - name: Explain how to resolve findings
+        if: failure() && steps.zizmor.outcome == 'failure'
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<'EOF'
+          ### Troubleshooting GitHub Actions Security
+
+          Open the **Run zizmor** step for the findings or execution error.
+          Each finding identifies the affected file, line, and rule.
+          The scan can report existing issues in files your PR did not change.
+
+          1. Follow the [guidance for the reported rule](https://docs.zizmor.sh/audits/).
+          2. Fix the affected workflow and push your changes to rerun the check.
+
+          To reproduce locally, [install zizmor](https://docs.zizmor.sh/installation/)
+          using the version specified in this workflow and run `zizmor .` from
+          the repository root. Some findings can be fixed with `zizmor --fix=safe .`.
+          Review the resulting diff and verify that the workflows still work.
+
+          If a finding appears incorrect or a fix is unclear, ask the repository
+          maintainers before adding an exception. Document the reason and keep
+          the exception scoped to the specific finding. See the
+          [configuration reference](https://docs.zizmor.sh/configuration/).
+
+          This workflow is synchronized from [prometheus/prometheus](https://github.com/prometheus/prometheus).
+          Propose shared workflow changes there so they can reach all repositories.
+          EOF

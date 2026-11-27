@@ -19,7 +19,11 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"runtime"
+	"strconv"
+	"strings"
 	"testing"
+	"unsafe"
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
@@ -49,9 +53,42 @@ func TestRecord_EncodeDecode(t *testing.T) {
 			Labels: labels.FromStrings("xyz", "def", "foo", "bar"),
 		},
 	}
-	decSeries, err := dec.Series(enc.Series(series, nil), nil)
-	require.NoError(t, err)
-	testutil.RequireEqual(t, series, decSeries)
+	for _, tc := range []struct {
+		name   string
+		series []RefSeries
+	}{
+		{name: "empty"},
+		{name: "empty_labels", series: []RefSeries{{Ref: 0, Labels: labels.EmptyLabels()}}},
+		{name: "multiple", series: series},
+		{name: "large_record", series: []RefSeries{{Ref: math.MaxUint64, Labels: labels.FromStrings("name", strings.Repeat("x", 4096))}}},
+	} {
+		t.Run("series/"+tc.name, func(t *testing.T) {
+			for _, prefix := range [][]byte{nil, {0xaa, 0xbb, 0xcc}} {
+				for _, extraCapacity := range []int{0, 8192} {
+					t.Run(fmt.Sprintf("prefix=%d/capacity=%d", len(prefix), extraCapacity), func(t *testing.T) {
+						buf := make([]byte, len(prefix), len(prefix)+extraCapacity)
+						copy(buf, prefix)
+						calls := 0
+						got := enc.SeriesFromFunc(len(tc.series), func(i int) RefSeries {
+							require.Equal(t, calls, i, "the function must be called in order")
+							calls++
+							return tc.series[i]
+						}, buf)
+						require.Equal(t, len(tc.series), calls)
+						want := enc.Series(tc.series, append([]byte(nil), prefix...))
+						require.Equal(t, want, got, "both encoders must produce identical WAL bytes")
+						decoded, err := dec.Series(got[len(prefix):], nil)
+						require.NoError(t, err)
+						require.Len(t, decoded, len(tc.series))
+						for i, s := range tc.series {
+							require.Equal(t, s.Ref, decoded[i].Ref)
+							require.True(t, labels.Equal(s.Labels, decoded[i].Labels))
+						}
+					})
+				}
+			}
+		})
+	}
 
 	metadata := []RefMetadata{
 		{
@@ -1215,11 +1252,77 @@ func TestRecord_MetadataDecodeUnknownExtraFields(t *testing.T) {
 	require.Equal(t, expectedMetadata, decMetadata)
 }
 
+func TestRecord_MetadataInternsStrings(t *testing.T) {
+	var enc Encoder
+	dec := NewDecoder(labels.NewSymbolTable(), promslog.NewNopLogger())
+
+	input := []RefMetadata{
+		{Ref: 1, Type: uint8(Counter), Unit: "seconds", Help: "Total CPU time spent in seconds."},
+		{Ref: 2, Type: uint8(Counter), Unit: "seconds", Help: "Total CPU time spent in seconds."},
+	}
+	raw1 := enc.Metadata(input, nil)
+
+	out1, err := dec.Metadata(raw1, nil)
+	require.NoError(t, err)
+	require.Len(t, out1, 2)
+	require.Equal(t, unsafe.StringData(out1[0].Unit), unsafe.StringData(out1[1].Unit))
+	require.Equal(t, unsafe.StringData(out1[0].Help), unsafe.StringData(out1[1].Help))
+
+	// Mutating the input byte buffer must not mutate the decoded strings.
+	for i := range raw1 {
+		raw1[i] = 'X'
+	}
+	require.Equal(t, "seconds", out1[0].Unit)
+	require.Equal(t, "Total CPU time spent in seconds.", out1[0].Help)
+
+	// Interned strings on the same Decoder survive across GC cycles.
+	runtime.GC()
+	raw2 := enc.Metadata(input, nil)
+	out2, err := dec.Metadata(raw2, nil)
+	require.NoError(t, err)
+	require.Equal(t, unsafe.StringData(out1[0].Unit), unsafe.StringData(out2[0].Unit))
+	require.Equal(t, unsafe.StringData(out1[0].Help), unsafe.StringData(out2[0].Help))
+}
+
 type refsCreateFn func(labelCount, histograms, buckets int) ([]RefSeries, []RefSample, []RefHistogramSample)
 
 type recordsMaker struct {
 	name string
 	make refsCreateFn
+}
+
+// BenchmarkSeriesEncoding compares encoding from a slice or function using a reused output buffer.
+func BenchmarkSeriesEncoding(b *testing.B) {
+	for _, tc := range []struct{ series, extraLabelBytes int }{{1, 0}, {100, 0}, {1000, 0}, {1, 4096}} {
+		b.Run(fmt.Sprintf("series=%d/extra_label_bytes=%d", tc.series, tc.extraLabelBytes), func(b *testing.B) {
+			series := make([]RefSeries, tc.series)
+			for i := range series {
+				series[i] = RefSeries{
+					Ref:    chunks.HeadSeriesRef(i + 1),
+					Labels: labels.FromStrings("__name__", "requests_total", "instance", strconv.Itoa(i), "padding", strings.Repeat("x", tc.extraLabelBytes)),
+				}
+			}
+			b.Run("slice", func(b *testing.B) {
+				enc := Encoder{}
+				buf := enc.Series(series, nil)
+				b.ReportAllocs()
+				b.SetBytes(int64(len(buf)))
+				for b.Loop() {
+					buf = enc.Series(series, buf[:0])
+				}
+			})
+			b.Run("func", func(b *testing.B) {
+				enc := Encoder{}
+				seriesAt := func(i int) RefSeries { return series[i] }
+				buf := enc.SeriesFromFunc(len(series), seriesAt, nil)
+				b.ReportAllocs()
+				b.SetBytes(int64(len(buf)))
+				for b.Loop() {
+					buf = enc.SeriesFromFunc(len(series), seriesAt, buf[:0])
+				}
+			})
+		})
+	}
 }
 
 // BenchmarkWAL_HistogramEncoding measures efficiency of encoding classic
@@ -1403,6 +1506,71 @@ func BenchmarkDecodeHistogramSamples(b *testing.B) {
 					buf, _ = dec.HistogramSamples(raw, buf[:0])
 				}
 				_ = buf
+			})
+		}
+	}
+}
+
+// Recommended CLI invocation:
+//
+//	export bench=decode_metadata && go test ./tsdb/record -run '^$' -bench '^BenchmarkDecodeMetadata' -benchtime 1s -count 6 -cpu 1,2,4 -timeout 999m -benchmem | tee ${bench}.txt
+func BenchmarkDecodeMetadata(b *testing.B) {
+	const numSeries = 1000
+
+	for _, numFamilies := range []int{10, 100} {
+		meta := make([]RefMetadata, numSeries)
+		for i := range meta {
+			fam := i % numFamilies
+			unit := ""
+			if fam%2 == 0 {
+				unit = "seconds"
+			}
+			meta[i] = RefMetadata{
+				Ref:  chunks.HeadSeriesRef(i + 1),
+				Type: uint8(Counter),
+				Unit: unit,
+				Help: fmt.Sprintf("Total time spent in subsystem %d across all worker goroutines in seconds.", fam),
+			}
+		}
+
+		var enc Encoder
+		raw := enc.Metadata(meta, nil)
+
+		b.Run(fmt.Sprintf("series=%d/families=%d", numSeries, numFamilies), func(b *testing.B) {
+			dec := NewDecoder(labels.NewSymbolTable(), promslog.NewNopLogger())
+			buf := make([]RefMetadata, 0, numSeries)
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				var err error
+				buf, err = dec.Metadata(raw, buf[:0])
+				if err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+
+		for _, gcPressure := range []bool{false, true} {
+			b.Run(fmt.Sprintf("parallel/series=%d/families=%d/gc=%t", numSeries, numFamilies, gcPressure), func(b *testing.B) {
+				b.ReportAllocs()
+				b.ResetTimer()
+				b.RunParallel(func(pb *testing.PB) {
+					dec := NewDecoder(labels.NewSymbolTable(), promslog.NewNopLogger())
+					buf := make([]RefMetadata, 0, numSeries)
+					var sink []byte
+					for pb.Next() {
+						if gcPressure {
+							sink = make([]byte, 256*1024)
+						}
+						var err error
+						buf, err = dec.Metadata(raw, buf[:0])
+						if err != nil {
+							b.Fatal(err)
+						}
+					}
+					runtime.KeepAlive(sink)
+				})
 			})
 		}
 	}

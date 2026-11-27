@@ -21,6 +21,7 @@ import (
 	"math"
 	"runtime"
 	"time"
+	"unique"
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -188,18 +189,18 @@ func (h *Head) appender() *headAppender {
 	appendID, cleanupAppendIDsBelow := h.iso.newAppendID(minValidTime) // Every appender gets an ID that is cleared upon commit/rollback.
 	return &headAppender{
 		headAppenderBase: headAppenderBase{
-			head:                  h,
-			minValidTime:          minValidTime,
-			headMaxt:              h.MaxTime(),
-			oooTimeWindow:         h.opts.OutOfOrderTimeWindow.Load(),
-			seriesRefs:            h.getRefSeriesBuffer(),
-			series:                h.getSeriesBuffer(),
-			typesInBatch:          h.getTypeMap(),
-			appendID:              appendID,
-			cleanupAppendIDsBelow: cleanupAppendIDsBelow,
-			storeST:               h.opts.EnableSTStorage.Load(),
-			useXOR2:               h.opts.UseXOR2FloatEncoding(),
-			useHistogramST:        h.opts.EnableHistogramSTEncoding.Load(),
+			head:                   h,
+			minValidTime:           minValidTime,
+			headMaxt:               h.MaxTime(),
+			oooTimeWindow:          h.opts.OutOfOrderTimeWindow.Load(),
+			seriesRecordCandidates: h.getSeriesRecordCandidateBuffer(),
+			series:                 h.getSeriesBuffer(),
+			typesInBatch:           h.getTypeMap(),
+			appendID:               appendID,
+			cleanupAppendIDsBelow:  cleanupAppendIDsBelow,
+			storeST:                h.opts.EnableSTStorage.Load(),
+			useXOR2:                h.opts.UseXOR2FloatEncoding(),
+			useHistogramST:         h.opts.EnableHistogramSTEncoding.Load(),
 		},
 	}
 }
@@ -228,19 +229,17 @@ func (h *Head) AppendableMinValidTime() (int64, bool) {
 	return h.appendableMinValidTime(), true
 }
 
-func (h *Head) getRefSeriesBuffer() []record.RefSeries {
-	b := h.refSeriesPool.Get()
+func (h *Head) getSeriesRecordCandidateBuffer() []seriesRecordCandidate {
+	b := h.seriesRecordCandidatesPool.Get()
 	if b == nil {
-		return make([]record.RefSeries, 0, 512)
+		return make([]seriesRecordCandidate, 0, 512)
 	}
 	return b
 }
 
-func (h *Head) putRefSeriesBuffer(b []record.RefSeries) {
-	for i := range b { // Zero out to avoid retaining label data.
-		b[i].Labels = labels.EmptyLabels()
-	}
-	h.refSeriesPool.Put(b[:0])
+func (h *Head) putSeriesRecordCandidateBuffer(b []seriesRecordCandidate) {
+	clear(b)
+	h.seriesRecordCandidatesPool.Put(b[:0])
 }
 
 func (h *Head) getFloatBuffer() []record.RefSample {
@@ -255,20 +254,20 @@ func (h *Head) putFloatBuffer(b []record.RefSample) {
 	h.floatsPool.Put(b[:0])
 }
 
-func (h *Head) getExemplarBuffer() []exemplarWithSeriesRef {
+func (h *Head) getExemplarBuffer() []exemplarWithSeries {
 	b := h.exemplarsPool.Get()
 	if b == nil {
-		return make([]exemplarWithSeriesRef, 0, 512)
+		return make([]exemplarWithSeries, 0, 512)
 	}
 	return b
 }
 
-func (h *Head) putExemplarBuffer(b []exemplarWithSeriesRef) {
+func (h *Head) putExemplarBuffer(b []exemplarWithSeries) {
 	if b == nil {
 		return
 	}
-	for i := range b { // Zero out to avoid retaining label data.
-		b[i].exemplar.Labels = labels.EmptyLabels()
+	for i := range b { // Zero out to avoid retaining label data and series.
+		b[i] = exemplarWithSeries{}
 	}
 
 	h.exemplarsPool.Put(b[:0])
@@ -353,8 +352,11 @@ func (h *Head) putBytesBuffer(b []byte) {
 	h.bytesPool.Put(b[:0])
 }
 
-type exemplarWithSeriesRef struct {
-	ref      storage.SeriesRef
+// exemplarWithSeries is an exemplar held by an appender. The appender holds a
+// pending-commit reservation on the series until the exemplar is committed or
+// rolled back.
+type exemplarWithSeries struct {
+	series   *memSeries
 	exemplar exemplar.Exemplar
 }
 
@@ -388,7 +390,7 @@ type appendBatch struct {
 	floatHistogramSeries []*memSeries                     // FloatHistogramSamples series corresponding to the samples held by this appender (using corresponding slice indices - same series may appear more than once).
 	metadata             []record.RefMetadata             // New metadata held by this appender.
 	metadataSeries       []*memSeries                     // Series corresponding to the metadata held by this appender.
-	exemplars            []exemplarWithSeriesRef          // New exemplars held by this appender.
+	exemplars            []exemplarWithSeries             // New exemplars held by this appender.
 }
 
 // close returns all the slices to the pools in Head and nil's them.
@@ -413,15 +415,22 @@ func (b *appendBatch) close(h *Head) {
 	b.exemplars = nil
 }
 
+type seriesRecordCandidate struct {
+	series *memSeries
+	lset   labels.Labels
+}
+
 type headAppenderBase struct {
 	head          *Head
 	minValidTime  int64 // No samples below this timestamp are allowed.
 	headMaxt      int64 // We track it here to not take the lock for every sample appended.
 	oooTimeWindow int64 // Use the same for the entire append, and don't load the atomic for each sample.
 
-	seriesRefs []record.RefSeries // New series records held by this appender.
-	series     []*memSeries       // New series held by this appender (using corresponding slices indexes from seriesRefs)
-	batches    []*appendBatch     // Holds all the other data to append. (In regular cases, there should be only one of these.)
+	// Series whose WAL records may still need writing, with their captured labels.
+	// Pending-commit reservations protect them while their records may be needed.
+	seriesRecordCandidates []seriesRecordCandidate
+	series                 []*memSeries   // Series created by this appender, with a creation reservation to release.
+	batches                []*appendBatch // Holds all the other data to append. (In regular cases, there should be only one of these.)
 
 	typesInBatch map[chunks.HeadSeriesRef]sampleType // Which (one) sample type each series holds in the most recent batch.
 
@@ -430,7 +439,11 @@ type headAppenderBase struct {
 	storeST                         bool // Whether start-timestamp storage is enabled for this append.
 	useXOR2                         bool // Whether XOR2 encoding is used for float chunks in this append.
 	useHistogramST                  bool // Whether ST-capable histogram chunk encoding is used in this append.
+
+	// commitStats is populated at the end of Commit, readable via CommitStats.
+	commitStats storage.CommitStats
 }
+
 type headAppender struct {
 	headAppenderBase
 	hints *storage.AppendOptions
@@ -487,13 +500,14 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 	defer s.Unlock()
 	// TODO(codesome): If we definitely know at this point that the sample is ooo, then optimise
 	// to skip that sample from the WAL and write only in the WBL.
-	isOOO, delta, err := s.appendable(t, v, a.headMaxt, a.minValidTime, a.oooTimeWindow)
+	isOOO, delta, err := s.appendable(t, v, a.headMaxt, a.minValidTime, a.oooTimeWindow, a.head)
 	if err == nil {
 		if isOOO && a.hints != nil && a.hints.DiscardOutOfOrder {
 			a.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeFloat).Inc()
 			return 0, storage.ErrOutOfOrderSample
 		}
 		s.markPendingCommit()
+		a.trackSeriesRecord(s)
 	}
 	if delta > 0 {
 		a.head.metrics.oooHistogram.Observe(float64(delta) / 1000)
@@ -542,7 +556,7 @@ func (a *headAppender) AppendSTZeroSample(ref storage.SeriesRef, lset labels.Lab
 	if err != nil {
 		return 0, err
 	}
-	isOOO, _, err := s.appendable(st, 0, a.headMaxt, a.minValidTime, a.oooTimeWindow)
+	isOOO, _, err := s.appendable(st, 0, a.headMaxt, a.minValidTime, a.oooTimeWindow, a.head)
 	if err != nil {
 		s.Unlock()
 		return 0, err
@@ -552,12 +566,23 @@ func (a *headAppender) AppendSTZeroSample(ref storage.SeriesRef, lset labels.Lab
 		return storage.SeriesRef(s.ref), storage.ErrOutOfOrderST
 	}
 	s.markPendingCommit()
+	a.trackSeriesRecord(s)
 	s.Unlock()
 
 	b := a.getCurrentBatch(stFloat, s.ref)
 	b.floats = append(b.floats, record.RefSample{Ref: s.ref, T: st, V: 0.0})
 	b.floatSeries = append(b.floatSeries, s)
 	return storage.SeriesRef(s.ref), nil
+}
+
+// zeroOrST returns st if start timestamps are stored, and 0 otherwise. Without
+// EnableSTStorage the WAL doesn't record start timestamps, so passing them on to
+// chunks would make chunks differ before and after a WAL replay.
+func (a *headAppenderBase) zeroOrST(st int64) int64 {
+	if !a.storeST {
+		return 0
+	}
+	return st
 }
 
 func (a *headAppenderBase) getOrCreate(lset labels.Labels) (s *memSeries, created bool, err error) {
@@ -574,10 +599,6 @@ func (a *headAppenderBase) getOrCreate(lset labels.Labels) (s *memSeries, create
 		return nil, false, err
 	}
 	if created {
-		a.seriesRefs = append(a.seriesRefs, record.RefSeries{
-			Ref:    s.ref,
-			Labels: lset,
-		})
 		a.series = append(a.series, s)
 	}
 	return s, created, nil
@@ -687,14 +708,52 @@ func (a *headAppenderBase) getCurrentBatch(st sampleType, s chunks.HeadSeriesRef
 	}
 }
 
+// lastInOrderSample returns the series' most recent in-order sample for
+// duplicate detection. With a head chunk the cached last-value fields are
+// authoritative. Without one, the newest sample lives in the last mmapped
+// chunk and the cached fields may not reflect it (e.g. after WAL repair), so
+// the sample is read back from the chunk on demand; this only happens for
+// equal-timestamp appends to mmap-only series, not during recovery. ok is
+// false if the chunk cannot be read, in which case no duplicate detection is
+// possible. The caller must have ruled out series without any samples.
+func (s *memSeries) lastInOrderSample(head *Head) (v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, ok bool) {
+	if s.headChunks != nil {
+		return s.lastValue, s.lastHistogramValue, s.lastFloatHistogramValue, true
+	}
+	mmc := s.mmappedChunks[len(s.mmappedChunks)-1]
+	chunk, err := head.chunkDiskMapper.Chunk(mmc.ref)
+	if err == nil {
+		it := chunk.Iterator(nil)
+		switch it.Seek(mmc.maxTime) {
+		case chunkenc.ValFloat:
+			_, v = it.At()
+			return v, nil, nil, true
+		case chunkenc.ValHistogram:
+			_, h = it.AtHistogram(nil)
+			return 0, h, nil, true
+		case chunkenc.ValFloatHistogram:
+			_, fh = it.AtFloatHistogram(nil)
+			return 0, nil, fh, true
+		}
+		if err = it.Err(); err == nil {
+			err = fmt.Errorf("no sample at max time %d", mmc.maxTime)
+		}
+	}
+	// Surface unreadable mmapped chunks: appends fall back to the out-of-order
+	// checks, which would otherwise hide the corruption.
+	head.logger.Warn("Failed to read last mmapped sample for duplicate detection, falling back to out-of-order checks",
+		"seriesRef", s.ref, "chunkRef", mmc.ref, "err", err)
+	return 0, nil, nil, false
+}
+
 // appendable checks whether the given sample is valid for appending to the series.
 // If the sample is valid and in-order, it returns false with no error.
 // If the sample belongs to the out-of-order chunk, it returns true with no error.
 // If the sample cannot be handled, it returns an error.
-func (s *memSeries) appendable(t int64, v float64, headMaxt, minValidTime, oooTimeWindow int64) (isOOO bool, oooDelta int64, err error) {
+func (s *memSeries) appendable(t int64, v float64, headMaxt, minValidTime, oooTimeWindow int64, head *Head) (isOOO bool, oooDelta int64, err error) {
 	// Check if we can append in the in-order chunk.
 	if t >= minValidTime {
-		if s.headChunks == nil {
+		if s.headChunks == nil && len(s.mmappedChunks) == 0 {
 			// The series has no sample and was freshly created.
 			return false, 0, nil
 		}
@@ -703,18 +762,23 @@ func (s *memSeries) appendable(t int64, v float64, headMaxt, minValidTime, oooTi
 			return false, 0, nil
 		}
 		if t == msMaxt {
-			// We are allowing exact duplicates as we can encounter them in valid cases
-			// like federation and erroring out at that time would be extremely noisy.
-			// This only checks against the latest in-order sample.
-			// The OOO headchunk has its own method to detect these duplicates.
-			if s.lastHistogramValue != nil || s.lastFloatHistogramValue != nil {
-				return false, 0, storage.NewDuplicateHistogramToFloatErr(t, v)
+			lastValue, lastHistogramValue, lastFloatHistogramValue, ok := s.lastInOrderSample(head)
+			if ok {
+				// We are allowing exact duplicates as we can encounter them in valid cases
+				// like federation and erroring out at that time would be extremely noisy.
+				// This only checks against the latest in-order sample.
+				// The OOO headchunk has its own method to detect these duplicates.
+				if lastHistogramValue != nil || lastFloatHistogramValue != nil {
+					return false, 0, storage.NewDuplicateHistogramToFloatErr(t, v)
+				}
+				if math.Float64bits(lastValue) != math.Float64bits(v) {
+					return false, 0, storage.NewDuplicateFloatErr(t, lastValue, v)
+				}
+				// Sample is identical (ts + value) with most current (highest ts) sample in sampleBuf.
+				return false, 0, nil
 			}
-			if math.Float64bits(s.lastValue) != math.Float64bits(v) {
-				return false, 0, storage.NewDuplicateFloatErr(t, s.lastValue, v)
-			}
-			// Sample is identical (ts + value) with most current (highest ts) sample in sampleBuf.
-			return false, 0, nil
+			// The last sample could not be read back, so duplicates cannot be
+			// detected. Fall through to the out-of-order checks.
 		}
 	}
 
@@ -736,10 +800,10 @@ func (s *memSeries) appendable(t int64, v float64, headMaxt, minValidTime, oooTi
 // appendableHistogram checks whether the given histogram sample is valid for appending to the series. (if we return false and no error)
 // The sample belongs to the out of order chunk if we return true and no error.
 // An error signifies the sample cannot be handled.
-func (s *memSeries) appendableHistogram(t int64, h *histogram.Histogram, headMaxt, minValidTime, oooTimeWindow int64) (isOOO bool, oooDelta int64, err error) {
+func (s *memSeries) appendableHistogram(t int64, h *histogram.Histogram, headMaxt, minValidTime, oooTimeWindow int64, head *Head) (isOOO bool, oooDelta int64, err error) {
 	// Check if we can append in the in-order chunk.
 	if t >= minValidTime {
-		if s.headChunks == nil {
+		if s.headChunks == nil && len(s.mmappedChunks) == 0 {
 			// The series has no sample and was freshly created.
 			return false, 0, nil
 		}
@@ -748,15 +812,20 @@ func (s *memSeries) appendableHistogram(t int64, h *histogram.Histogram, headMax
 			return false, 0, nil
 		}
 		if t == msMaxt {
-			// We are allowing exact duplicates as we can encounter them in valid cases
-			// like federation and erroring out at that time would be extremely noisy.
-			// This only checks against the latest in-order sample.
-			// The OOO headchunk has its own method to detect these duplicates.
-			if !h.Equals(s.lastHistogramValue) {
-				return false, 0, storage.ErrDuplicateSampleForTimestamp
+			_, lastHistogramValue, _, ok := s.lastInOrderSample(head)
+			if ok {
+				// We are allowing exact duplicates as we can encounter them in valid cases
+				// like federation and erroring out at that time would be extremely noisy.
+				// This only checks against the latest in-order sample.
+				// The OOO headchunk has its own method to detect these duplicates.
+				if !h.Equals(lastHistogramValue) {
+					return false, 0, storage.ErrDuplicateSampleForTimestamp
+				}
+				// Sample is identical (ts + value) with most current (highest ts) sample in sampleBuf.
+				return false, 0, nil
 			}
-			// Sample is identical (ts + value) with most current (highest ts) sample in sampleBuf.
-			return false, 0, nil
+			// The last sample could not be read back, so duplicates cannot be
+			// detected. Fall through to the out-of-order checks.
 		}
 	}
 
@@ -778,10 +847,10 @@ func (s *memSeries) appendableHistogram(t int64, h *histogram.Histogram, headMax
 // appendableFloatHistogram checks whether the given float histogram sample is valid for appending to the series. (if we return false and no error)
 // The sample belongs to the out of order chunk if we return true and no error.
 // An error signifies the sample cannot be handled.
-func (s *memSeries) appendableFloatHistogram(t int64, fh *histogram.FloatHistogram, headMaxt, minValidTime, oooTimeWindow int64) (isOOO bool, oooDelta int64, err error) {
+func (s *memSeries) appendableFloatHistogram(t int64, fh *histogram.FloatHistogram, headMaxt, minValidTime, oooTimeWindow int64, head *Head) (isOOO bool, oooDelta int64, err error) {
 	// Check if we can append in the in-order chunk.
 	if t >= minValidTime {
-		if s.headChunks == nil {
+		if s.headChunks == nil && len(s.mmappedChunks) == 0 {
 			// The series has no sample and was freshly created.
 			return false, 0, nil
 		}
@@ -790,15 +859,20 @@ func (s *memSeries) appendableFloatHistogram(t int64, fh *histogram.FloatHistogr
 			return false, 0, nil
 		}
 		if t == msMaxt {
-			// We are allowing exact duplicates as we can encounter them in valid cases
-			// like federation and erroring out at that time would be extremely noisy.
-			// This only checks against the latest in-order sample.
-			// The OOO headchunk has its own method to detect these duplicates.
-			if !fh.Equals(s.lastFloatHistogramValue) {
-				return false, 0, storage.ErrDuplicateSampleForTimestamp
+			_, _, lastFloatHistogramValue, ok := s.lastInOrderSample(head)
+			if ok {
+				// We are allowing exact duplicates as we can encounter them in valid cases
+				// like federation and erroring out at that time would be extremely noisy.
+				// This only checks against the latest in-order sample.
+				// The OOO headchunk has its own method to detect these duplicates.
+				if !fh.Equals(lastFloatHistogramValue) {
+					return false, 0, storage.ErrDuplicateSampleForTimestamp
+				}
+				// Sample is identical (ts + value) with most current (highest ts) sample in sampleBuf.
+				return false, 0, nil
 			}
-			// Sample is identical (ts + value) with most current (highest ts) sample in sampleBuf.
-			return false, 0, nil
+			// The last sample could not be read back, so duplicates cannot be
+			// detected. Fall through to the out-of-order checks.
 		}
 	}
 
@@ -836,6 +910,9 @@ func (a *headAppender) AppendExemplar(ref storage.SeriesRef, lset labels.Labels,
 	if s == nil {
 		return 0, fmt.Errorf("unknown HeadSeriesRef when trying to add exemplar: %d", ref)
 	}
+	if hook := a.head.testAfterSeriesLookup; hook != nil {
+		hook(s)
+	}
 
 	// Ensure no empty labels have gotten through.
 	e.Labels = e.Labels.WithoutEmpty()
@@ -849,12 +926,38 @@ func (a *headAppender) AppendExemplar(ref storage.SeriesRef, lset labels.Labels,
 		return 0, err
 	}
 
-	b := a.getCurrentBatch(stNone, chunks.HeadSeriesRef(ref))
-	// Protect the series from ordinary compaction before the exemplar is committed.
-	s.updateExemplarTimestamp(e.Ts)
-	b.exemplars = append(b.exemplars, exemplarWithSeriesRef{ref, e})
+	if s = a.reserveSeriesForExemplar(s, e.Ts); s == nil {
+		return 0, fmt.Errorf("unknown HeadSeriesRef when trying to add exemplar: %d", ref)
+	}
+	b := a.getCurrentBatch(stNone, s.ref)
+	b.exemplars = append(b.exemplars, exemplarWithSeries{s, e})
 
 	return storage.SeriesRef(s.ref), nil
+}
+
+// reserveSeriesForExemplar takes a pending-commit reservation on s for an
+// exemplar with timestamp ts, so that the series cannot be garbage collected
+// before the exemplar is committed. Otherwise, the commit would log the
+// exemplar after the tombstone of the series. If s was garbage collected in the
+// meantime, it uses the series that replaced it, if any. It returns the reserved
+// series, or nil if there is none.
+func (a *headAppenderBase) reserveSeriesForExemplar(s *memSeries, ts int64) *memSeries {
+	for {
+		s.Lock()
+		if !s.isGCed() {
+			s.updateExemplarTimestampLocked(ts)
+			s.markPendingCommit()
+			a.trackSeriesRecord(s)
+			s.Unlock()
+			return s
+		}
+		lset := s.lset // Safe to access; the series is locked.
+		s.Unlock()
+
+		if s = a.head.series.getByHash(lset.Hash(), lset); s == nil {
+			return nil
+		}
+	}
 }
 
 func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (storage.SeriesRef, error) {
@@ -894,9 +997,10 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 		}
 		// TODO(codesome): If we definitely know at this point that the sample is ooo, then optimise
 		// to skip that sample from the WAL and write only in the WBL.
-		_, delta, err := s.appendableHistogram(t, h, a.headMaxt, a.minValidTime, a.oooTimeWindow)
+		_, delta, err := s.appendableHistogram(t, h, a.headMaxt, a.minValidTime, a.oooTimeWindow, a.head)
 		if err == nil {
 			s.markPendingCommit()
+			a.trackSeriesRecord(s)
 		}
 		s.Unlock()
 		if delta > 0 {
@@ -929,9 +1033,10 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 		}
 		// TODO(codesome): If we definitely know at this point that the sample is ooo, then optimise
 		// to skip that sample from the WAL and write only in the WBL.
-		_, delta, err := s.appendableFloatHistogram(t, fh, a.headMaxt, a.minValidTime, a.oooTimeWindow)
+		_, delta, err := s.appendableFloatHistogram(t, fh, a.headMaxt, a.minValidTime, a.oooTimeWindow, a.head)
 		if err == nil {
 			s.markPendingCommit()
+			a.trackSeriesRecord(s)
 		}
 		s.Unlock()
 		if delta > 0 {
@@ -992,7 +1097,7 @@ func (a *headAppender) AppendHistogramSTZeroSample(ref storage.SeriesRef, lset l
 		}
 		// For STZeroSamples OOO is not allowed.
 		// We set it to true to make this implementation as close as possible to the float implementation.
-		isOOO, _, err := s.appendableHistogram(st, zeroHistogram, a.headMaxt, a.minValidTime, a.oooTimeWindow)
+		isOOO, _, err := s.appendableHistogram(st, zeroHistogram, a.headMaxt, a.minValidTime, a.oooTimeWindow, a.head)
 		if err != nil {
 			s.Unlock()
 			if errors.Is(err, storage.ErrOutOfOrderSample) {
@@ -1010,6 +1115,7 @@ func (a *headAppender) AppendHistogramSTZeroSample(ref storage.SeriesRef, lset l
 		}
 
 		s.markPendingCommit()
+		a.trackSeriesRecord(s)
 		s.Unlock()
 		sTyp := stHistogram
 		if h.UsesCustomBuckets() {
@@ -1036,7 +1142,7 @@ func (a *headAppender) AppendHistogramSTZeroSample(ref storage.SeriesRef, lset l
 			return 0, lockErr
 		}
 		// We set it to true to make this implementation as close as possible to the float implementation.
-		isOOO, _, err := s.appendableFloatHistogram(st, zeroFloatHistogram, a.headMaxt, a.minValidTime, a.oooTimeWindow) // OOO is not allowed for STZeroSamples.
+		isOOO, _, err := s.appendableFloatHistogram(st, zeroFloatHistogram, a.headMaxt, a.minValidTime, a.oooTimeWindow, a.head) // OOO is not allowed for STZeroSamples.
 		if err != nil {
 			s.Unlock()
 			if errors.Is(err, storage.ErrOutOfOrderSample) {
@@ -1054,6 +1160,7 @@ func (a *headAppender) AppendHistogramSTZeroSample(ref storage.SeriesRef, lset l
 		}
 
 		s.markPendingCommit()
+		a.trackSeriesRecord(s)
 		s.Unlock()
 		sTyp := stFloatHistogram
 		if fh.UsesCustomBuckets() {
@@ -1085,21 +1192,32 @@ func (a *headAppender) UpdateMetadata(ref storage.SeriesRef, lset labels.Labels,
 		return 0, fmt.Errorf("unknown series when trying to add metadata with HeadSeriesRef: %d and labels: %s", ref, lset)
 	}
 
+	if hook := a.head.testAfterSeriesLookup; hook != nil {
+		hook(s)
+	}
 	s.Lock()
-	hasNewMetadata := s.meta == nil || *s.meta != meta
+	if s.isGCed() {
+		s.Unlock()
+		return 0, fmt.Errorf("unknown series when trying to add metadata with HeadSeriesRef: %d and labels: %s", ref, lset)
+	}
+	hasNewMetadata := metadata.IsZeroHandle(s.meta) || s.meta.Value() != meta
+	if !hasNewMetadata {
+		s.Unlock()
+		return ref, nil
+	}
+	// Keep the series until the metadata record is committed or rolled back.
+	s.markPendingCommit()
+	a.trackSeriesRecord(s)
 	s.Unlock()
 
-	if hasNewMetadata {
-		b := a.getCurrentBatch(stNone, s.ref)
-		b.metadata = append(b.metadata, record.RefMetadata{
-			Ref:  s.ref,
-			Type: record.GetMetricType(meta.Type),
-			Unit: meta.Unit,
-			Help: meta.Help,
-		})
-		b.metadataSeries = append(b.metadataSeries, s)
-	}
-
+	b := a.getCurrentBatch(stNone, s.ref)
+	b.metadata = append(b.metadata, record.RefMetadata{
+		Ref:  s.ref,
+		Type: record.GetMetricType(meta.Type),
+		Unit: meta.Unit,
+		Help: meta.Help,
+	})
+	b.metadataSeries = append(b.metadataSeries, s)
 	return ref, nil
 }
 
@@ -1114,6 +1232,100 @@ func (a *headAppenderBase) GetRef(lset labels.Labels, hash uint64) (storage.Seri
 	return storage.SeriesRef(s.ref), s.labels()
 }
 
+const (
+	seriesWALUnlogged uint32 = iota
+	seriesWALWriting
+	seriesWALLogged
+)
+
+// trackSeriesRecord buffers a candidate WAL series record if the series still needs one.
+// The caller must hold the series lock and keep a pending-commit reservation on s
+// until Commit or Rollback so the series stays in Head while its record may be logged.
+func (a *headAppenderBase) trackSeriesRecord(s *memSeries) {
+	if s.walState.Load() == seriesWALLogged {
+		return
+	}
+	// Avoid consecutive duplicates, such as consecutive samples for the same series.
+	// logSeriesRecords performs full deduplication.
+	if n := len(a.seriesRecordCandidates); n > 0 && a.seriesRecordCandidates[n-1].series == s {
+		return
+	}
+	a.seriesRecordCandidates = append(a.seriesRecordCandidates, seriesRecordCandidate{series: s, lset: s.lset})
+}
+
+// filterSeriesRecords keeps the candidates whose series match keep, reporting how many remain.
+func (a *headAppenderBase) filterSeriesRecords(keep func(*memSeries) bool) int {
+	n := 0
+	for _, candidate := range a.seriesRecordCandidates {
+		if !keep(candidate.series) {
+			continue
+		}
+		a.seriesRecordCandidates[n] = candidate
+		n++
+	}
+	clear(a.seriesRecordCandidates[n:])
+	a.seriesRecordCandidates = a.seriesRecordCandidates[:n]
+	return n
+}
+
+// logSeriesRecords uses enc to encode any series records still needed by
+// a.seriesRecordCandidates and writes them before rec, a non-empty encoded WAL
+// record. It returns rec's buffer, grown if needed and reset to length zero,
+// and any WAL error.
+//
+// The caller must already hold pending-commit reservations to keep the series
+// in Head. When writing series records, this method takes walSeriesMtx and
+// marks the series as logged on success or ready for retry on failure before unlocking.
+func (a *headAppenderBase) logSeriesRecords(enc record.Encoder, rec []byte) ([]byte, error) {
+	h := a.head
+	if a.filterSeriesRecords(func(s *memSeries) bool {
+		return s.walState.Load() != seriesWALLogged
+	}) == 0 {
+		return rec[:0], h.wal.Log(rec)
+	}
+
+	h.walSeriesMtx.Lock()
+	// Writing also deduplicates refs within this appender. Other appenders
+	// cannot select series until this batch's write result has been published.
+	if a.filterSeriesRecords(func(s *memSeries) bool {
+		if s.walState.Load() != seriesWALUnlogged {
+			return false
+		}
+		s.walState.Store(seriesWALWriting)
+		return true
+	}) == 0 {
+		h.walSeriesMtx.Unlock()
+		return rec[:0], h.wal.Log(rec)
+	}
+
+	// Write the series record to the WAL before any samples or other records
+	// that reference these series. SeriesFromFunc appends it after rec in the
+	// buffer; the WAL call below writes it before rec.
+	buf := enc.SeriesFromFunc(len(a.seriesRecordCandidates), func(i int) record.RefSeries {
+		candidate := a.seriesRecordCandidates[i]
+		return record.RefSeries{Ref: candidate.series.ref, Labels: candidate.lset}
+	}, rec)
+	err := h.wal.Log(buf[len(rec):], rec)
+	state := seriesWALLogged
+	if err != nil {
+		// Log reports one result for the whole batch. Leave the series eligible
+		// for retry even if its record was written before the data write failed.
+		state = seriesWALUnlogged
+	}
+	for _, candidate := range a.seriesRecordCandidates {
+		candidate.series.walState.Store(state)
+	}
+	h.walSeriesMtx.Unlock()
+	if err != nil {
+		return buf[:0], fmt.Errorf("log series and data: %w", err)
+	}
+	// Clear labels and series pointers before shortening the slice, since
+	// pool cleanup only visits entries within its current length.
+	clear(a.seriesRecordCandidates)
+	a.seriesRecordCandidates = a.seriesRecordCandidates[:0]
+	return buf[:0], nil
+}
+
 // log writes all headAppender's data to the WAL.
 func (a *headAppenderBase) log() error {
 	if a.head.wal == nil {
@@ -1126,20 +1338,20 @@ func (a *headAppenderBase) log() error {
 	var rec []byte
 	enc := record.Encoder{EnableSTStorage: a.storeST}
 
-	if len(a.seriesRefs) > 0 {
-		rec = enc.Series(a.seriesRefs, buf)
-		buf = rec[:0]
-
-		if err := a.head.wal.Log(rec); err != nil {
-			return fmt.Errorf("log series: %w", err)
+	log := func(rec []byte) error {
+		if len(a.seriesRecordCandidates) == 0 {
+			return a.head.wal.Log(rec)
 		}
+		var err error
+		buf, err = a.logSeriesRecords(enc, rec)
+		return err
 	}
 	for _, b := range a.batches {
 		if len(b.metadata) > 0 {
 			rec = enc.Metadata(b.metadata, buf)
 			buf = rec[:0]
 
-			if err := a.head.wal.Log(rec); err != nil {
+			if err := log(rec); err != nil {
 				return fmt.Errorf("log metadata: %w", err)
 			}
 		}
@@ -1149,7 +1361,7 @@ func (a *headAppenderBase) log() error {
 			rec = enc.Samples(b.floats, buf)
 			buf = rec[:0]
 
-			if err := a.head.wal.Log(rec); err != nil {
+			if err := log(rec); err != nil {
 				return fmt.Errorf("log samples: %w", err)
 			}
 		}
@@ -1158,14 +1370,14 @@ func (a *headAppenderBase) log() error {
 			rec, customBucketsHistograms = enc.HistogramSamples(b.histograms, buf)
 			buf = rec[:0]
 			if len(rec) > 0 {
-				if err := a.head.wal.Log(rec); err != nil {
+				if err := log(rec); err != nil {
 					return fmt.Errorf("log histograms: %w", err)
 				}
 			}
 
 			if len(customBucketsHistograms) > 0 {
 				rec = enc.CustomBucketsHistogramSamples(customBucketsHistograms, buf)
-				if err := a.head.wal.Log(rec); err != nil {
+				if err := log(rec); err != nil {
 					return fmt.Errorf("log custom buckets histograms: %w", err)
 				}
 			}
@@ -1175,14 +1387,14 @@ func (a *headAppenderBase) log() error {
 			rec, customBucketsFloatHistograms = enc.FloatHistogramSamples(b.floatHistograms, buf)
 			buf = rec[:0]
 			if len(rec) > 0 {
-				if err := a.head.wal.Log(rec); err != nil {
+				if err := log(rec); err != nil {
 					return fmt.Errorf("log float histograms: %w", err)
 				}
 			}
 
 			if len(customBucketsFloatHistograms) > 0 {
 				rec = enc.CustomBucketsFloatHistogramSamples(customBucketsFloatHistograms, buf)
-				if err := a.head.wal.Log(rec); err != nil {
+				if err := log(rec); err != nil {
 					return fmt.Errorf("log custom buckets float histograms: %w", err)
 				}
 			}
@@ -1195,7 +1407,7 @@ func (a *headAppenderBase) log() error {
 			rec = enc.Exemplars(exemplarsForEncoding(b.exemplars), buf)
 			buf = rec[:0]
 
-			if err := a.head.wal.Log(rec); err != nil {
+			if err := log(rec); err != nil {
 				return fmt.Errorf("log exemplars: %w", err)
 			}
 		}
@@ -1203,11 +1415,11 @@ func (a *headAppenderBase) log() error {
 	return nil
 }
 
-func exemplarsForEncoding(es []exemplarWithSeriesRef) []record.RefExemplar {
+func exemplarsForEncoding(es []exemplarWithSeries) []record.RefExemplar {
 	ret := make([]record.RefExemplar, 0, len(es))
 	for _, e := range es {
 		ret = append(ret, record.RefExemplar{
-			Ref:    chunks.HeadSeriesRef(e.ref),
+			Ref:    e.series.ref,
 			T:      e.exemplar.Ts,
 			V:      e.exemplar.Value,
 			Labels: e.exemplar.Labels,
@@ -1222,6 +1434,10 @@ type appenderCommitContext struct {
 	// Number of samples out of order but accepted: with ooo enabled and within time window.
 	oooFloatsAccepted    int
 	oooHistogramAccepted int
+	// Number of samples dropped at commit time because the series already had a
+	// sample at the same timestamp, with an equal or a conflicting value.
+	floatDuplicatesDropped int
+	histoDuplicatesDropped int
 	// Number of samples rejected due to: out of order but OOO support disabled.
 	floatOOORejected int
 	histoOOORejected int
@@ -1229,8 +1445,15 @@ type appenderCommitContext struct {
 	floatTooOldRejected int
 	histoTooOldRejected int
 	// Number of samples rejected due to: out of bounds: with t < minValidTime (OOO support disabled).
-	floatOOBRejected    int
-	histoOOBRejected    int
+	floatOOBRejected int
+	histoOOBRejected int
+	// Whether to aggregate same-timestamp drops per series for CommitStats.
+	collectCommitStats bool
+	// Same-timestamp drops aggregated per series, allocated lazily on the first drop.
+	droppedConflict     []storage.DiscardedSeriesSamples
+	droppedExactDup     []storage.DiscardedSeriesSamples
+	droppedConflictIdx  map[chunks.HeadSeriesRef]int
+	droppedExactDupIdx  map[chunks.HeadSeriesRef]int
 	inOrderMint         int64
 	inOrderMaxt         int64
 	appendChunkOpts     chunkOpts
@@ -1250,20 +1473,14 @@ type appenderCommitContext struct {
 func (a *headAppenderBase) commitExemplars(b *appendBatch) {
 	// No errors logging to WAL, so pass the exemplars along to the in memory storage.
 	for _, e := range b.exemplars {
-		s := a.head.series.getByID(chunks.HeadSeriesRef(e.ref))
-		if s == nil {
-			// This is very unlikely to happen, but we have seen it in the wild.
-			// It means that the series was truncated between AppendExemplar and Commit.
-			// See TestHeadCompactionWhileAppendAndCommitExemplar.
-			continue
-		}
+		s := e.series
 		// We don't instrument exemplar appends here, all is instrumented by storage.
-		if err := a.head.exemplars.AddExemplar(s.labels(), e.exemplar); err != nil {
-			if errors.Is(err, storage.ErrOutOfOrderExemplar) {
-				continue
-			}
+		if err := a.head.exemplars.AddExemplar(s.labels(), e.exemplar); err != nil && !errors.Is(err, storage.ErrOutOfOrderExemplar) {
 			a.head.logger.Debug("Unknown error while adding exemplar", "err", err)
 		}
+		s.Lock()
+		a.releasePendingCommit(s)
+		s.Unlock()
 	}
 }
 
@@ -1327,6 +1544,11 @@ func (acc *appenderCommitContext) collectOOORecords(a *headAppenderBase) {
 	acc.wblFloatHistograms = nil
 	acc.oooMmapMarkers = nil
 }
+
+// errConflictingSample is storage.ErrDuplicateSampleForTimestamp boxed once into an error
+// interface. That sentinel is a value-typed struct, so passing it directly to errors.Is in the
+// per-sample commit path would box it onto the heap on every call; the pre-boxed copy avoids that.
+var errConflictingSample error = storage.ErrDuplicateSampleForTimestamp
 
 // handleAppendableError processes errors encountered during sample appending and updates
 // the provided counters accordingly.
@@ -1442,8 +1664,11 @@ func (a *headAppenderBase) commitFloats(b *appendBatch, acc *appenderCommitConte
 				continue
 			}
 		}
-		oooSample, _, err := series.appendable(s.T, s.V, a.headMaxt, a.minValidTime, a.oooTimeWindow)
+		oooSample, _, err := series.appendable(s.T, s.V, a.headMaxt, a.minValidTime, a.oooTimeWindow, a.head)
 		if err != nil {
+			if errors.Is(err, errConflictingSample) {
+				acc.recordDroppedConflict(series, &acc.floatDuplicatesDropped)
+			}
 			handleAppendableError(err, &acc.floatsAppended, &acc.floatOOORejected, &acc.floatOOBRejected, &acc.floatTooOldRejected)
 		}
 
@@ -1490,11 +1715,10 @@ func (a *headAppenderBase) commitFloats(b *appendBatch, acc *appenderCommitConte
 				}
 				acc.oooFloatsAccepted++
 			} else {
-				// Sample is an exact duplicate of the last sample.
+				// The timestamp already exists, so the sample is dropped.
 				// NOTE: We can only detect updates if they clash with a sample in the OOOHeadChunk,
 				// not with samples in already flushed OOO chunks.
-				// TODO(codesome): Add error reporting? It depends on addressing https://github.com/prometheus/prometheus/discussions/10305.
-				acc.floatsAppended--
+				acc.recordOOODuplicate(series, s.T, s.V, nil, nil, &acc.floatsAppended, &acc.floatDuplicatesDropped)
 			}
 		default:
 			wasStale, wasHistogram, oldBuckets := series.sampleState()
@@ -1514,6 +1738,7 @@ func (a *headAppenderBase) commitFloats(b *appendBatch, acc *appenderCommitConte
 			} else {
 				// The sample is an exact duplicate, and should be silently dropped.
 				acc.floatsAppended--
+				acc.recordDroppedExactDup(series, &acc.floatDuplicatesDropped)
 			}
 		}
 
@@ -1545,8 +1770,11 @@ func (a *headAppenderBase) commitHistograms(b *appendBatch, acc *appenderCommitC
 		// marker. The worst case is that we need to cut a new chunk
 		// just for the staleness marker.
 
-		oooSample, _, err := series.appendableHistogram(s.T, s.H, a.headMaxt, a.minValidTime, a.oooTimeWindow)
+		oooSample, _, err := series.appendableHistogram(s.T, s.H, a.headMaxt, a.minValidTime, a.oooTimeWindow, a.head)
 		if err != nil {
+			if errors.Is(err, errConflictingSample) {
+				acc.recordDroppedConflict(series, &acc.histoDuplicatesDropped)
+			}
 			handleAppendableError(err, &acc.histogramsAppended, &acc.histoOOORejected, &acc.histoOOBRejected, &acc.histoTooOldRejected)
 		}
 
@@ -1593,11 +1821,10 @@ func (a *headAppenderBase) commitHistograms(b *appendBatch, acc *appenderCommitC
 				}
 				acc.oooHistogramAccepted++
 			} else {
-				// Sample is an exact duplicate of the last sample.
+				// The timestamp already exists, so the sample is dropped.
 				// NOTE: We can only detect updates if they clash with a sample in the OOOHeadChunk,
 				// not with samples in already flushed OOO chunks.
-				// TODO(codesome): Add error reporting? It depends on addressing https://github.com/prometheus/prometheus/discussions/10305.
-				acc.histogramsAppended--
+				acc.recordOOODuplicate(series, s.T, 0, s.H, nil, &acc.histogramsAppended, &acc.histoDuplicatesDropped)
 			}
 		default:
 			wasStale, wasHistogram, oldBuckets := series.sampleState()
@@ -1614,8 +1841,9 @@ func (a *headAppenderBase) commitHistograms(b *appendBatch, acc *appenderCommitC
 				a.head.updateStaleSeriesMetricOnAppend(wasStale, isStale)
 				a.head.updateNativeHistogramMetricsOnAppend(wasHistogram, true, oldBuckets, newBuckets)
 			} else {
+				// The sample is an exact duplicate, and should be silently dropped.
 				acc.histogramsAppended--
-				acc.histoOOORejected++
+				acc.recordDroppedExactDup(series, &acc.histoDuplicatesDropped)
 			}
 		}
 
@@ -1647,8 +1875,11 @@ func (a *headAppenderBase) commitFloatHistograms(b *appendBatch, acc *appenderCo
 		// marker. The worst case is that we need to cut a new chunk
 		// just for the staleness marker.
 
-		oooSample, _, err := series.appendableFloatHistogram(s.T, s.FH, a.headMaxt, a.minValidTime, a.oooTimeWindow)
+		oooSample, _, err := series.appendableFloatHistogram(s.T, s.FH, a.headMaxt, a.minValidTime, a.oooTimeWindow, a.head)
 		if err != nil {
+			if errors.Is(err, errConflictingSample) {
+				acc.recordDroppedConflict(series, &acc.histoDuplicatesDropped)
+			}
 			handleAppendableError(err, &acc.histogramsAppended, &acc.histoOOORejected, &acc.histoOOBRejected, &acc.histoTooOldRejected)
 		}
 
@@ -1695,11 +1926,10 @@ func (a *headAppenderBase) commitFloatHistograms(b *appendBatch, acc *appenderCo
 				}
 				acc.oooHistogramAccepted++
 			} else {
-				// Sample is an exact duplicate of the last sample.
+				// The timestamp already exists, so the sample is dropped.
 				// NOTE: We can only detect updates if they clash with a sample in the OOOHeadChunk,
 				// not with samples in already flushed OOO chunks.
-				// TODO(codesome): Add error reporting? It depends on addressing https://github.com/prometheus/prometheus/discussions/10305.
-				acc.histogramsAppended--
+				acc.recordOOODuplicate(series, s.T, 0, nil, s.FH, &acc.histogramsAppended, &acc.histoDuplicatesDropped)
 			}
 		default:
 			wasStale, wasHistogram, oldBuckets := series.sampleState()
@@ -1716,8 +1946,9 @@ func (a *headAppenderBase) commitFloatHistograms(b *appendBatch, acc *appenderCo
 				a.head.updateStaleSeriesMetricOnAppend(wasStale, isStale)
 				a.head.updateNativeHistogramMetricsOnAppend(wasHistogram, true, oldBuckets, newBuckets)
 			} else {
+				// The sample is an exact duplicate, and should be silently dropped.
 				acc.histogramsAppended--
-				acc.histoOOORejected++
+				acc.recordDroppedExactDup(series, &acc.histoDuplicatesDropped)
 			}
 		}
 
@@ -1735,12 +1966,13 @@ func (a *headAppenderBase) commitFloatHistograms(b *appendBatch, acc *appenderCo
 // It iterates over the metadata slice and updates the corresponding series
 // with the new metadata information. The series is locked during the update
 // to ensure thread safety.
-func commitMetadata(b *appendBatch) {
+func (a *headAppenderBase) commitMetadata(b *appendBatch) {
 	var series *memSeries
 	for i, m := range b.metadata {
 		series = b.metadataSeries[i]
 		series.Lock()
-		series.meta = &metadata.Metadata{Type: record.ToMetricType(m.Type), Unit: m.Unit, Help: m.Help}
+		series.meta = unique.Make(metadata.Metadata{Type: record.ToMetricType(m.Type), Unit: m.Unit, Help: m.Help})
+		a.releasePendingCommit(series)
 		series.Unlock()
 	}
 }
@@ -1754,9 +1986,10 @@ func (a *headAppenderBase) releaseCreatedSeriesReservations() {
 }
 
 // releasePendingCommit releases one of the series' pending-sample reservations.
-// Reservations are taken once per queued sample and once per series created by
-// this appender. Decrementing without one would underflow into the packed flag
-// bits, so the accounting error is reported instead.
+// Reservations are taken once per queued sample, exemplar or metadata update,
+// and once per newly created series. Decrementing without one would
+// underflow into the packed flag bits, so the accounting error is reported
+// instead.
 //
 // Must be called with the series lock held.
 func (a *headAppenderBase) releasePendingCommit(s *memSeries) {
@@ -1780,14 +2013,14 @@ func (a *headAppenderBase) Commit() (err error) {
 			// Don't double-close in case Rollback() was called.
 			return
 		}
-		h.putRefSeriesBuffer(a.seriesRefs)
+		h.putSeriesRecordCandidateBuffer(a.seriesRecordCandidates)
 		h.putSeriesBuffer(a.series)
 		h.putTypeMap(a.typesInBatch)
 		a.closed = true
 	}()
 
 	if err := a.log(); err != nil {
-		_ = a.Rollback() // Most likely the same error will happen again.
+		_ = a.Rollback()
 		return fmt.Errorf("write to WAL: %w", err)
 	}
 
@@ -1812,6 +2045,7 @@ func (a *headAppenderBase) Commit() (err error) {
 		oooEnc: record.Encoder{
 			EnableSTStorage: a.storeST,
 		},
+		collectCommitStats: h.opts.EnableCommitStats,
 	}
 
 	for _, b := range a.batches {
@@ -1836,7 +2070,7 @@ func (a *headAppenderBase) Commit() (err error) {
 		a.commitFloats(b, acc)
 		a.commitHistograms(b, acc)
 		a.commitFloatHistograms(b, acc)
-		commitMetadata(b)
+		a.commitMetadata(b)
 	}
 	// Release the reservations that protected newly indexed series before their first sample was queued.
 	a.releaseCreatedSeriesReservations()
@@ -1847,10 +2081,19 @@ func (a *headAppenderBase) Commit() (err error) {
 	h.metrics.tooOldSamples.WithLabelValues(sampleMetricTypeFloat).Add(float64(acc.floatTooOldRejected))
 	h.metrics.samplesAppended.WithLabelValues(sampleMetricTypeFloat).Add(float64(acc.floatsAppended))
 	h.metrics.samplesAppended.WithLabelValues(sampleMetricTypeHistogram).Add(float64(acc.histogramsAppended))
+	h.metrics.duplicateSamples.WithLabelValues(sampleMetricTypeFloat).Add(float64(acc.floatDuplicatesDropped))
+	h.metrics.duplicateSamples.WithLabelValues(sampleMetricTypeHistogram).Add(float64(acc.histoDuplicatesDropped))
 	h.metrics.outOfOrderSamplesAppended.WithLabelValues(sampleMetricTypeFloat).Add(float64(acc.oooFloatsAccepted))
 	h.metrics.outOfOrderSamplesAppended.WithLabelValues(sampleMetricTypeHistogram).Add(float64(acc.oooHistogramAccepted))
 	h.updateMinMaxTime(acc.inOrderMint, acc.inOrderMaxt)
 	h.updateMinOOOMaxOOOTime(acc.oooMinT, acc.oooMaxT)
+
+	a.commitStats = storage.CommitStats{
+		DiscardedSamples: storage.DiscardedSampleStats{
+			SameTimestampDifferentValue: acc.droppedConflict,
+			SameTimestampSameValue:      acc.droppedExactDup,
+		},
+	}
 
 	acc.collectOOORecords(a)
 	if h.wbl != nil {
@@ -2042,7 +2285,9 @@ func (s *memSeries) appendPreprocessor(t int64, e chunkenc.Encoding, o chunkOpts
 
 	if c == nil {
 		if len(s.mmappedChunks) > 0 && s.mmappedChunks[len(s.mmappedChunks)-1].maxTime >= t {
-			// Out of order sample. Sample timestamp is already in the mmapped chunks, so ignore it.
+			// The timestamp is already covered by the mmapped chunks. Only WAL replay of an
+			// already mmapped sample or an exact duplicate of the last mmapped sample gets
+			// here, because appendable rejects or routes everything else, so ignore it.
 			return c, false, false
 		}
 		// There is no head chunk in this series yet, create the first chunk for the sample.
@@ -2108,7 +2353,9 @@ func (s *memSeries) histogramsAppendPreprocessor(t int64, e chunkenc.Encoding, o
 
 	if c == nil {
 		if len(s.mmappedChunks) > 0 && s.mmappedChunks[len(s.mmappedChunks)-1].maxTime >= t {
-			// Out of order sample. Sample timestamp is already in the mmapped chunks, so ignore it.
+			// The timestamp is already covered by the mmapped chunks. Only WAL replay of an
+			// already mmapped sample or an exact duplicate of the last mmapped sample gets
+			// here, because appendable rejects or routes everything else, so ignore it.
 			return c, false, false
 		}
 		// There is no head chunk in this series yet, create the first chunk for the sample.
@@ -2304,8 +2551,8 @@ func handleChunkWriteError(err error) {
 	}
 }
 
-// Rollback removes the samples and exemplars from headAppender and writes any series to WAL.
-func (a *headAppenderBase) Rollback() (err error) {
+// Rollback discards buffered data and releases pending-commit reservations.
+func (a *headAppenderBase) Rollback() error {
 	if a.closed {
 		return ErrAppenderClosed
 	}
@@ -2315,7 +2562,7 @@ func (a *headAppenderBase) Rollback() (err error) {
 		h.iso.closeAppend(a.appendID)
 		h.metrics.activeAppenders.Dec()
 		a.closed = true
-		h.putRefSeriesBuffer(a.seriesRefs)
+		h.putSeriesRecordCandidateBuffer(a.seriesRecordCandidates)
 		h.putSeriesBuffer(a.series)
 		h.putTypeMap(a.typesInBatch)
 	}()
@@ -2343,10 +2590,18 @@ func (a *headAppenderBase) Rollback() (err error) {
 			a.releasePendingCommit(series)
 			series.Unlock()
 		}
+		for _, e := range b.exemplars {
+			e.series.Lock()
+			a.releasePendingCommit(e.series)
+			e.series.Unlock()
+		}
+		for _, s := range b.metadataSeries {
+			s.Lock()
+			a.releasePendingCommit(s)
+			s.Unlock()
+		}
 		b.close(h)
 	}
 	a.batches = a.batches[:0]
-	// Series are created in the head memory regardless of rollback. Thus we have
-	// to log them to the WAL in any case.
-	return a.log()
+	return nil
 }

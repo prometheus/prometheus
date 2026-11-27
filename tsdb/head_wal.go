@@ -26,6 +26,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unique"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/atomic"
@@ -96,7 +97,9 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 		wg             sync.WaitGroup
 		concurrency    = h.opts.WALReplayConcurrency
 		processors     = make([]walSubsetProcessor, concurrency)
-		exemplarsInput chan record.RefExemplar
+		exemplarsInput chan exemplarReplayItem
+		// Closed when the exemplar worker exits.
+		exemplarsDone = make(chan struct{})
 
 		shards          = make([][]record.RefSample, concurrency)
 		histogramShards = make([][]histogramRecord, concurrency)
@@ -109,10 +112,12 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 		// For CorruptionErr ensure to terminate all workers before exiting.
 		_, ok := err.(*wlog.CorruptionErr)
 		if ok || seriesCreationErr != nil {
+			// The exemplar worker forwards deletions to the processors, so it must exit first.
+			close(exemplarsInput)
+			<-exemplarsDone
 			for i := range concurrency {
 				processors[i].closeAndDrain()
 			}
-			close(exemplarsInput)
 			wg.Wait()
 		}
 	}()
@@ -131,13 +136,19 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 		}(&processors[i])
 	}
 
-	wg.Add(1)
-	exemplarsInput = make(chan record.RefExemplar, 300)
-	go func(input <-chan record.RefExemplar) {
+	exemplarsInput = make(chan exemplarReplayItem, 300)
+	go func(input <-chan exemplarReplayItem) {
 		missingSeries := make(map[chunks.HeadSeriesRef]struct{})
 		var err error
-		defer wg.Done()
-		for e := range input {
+		defer close(exemplarsDone)
+		for in := range input {
+			if len(in.deletedSeriesRefs) > 0 {
+				// The exemplars preceding the tombstone have been processed, so the
+				// processor owning the series can delete them.
+				processors[in.shard].input <- walSubsetProcessorInputItem{deletedSeriesRefs: in.deletedSeriesRefs}
+				continue
+			}
+			e := in.exemplar
 			ms := h.series.getByID(e.Ref)
 			if ms == nil {
 				unknownExemplarRefs.Inc()
@@ -335,8 +346,8 @@ Outer:
 					if series := h.series.getByID(ref); series != nil {
 						// Remove the series from the hash index so that a later series
 						// record with the same labels creates a fresh series instead of
-						// mapping onto this one. It stays in the by-ref map so
-						// already-queued samples still resolve until the deletion applies.
+						// mapping onto this one. It stays in the by-ref map so already-queued
+						// samples and exemplars still resolve until the deletion applies.
 						h.series.unlinkHash(series.lset.Hash(), ref)
 						mod := uint64(ref) % uint64(concurrency)
 						deleteSeriesShards[mod] = append(deleteSeriesShards[mod], ref)
@@ -363,7 +374,12 @@ Outer:
 
 			for i := range concurrency {
 				if len(deleteSeriesShards[i]) > 0 {
-					processors[i].input <- walSubsetProcessorInputItem{deletedSeriesRefs: deleteSeriesShards[i]}
+					// Exemplars are replayed by a separate worker. Route the deletion
+					// through it, so that the exemplars preceding the tombstone still
+					// find their series. Records following the tombstone for the same
+					// series, which are not expected, may still be applied to the
+					// series before its deletion.
+					exemplarsInput <- exemplarReplayItem{deletedSeriesRefs: deleteSeriesShards[i], shard: i}
 					deleteSeriesShards[i] = nil
 				}
 			}
@@ -380,7 +396,7 @@ Outer:
 					h.updateWALExpiry(e.Ref, e.T)
 					e.Ref = r
 				}
-				exemplarsInput <- e
+				exemplarsInput <- exemplarReplayItem{exemplar: e}
 			}
 			for i := range v { // Zero out to avoid retaining label data.
 				v[i].Labels = labels.EmptyLabels()
@@ -469,11 +485,11 @@ Outer:
 					missingSeries[m.Ref] = struct{}{}
 					continue
 				}
-				s.meta = &metadata.Metadata{
+				s.meta = unique.Make(metadata.Metadata{
 					Type: record.ToMetricType(m.Type),
 					Unit: m.Unit,
 					Help: m.Help,
-				}
+				})
 			}
 			clear(v) // Zero out to avoid retaining metadata strings.
 			h.wlReplayMetadataPool.Put(v[:0])
@@ -494,10 +510,12 @@ Outer:
 	}
 
 	// Signal termination to each worker and wait for it to close its output channel.
+	// The exemplar worker forwards deletions to the processors, so it must exit first.
+	close(exemplarsInput)
+	<-exemplarsDone
 	for i := range concurrency {
 		processors[i].closeAndDrain()
 	}
-	close(exemplarsInput)
 	wg.Wait()
 
 	if err := r.Err(); err != nil {
@@ -641,6 +659,14 @@ type walSubsetProcessor struct {
 	input            chan walSubsetProcessorInputItem
 	output           chan []record.RefSample
 	histogramsOutput chan []histogramRecord
+}
+
+// exemplarReplayItem is either an exemplar, or series deleted by tombstones that the
+// exemplar worker forwards to the processor of the given shard.
+type exemplarReplayItem struct {
+	exemplar          record.RefExemplar
+	deletedSeriesRefs []chunks.HeadSeriesRef
+	shard             int
 }
 
 type walSubsetProcessorInputItem struct {

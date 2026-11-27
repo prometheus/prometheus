@@ -54,6 +54,23 @@ describe("serializeNode and formatNode", () => {
         node: {
           type: nodeType.vectorSelector,
           name: "metric_name",
+          matchers: [
+            { type: matchType.equal, name: "label1", value: "line1\nline2" },
+            { type: matchType.matchRegexp, name: "label2", value: "a\r\nb" },
+          ],
+          offset: 0,
+          offsetExpr: null,
+          timestamp: null,
+          startOrEnd: null,
+          anchored: false,
+          smoothed: false,
+        },
+        output: 'metric_name{label1="line1\\nline2",label2=~"a\\r\\nb"}',
+      },
+      {
+        node: {
+          type: nodeType.vectorSelector,
+          name: "metric_name",
           matchers: [],
           offset: 60000,
           offsetExpr: null,
@@ -617,6 +634,13 @@ describe("serializeNode and formatNode", () => {
           val: 'hello, " world',
         },
         output: '"hello, \\" world"',
+      },
+      {
+        node: {
+          type: nodeType.stringLiteral,
+          val: "line1\nline2",
+        },
+        output: '"line1\\nline2"',
       },
 
       // Unary expressions.

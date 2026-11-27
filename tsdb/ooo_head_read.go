@@ -248,6 +248,15 @@ func (cr *HeadAndOOOChunkReader) ChunkOrIterableWithCopy(meta chunks.Meta) (chun
 }
 
 func (cr *HeadAndOOOChunkReader) chunkOrIterable(meta chunks.Meta, copyLastChunk bool) (chunkenc.Chunk, chunkenc.Iterable, int64, error) {
+	c, iterable, maxt, err := cr.chunk(meta, copyLastChunk)
+	// Check after chunk releases the series lock, since skipEvictedSeries looks up the series again.
+	if errors.Is(err, storage.ErrNotFound) && cr.cr != nil && cr.cr.skipEvictedSeries(meta) {
+		return nil, noSamples{}, 0, nil
+	}
+	return c, iterable, maxt, err
+}
+
+func (cr *HeadAndOOOChunkReader) chunk(meta chunks.Meta, copyLastChunk bool) (chunkenc.Chunk, chunkenc.Iterable, int64, error) {
 	sid, cid, isOOO := unpackHeadChunkRef(meta.Ref)
 	s := cr.head.series.getByID(sid)
 	// This means that the series has been garbage collected.
@@ -377,7 +386,7 @@ func NewOOOCompactionHead(ctx context.Context, head *Head) (*OOOCompactionHead, 
 	if err != nil {
 		return nil, err
 	}
-	p = hr.SortedPostings(p)
+	p = hr.SortedPostings(ctx, p)
 
 	var lastSeq, lastOff int
 	for p.Next() {
@@ -388,6 +397,9 @@ func NewOOOCompactionHead(ctx context.Context, head *Head) (*OOOCompactionHead, 
 		}
 
 		ch.mmapOOOSeriesChunk(ms, seriesRef, &lastSeq, &lastOff)
+	}
+	if err := p.Err(); err != nil {
+		return nil, fmt.Errorf("iterate postings: %w", err)
 	}
 
 	return ch, nil
@@ -513,14 +525,14 @@ func (*OOOCompactionHeadIndexReader) PostingsForAllLabelValues(context.Context, 
 	return index.ErrPostings(errors.New("not supported"))
 }
 
-func (*OOOCompactionHeadIndexReader) SortedPostings(p index.Postings) index.Postings {
+func (*OOOCompactionHeadIndexReader) SortedPostings(_ context.Context, p index.Postings) index.Postings {
 	// This will already be sorted from the Postings() call above.
 	return p
 }
 
-func (ir *OOOCompactionHeadIndexReader) ShardedPostings(p index.Postings, shardIndex, shardCount uint64) index.Postings {
+func (ir *OOOCompactionHeadIndexReader) ShardedPostings(ctx context.Context, p index.Postings, shardIndex, shardCount uint64) index.Postings {
 	hr := headIndexReader{head: ir.ch.head, mint: ir.ch.mint, maxt: ir.ch.maxt}
-	return hr.ShardedPostings(p, shardIndex, shardCount)
+	return hr.ShardedPostings(ctx, p, shardIndex, shardCount)
 }
 
 func (ir *OOOCompactionHeadIndexReader) Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta) error {
@@ -582,12 +594,23 @@ type HeadAndOOOQuerier struct {
 
 var _ storage.Searcher = &HeadAndOOOQuerier{}
 
-func NewHeadAndOOOQuerier(inoMint, mint, maxt int64, head *Head, oooIsoState *oooIsolationState, querier storage.Querier) storage.Querier {
+// NewHeadAndOOOQuerier returns a Querier that queries both the head and the
+// out-of-order head.
+//
+// If skipEvictedSeries is true, chunks removed by the series eviction in progress
+// when the Querier is created are skipped instead of failing the query.
+// See headChunkReader.evicting.
+func NewHeadAndOOOQuerier(inoMint, mint, maxt int64, head *Head, oooIsoState *oooIsolationState, querier storage.Querier, skipEvictedSeries bool) storage.Querier {
 	cr := &headChunkReader{
 		head:     head,
 		mint:     mint,
 		maxt:     maxt,
 		isoState: head.iso.State(inoMint, maxt),
+	}
+	// Load the series being evicted after the isolation state was created, so that a querier that is not waited for
+	// by truncateSeries sees them.
+	if skipEvictedSeries {
+		cr.evicting = head.evictingSeries.Load()
 	}
 	return &HeadAndOOOQuerier{
 		mint:    mint,
@@ -659,12 +682,23 @@ type HeadAndOOOChunkQuerier struct {
 	querier    storage.ChunkQuerier
 }
 
-func NewHeadAndOOOChunkQuerier(inoMint, mint, maxt int64, head *Head, oooIsoState *oooIsolationState, querier storage.ChunkQuerier) storage.ChunkQuerier {
+// NewHeadAndOOOChunkQuerier returns a ChunkQuerier that queries both the head
+// and the out-of-order head.
+//
+// If skipEvictedSeries is true, chunks removed by the series eviction in progress
+// when the ChunkQuerier is created are skipped instead of failing the query.
+// See headChunkReader.evicting.
+func NewHeadAndOOOChunkQuerier(inoMint, mint, maxt int64, head *Head, oooIsoState *oooIsolationState, querier storage.ChunkQuerier, skipEvictedSeries bool) storage.ChunkQuerier {
 	cr := &headChunkReader{
 		head:     head,
 		mint:     mint,
 		maxt:     maxt,
 		isoState: head.iso.State(inoMint, maxt),
+	}
+	// Load the series being evicted after the isolation state was created, so that a querier that is not waited for
+	// by truncateSeries sees them.
+	if skipEvictedSeries {
+		cr.evicting = head.evictingSeries.Load()
 	}
 	return &HeadAndOOOChunkQuerier{
 		mint:    mint,

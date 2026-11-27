@@ -70,6 +70,33 @@ func TestIsolation(t *testing.T) {
 	require.Equal(t, int64(math.MaxInt64), iso.lowestAppendTime())
 }
 
+func TestTxRingLastAppendID(t *testing.T) {
+	var empty *txRing
+	_, ok := empty.lastAppendID()
+	require.False(t, ok)
+
+	ring := newTxRing(2)
+	_, ok = ring.lastAppendID()
+	require.False(t, ok)
+
+	ring.add(1)
+	last, ok := ring.lastAppendID()
+	require.True(t, ok)
+	require.Equal(t, uint64(1), last)
+
+	ring.add(2)
+	last, ok = ring.lastAppendID()
+	require.True(t, ok)
+	require.Equal(t, uint64(2), last)
+
+	// Move the ring's first entry, then wrap the next addition to index zero.
+	ring.cleanupAppendIDsBelow(2)
+	ring.add(3)
+	last, ok = ring.lastAppendID()
+	require.True(t, ok)
+	require.Equal(t, uint64(3), last)
+}
+
 // TestCommittedAppendID pins the contract of (*isolation).committedAppendID:
 // it returns the highest appendID that is guaranteed to be committed, i.e. the
 // highest ID a block writer cannot see in incompleteAppends. Callers in the

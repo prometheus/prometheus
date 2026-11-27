@@ -274,7 +274,7 @@ func (p *OpenMetricsParser) Exemplar(e *exemplar.Exemplar) bool {
 		c := p.eOffsets[i+2] - p.start
 		d := p.eOffsets[i+3] - p.start
 
-		p.builder.Add(s[a:b], s[c:d])
+		p.builder.Add(unreplace(s[a:b]), unreplace(s[c:d]))
 	}
 
 	p.builder.Sort()

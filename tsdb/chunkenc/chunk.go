@@ -120,6 +120,10 @@ type Appender interface {
 	Append(st, t int64, v float64)
 
 	// AppendHistogram and AppendFloatHistogram append a histogram sample to a histogram or float histogram chunk.
+	//
+	// The caller may reuse the histogram and its slices after the call returns.
+	// Implementations must copy any data they need to retain.
+	//
 	// Appending may panic if the chunk is already at full capacity. It is the
 	// responsibility of the caller to decide how to cut new chunks before that.
 	// Appending a histogram may require creating a completely new chunk or recoding (changing) the current chunk.

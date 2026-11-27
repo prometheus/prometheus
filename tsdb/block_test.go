@@ -14,14 +14,12 @@
 package tsdb
 
 import (
-	"bytes"
 	"context"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"hash/crc32"
-	"log/slog"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -42,6 +40,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/wlog"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 // TestBlockMetaCompaction_SetSelectedSeries verifies the round-trip behaviour of the
@@ -118,8 +117,6 @@ func TestBlockLogValue(t *testing.T) {
 		{name: "nil"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			require.Equal(t, tc.want, slog.AnyValue(tc.block).Resolve().Any())
-
 			data, err := json.Marshal(map[string]*Block{"block": tc.block})
 			require.NoError(t, err)
 			if tc.want == nil {
@@ -128,48 +125,7 @@ func TestBlockLogValue(t *testing.T) {
 				require.JSONEq(t, "{\"block\":{}}", string(data))
 			}
 
-			for _, style := range []promslog.LogStyle{promslog.SlogStyle, promslog.GoKitStyle} {
-				for _, formatName := range []string{"json", "logfmt"} {
-					for _, placement := range []string{"direct", "with", "group", "with-group"} {
-						t.Run(string(style)+"/"+formatName+"/"+placement, func(t *testing.T) {
-							var output bytes.Buffer
-							format := promslog.NewFormat()
-							require.NoError(t, format.Set(formatName))
-							logger := promslog.New(&promslog.Config{Writer: &output, Format: format, Style: style})
-							switch placement {
-							case "direct":
-								logger.Info("test", "block", tc.block)
-							case "with":
-								logger.With("block", tc.block).Info("test")
-							case "group":
-								logger.Info("test", slog.Group("group", "block", tc.block))
-							case "with-group":
-								logger.WithGroup("group").With("block", tc.block).Info("test")
-							}
-
-							if formatName == "json" {
-								var entry map[string]any
-								require.NoError(t, json.Unmarshal(output.Bytes(), &entry))
-								if placement == "group" || placement == "with-group" {
-									entry = entry["group"].(map[string]any)
-								}
-								require.Contains(t, entry, "block")
-								require.Equal(t, tc.want, entry["block"])
-							} else {
-								key := "block"
-								if placement == "group" || placement == "with-group" {
-									key = "group.block"
-								}
-								want := "<nil>"
-								if tc.want != nil {
-									want = tc.want.(string)
-								}
-								require.Contains(t, output.String(), key+"="+want)
-							}
-						})
-					}
-				}
-			}
+			testutil.RequireLogValue(t, "block", tc.block, tc.want)
 		})
 	}
 }
@@ -194,6 +150,7 @@ func BenchmarkOpenBlock(b *testing.B) {
 }
 
 func TestCorruptedChunk(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name     string
 		corrFunc func(f *os.File) // Func that applies the corruption.
@@ -823,7 +780,7 @@ func createHead(tb testing.TB, w *wlog.WL, series []storage.Series, chunkDir str
 
 	var it chunkenc.Iterator
 	ctx := context.Background()
-	app := head.Appender(ctx)
+	app := head.AppenderV2(ctx)
 	for _, s := range series {
 		ref := storage.SeriesRef(0)
 		it = s.Iterator(it)
@@ -835,19 +792,19 @@ func createHead(tb testing.TB, w *wlog.WL, series []storage.Series, chunkDir str
 				// The behaviour of appender is undefined if samples of different types
 				// are appended to the same series in a single Commit().
 				require.NoError(tb, app.Commit())
-				app = head.Appender(ctx)
+				app = head.AppenderV2(ctx)
 			}
 
 			switch typ {
 			case chunkenc.ValFloat:
 				t, v := it.At()
-				ref, err = app.Append(ref, lset, t, v)
+				ref, err = app.Append(ref, lset, 0, t, v, nil, nil, storage.AOptions{})
 			case chunkenc.ValHistogram:
 				t, h := it.AtHistogram(nil)
-				ref, err = app.AppendHistogram(ref, lset, t, h, nil)
+				ref, err = app.Append(ref, lset, 0, t, 0, h, nil, storage.AOptions{})
 			case chunkenc.ValFloatHistogram:
 				t, fh := it.AtFloatHistogram(nil)
-				ref, err = app.AppendHistogram(ref, lset, t, nil, fh)
+				ref, err = app.Append(ref, lset, 0, t, 0, nil, fh, storage.AOptions{})
 			default:
 				err = fmt.Errorf("unknown sample type %s", typ.String())
 			}
@@ -872,7 +829,7 @@ func createHeadWithOOOSamples(tb testing.TB, w *wlog.WL, series []storage.Series
 
 	var it chunkenc.Iterator
 	totalSamples := 0
-	app := head.Appender(context.Background())
+	app := head.AppenderV2(context.Background())
 	for _, s := range series {
 		ref := storage.SeriesRef(0)
 		it = s.Iterator(it)
@@ -887,7 +844,7 @@ func createHeadWithOOOSamples(tb testing.TB, w *wlog.WL, series []storage.Series
 				os = append(os, sample{t: t, f: v})
 				continue
 			}
-			ref, err = app.Append(ref, lset, t, v)
+			ref, err = app.Append(ref, lset, 0, t, v, nil, nil, storage.AOptions{})
 			require.NoError(tb, err)
 		}
 		require.NoError(tb, it.Err())
@@ -901,11 +858,11 @@ func createHeadWithOOOSamples(tb testing.TB, w *wlog.WL, series []storage.Series
 	oooSamplesAppended := 0
 	require.Equal(tb, float64(0), prom_testutil.ToFloat64(head.metrics.outOfOrderSamplesAppended))
 
-	app = head.Appender(context.Background())
+	app = head.AppenderV2(context.Background())
 	for i, lset := range oooSampleLabels {
 		ref := storage.SeriesRef(0)
 		for _, sample := range oooSamples[i] {
-			ref, err = app.Append(ref, lset, sample.T(), sample.F())
+			ref, err = app.Append(ref, lset, 0, sample.T(), sample.F(), nil, nil, storage.AOptions{})
 			require.NoError(tb, err)
 			oooSamplesAppended++
 		}

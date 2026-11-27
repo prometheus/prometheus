@@ -103,7 +103,11 @@ func (q *blockBaseQuerier) SearchLabelNames(ctx context.Context, hints *storage.
 		return storage.ErrSearchResultSet(err)
 	}
 
-	return storage.NewSearchResultSetFromSlice(storage.ApplySearchHints(names, hints), nil)
+	results, err := storage.ApplySearchHints(ctx, names, hints)
+	if err != nil {
+		return storage.ErrSearchResultSet(err)
+	}
+	return storage.NewSearchResultSetFromSlice(results, nil)
 }
 
 // SearchLabelValues implements storage.Searcher.
@@ -121,13 +125,19 @@ func (q *blockBaseQuerier) SearchLabelValues(ctx context.Context, name string, h
 		labelHints.Limit = hints.Limit
 		labelHints.LimitSmallest = true
 	}
+	if hints.Filter != nil {
+		filter := hints.Filter
+		labelHints.ValueFilter = func(v string) bool {
+			accepted, _ := filter.Accept(v)
+			return accepted
+		}
+	}
 
 	var (
 		values []string
 		err    error
 	)
-	// ApplySearchHints needs the values ascending by value.
-	// OrderByScore relies on the score calculated by the filter.
+	// ApplySearchHints needs ascending values except for score ordering with a filter.
 	if hints.OrderBy == storage.OrderByScoreDesc && hints.Filter != nil {
 		values, err = q.index.LabelValues(ctx, name, labelHints, matchers...)
 	} else {
@@ -137,7 +147,11 @@ func (q *blockBaseQuerier) SearchLabelValues(ctx context.Context, name string, h
 		return storage.ErrSearchResultSet(err)
 	}
 
-	return storage.NewSearchResultSetFromSlice(storage.ApplySearchHints(values, hints), nil)
+	results, err := storage.ApplySearchHints(ctx, values, hints)
+	if err != nil {
+		return storage.ErrSearchResultSet(err)
+	}
+	return storage.NewSearchResultSetFromSlice(results, nil)
 }
 
 func (q *blockBaseQuerier) Close() error {
@@ -203,10 +217,10 @@ func selectSeriesSet(ctx context.Context, sortSeries bool, hints *storage.Select
 		return storage.ErrSeriesSet(err)
 	}
 	if sharded {
-		p = index.ShardedPostings(p, hints.ShardIndex, hints.ShardCount)
+		p = index.ShardedPostings(ctx, p, hints.ShardIndex, hints.ShardCount)
 	}
 	if sortSeries {
-		p = index.SortedPostings(p)
+		p = index.SortedPostings(ctx, p)
 	}
 
 	if hints != nil {
@@ -263,10 +277,10 @@ func selectChunkSeriesSet(ctx context.Context, sortSeries bool, hints *storage.S
 		return storage.ErrChunkSeriesSet(err)
 	}
 	if sharded {
-		p = index.ShardedPostings(p, hints.ShardIndex, hints.ShardCount)
+		p = index.ShardedPostings(ctx, p, hints.ShardIndex, hints.ShardCount)
 	}
 	if sortSeries {
-		p = index.SortedPostings(p)
+		p = index.SortedPostings(ctx, p)
 	}
 	return NewBlockChunkSeriesSet(blockID, index, chunks, tombstones, p, mint, maxt, disableTrimming)
 }
@@ -512,6 +526,22 @@ func labelValuesWithMatchers(ctx context.Context, r IndexReader, name string, hi
 	if !hasMatchersForOtherLabels {
 		allValues, _ = hints.ApplyLimit(allValues)
 		return allValues, nil
+	}
+
+	if hints != nil && hints.ValueFilter != nil {
+		filteredValues := allValues[:0]
+		for i, v := range allValues {
+			if (i+1)%checkContextEveryNIterations == 0 && ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			if hints.ValueFilter(v) {
+				filteredValues = append(filteredValues, v)
+			}
+		}
+		allValues = filteredValues
+		if len(allValues) == 0 {
+			return nil, nil
+		}
 	}
 
 	p, err := PostingsForMatchers(ctx, r, matchers...)
@@ -761,8 +791,20 @@ func (p *populateWithDelGenericSeriesIterator) next(copyHeadChunk bool) bool {
 	// Use the single chunk if possible.
 	if p.currMeta.Chunk != nil {
 		if len(p.bufIter.Intervals) == 0 {
+			if copyHeadChunk {
+				if safeChunk, ok := p.currMeta.Chunk.(*safeHeadChunk); ok {
+					it, filtersSamples := safeChunk.iteratorForChunkCopy(p.bufIter.Iter)
+					if it != nil {
+						p.bufIter.Iter = it
+					}
+					if filtersSamples {
+						p.currDelIter = &p.bufIter
+						return true
+					}
+				}
+			}
 			// If there is no overlap with deletion intervals and a single chunk is
-			// returned, we can take chunk as it is.
+			// returned, we can take it as is when it contains only visible samples.
 			p.currDelIter = nil
 			return true
 		}

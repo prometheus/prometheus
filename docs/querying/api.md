@@ -98,15 +98,22 @@ URL query parameters:
 
 - `query=<string>`: Prometheus expression query string.
 - `time=<rfc3339 | unix_timestamp>`: Evaluation timestamp. Optional.
-- `timeout=<duration>`: Evaluation timeout. Optional. Defaults to and
-   is capped by the value of the `-query.timeout` flag.
+- `timeout=<duration>`: Evaluation timeout. Optional. Must be positive. Defaults
+   to and is capped by the effective server-side maximum, which is the
+   `query_max_duration` configuration option when the
+   [`query-cost`](../feature_flags.md#query-cost) feature flag is enabled and
+   the value is set, and otherwise the value of the `-query.timeout` flag.
 - `limit=<number>`: Maximum number of returned series. Doesn't affect scalars or strings but truncates the number of series for matrices and vectors. Optional. 0 means disabled.
 - `lookback_delta=<duration | float>`: Override the [lookback period](#staleness) just for this query in `duration` format or float number of seconds. Optional.
 - `stats=<string>`: Include query statistics in the response. Supported values are `true` (basic statistics) and `all` (additionally includes detailed per-step statistics: timings and sample counts). Any other non-empty value currently behaves like `true`, but is deprecated, adds a warning to the response, and will be rejected in the next major release. Optional. See [Query statistics](#query-statistics).
+- `cost=<bool>`: Include an estimated-versus-actual cost comparison in the response `data`. Optional. Ignored unless the [`query-cost`](../feature_flags.md#query-cost) feature flag is enabled. It is a plain on/off switch: any value that is not a boolean is an error. See [Query statistics](#query-statistics).
+- `max_series=<number>`: Lower the per-query maximum number of series this query may load. Optional. Ignored unless the [`query-cost`](../feature_flags.md#query-cost) feature flag is enabled. It may only *lower* the operator-set ceiling configured via `query_max_series`, never raise it: a higher value is rejected with HTTP 400 (`bad_data`) rather than silently clamped.
+- `max_samples_read=<number>`: Lower the per-query maximum number of samples this query may read. Optional. Ignored unless the [`query-cost`](../feature_flags.md#query-cost) feature flag is enabled. It may only *lower* the operator-set ceiling configured via `query_max_samples_read`, never raise it: a higher value is rejected with HTTP 400 (`bad_data`) rather than silently clamped.
+- `max_query_duration=<duration>`: Lower the per-query maximum execution duration. Optional. Ignored unless the [`query-cost`](../feature_flags.md#query-cost) feature flag is enabled. It may only *lower* the effective duration ceiling, which is `query_max_duration` when set and otherwise the `-query.timeout` flag, never raise it: a higher value is rejected with HTTP 400 (`bad_data`) rather than silently clamped.
 
 Optional HTTP request headers:
 
-- `X-Prometheus-Use-Start-Timestamps: <bool>`: Override the engine-level start timestamp processing setting (`--promql.use-start-timestamps`) for this query. When set to `true`, functions such as `rate()` will use start timestamps from ingested data. When set to `false`, start timestamp processing is disabled for this query. Optional. If omitted, the engine-level default is used.
+- `X-Prometheus-Use-Start-Timestamps: <bool>`: Override the engine-level start timestamp processing setting (`--enable-feature=use-start-timestamps`) for this query. When set to `true`, functions such as `rate()` will use start timestamps from ingested data. When set to `false`, start timestamp processing is disabled for this query. Optional. If omitted, the engine-level default is used.
 
 The current server time is used if the `time` parameter is omitted.
 
@@ -176,15 +183,22 @@ URL query parameters:
 - `start=<rfc3339 | unix_timestamp>`: Start timestamp, inclusive.
 - `end=<rfc3339 | unix_timestamp>`: End timestamp, inclusive.
 - `step=<duration | float>`: Query resolution step width in `duration` format or float number of seconds.
-- `timeout=<duration>`: Evaluation timeout. Optional. Defaults to and
-   is capped by the value of the `-query.timeout` flag.
+- `timeout=<duration>`: Evaluation timeout. Optional. Must be positive. Defaults
+   to and is capped by the effective server-side maximum, which is the
+   `query_max_duration` configuration option when the
+   [`query-cost`](../feature_flags.md#query-cost) feature flag is enabled and
+   the value is set, and otherwise the value of the `-query.timeout` flag.
 - `limit=<number>`: Maximum number of returned series. Optional. 0 means disabled.
 - `lookback_delta=<duration | float>`: Override the [lookback period](#staleness) just for this query in `duration` format or float number of seconds. Optional.
 - `stats=<string>`: Include query statistics in the response. Supported values are `true` (basic statistics) and `all` (additionally includes detailed per-step statistics: timings and sample counts). Any other non-empty value currently behaves like `true`, but is deprecated, adds a warning to the response, and will be rejected in the next major release. Optional. See [Query statistics](#query-statistics).
+- `cost=<bool>`: Include an estimated-versus-actual cost comparison in the response `data`. Optional. Ignored unless the [`query-cost`](../feature_flags.md#query-cost) feature flag is enabled. It is a plain on/off switch: any value that is not a boolean is an error. See [Query statistics](#query-statistics).
+- `max_series=<number>`: Lower the per-query maximum number of series this query may load. Optional. Ignored unless the [`query-cost`](../feature_flags.md#query-cost) feature flag is enabled. It may only *lower* the operator-set ceiling configured via `query_max_series`, never raise it: a higher value is rejected with HTTP 400 (`bad_data`) rather than silently clamped.
+- `max_samples_read=<number>`: Lower the per-query maximum number of samples this query may read. Optional. Ignored unless the [`query-cost`](../feature_flags.md#query-cost) feature flag is enabled. It may only *lower* the operator-set ceiling configured via `query_max_samples_read`, never raise it: a higher value is rejected with HTTP 400 (`bad_data`) rather than silently clamped.
+- `max_query_duration=<duration>`: Lower the per-query maximum execution duration. Optional. Ignored unless the [`query-cost`](../feature_flags.md#query-cost) feature flag is enabled. It may only *lower* the effective duration ceiling, which is `query_max_duration` when set and otherwise the `-query.timeout` flag, never raise it: a higher value is rejected with HTTP 400 (`bad_data`) rather than silently clamped.
 
 Optional HTTP request headers:
 
-- `X-Prometheus-Use-Start-Timestamps: <bool>`: Override the engine-level start timestamp processing setting (`--promql.use-start-timestamps`) for this query. When set to `true`, functions such as `rate()` will use start timestamps from ingested data. When set to `false`, start timestamp processing is disabled for this query. Optional. If omitted, the engine-level default is used.
+- `X-Prometheus-Use-Start-Timestamps: <bool>`: Override the engine-level start timestamp processing setting (`--enable-feature=use-start-timestamps`) for this query. When set to `true`, functions such as `rate()` will use start timestamps from ingested data. When set to `false`, start timestamp processing is disabled for this query. Optional. If omitted, the engine-level default is used.
 
 You can URL-encode these parameters directly in the request body by using the `POST` method and
 `Content-Type: application/x-www-form-urlencoded` header. This is useful when specifying a large
@@ -250,13 +264,200 @@ When the `stats` parameter is set (e.g. `stats=all`), the response `data` includ
 
 - **timings**: Durations (in seconds) for different phases of query execution (e.g. `evalTotalTime`, `execQueueTime`).
 - **samples**:
-  - **totalQueryableSamples**: Total number of samples *loaded* during the query. For range-vector functions over multiple steps, each step counts the full window.
-  - **totalQueryableSamplesPerStep**: (Only with `stats=all` and when per-step stats are enabled.) Per-step count of samples loaded; same semantics as `totalQueryableSamples` per step.
-  - **samplesRead**: Total number of samples *read* (I/O). For range-vector functions in range queries, only new points per step are counted; for other queries this equals `totalQueryableSamples`.
+  - **totalQueryableSamples**: Logical underlying sample consumption. Each range-vector window counts its underlying samples, including samples consumed inside subqueries. Materialized subquery results are not counted again, while overlapping windows can count the same underlying sample repeatedly.
+  - **totalQueryableSamplesPerStep**: (Only with `stats=all` and when per-step stats are enabled.) Per-step underlying sample consumption; same semantics as `totalQueryableSamples` for the equivalent instant query.
+  - **samplesRead**: Samples read by the evaluator, counting only new points when range-vector windows overlap. With `query-cost` enabled, this includes all subquery reads, even for child steps in gaps between the consumed parent windows. Without it, subquery reads are attributed only to consumed windows. This measures evaluator input rather than physical storage I/O.
   - **samplesReadPerStep**: (Only with `stats=all` and when per-step stats are enabled.) Per-step count of samples read (delta semantics for range-vector).
+  - **seriesTouched**: Number of series consumed during execution, summed across selectors. Repeated selectors can count the same series more than once. This allows comparison with the query cost estimate without requesting a second estimation through `cost=true`.
   - **peakSamples**: Peak number of samples in memory during evaluation.
 
-The server also exposes two Prometheus metrics: `prometheus_engine_query_samples_total` (samples loaded) and `prometheus_engine_query_samples_read_total` (samples read). See [Per-step stats](../feature_flags.md#per-step-stats) for the `promql-per-step-stats` feature flag.
+Floats count as one sample; native histograms are weighted by their in-memory size. Fixed `@` subqueries read their window once, charging reads to the first parent step, while each parent step counts its logical underlying consumption.
+
+The server also exposes two Prometheus metrics: `prometheus_engine_query_samples_total` (logical underlying sample consumption) and `prometheus_engine_query_samples_read_total` (samples read). See [Per-step stats](../feature_flags.md#per-step-stats) for the `promql-per-step-stats` feature flag.
+
+When the [`query-cost`](../feature_flags.md#query-cost) feature flag is enabled, the
+instant and range query endpoints accept a `cost=<bool>` parameter. It is a plain
+on/off switch, not a set of levels: `cost=true` enables the comparison, and any
+value that does not parse as a boolean is rejected with HTTP 400 (`bad_data`).
+When `cost` is `true`, the response `data` includes an additional `cost` object
+comparing estimated storage input with the actual cost measured
+during execution:
+
+```json
+"cost": {
+  "estimated": {
+    "seriesTouched": 42,
+    "samplesRead": 5040
+  },
+  "actual": {
+    "seriesTouched": 40,
+    "samplesRead": 4980,
+    "peakSamples": 320
+  }
+}
+```
+
+The estimated `seriesTouched` and `samplesRead` values are approximations that
+can be higher or lower than actual cost: see
+[Query cost](#query-cost) for how they are computed and their accuracy
+limitations. `peakSamples` is reported only for the actual cost; there is no
+estimated `peakSamples`. The comparison is informational: the estimate is never
+used to reject a query.
+
+Note that requesting `cost=true` adds some overhead: Prometheus performs an
+additional cost estimation after building the query and before executing it,
+including index enumeration and bounded sampling of chunk data. This estimation
+reserves a query concurrency slot and counts against the query's duration limit,
+which starts when the query is built, including a shorter `max_query_duration`,
+and against a request `timeout`: if either expires or the client cancels during
+estimation, the query fails with the usual timeout or cancellation error. If
+estimation fails for any other reason, the query still runs, and its result is
+returned with a warning and without a cost comparison.
+
+## Query cost
+
+*The query cost endpoints require the [`query-cost`](../feature_flags.md#query-cost) feature flag.*
+
+The following endpoints estimate the resource cost of a query *without executing
+it*, allowing clients to gauge how expensive a query would be before running it:
+
+```
+GET /api/v1/query_cost
+POST /api/v1/query_cost
+GET /api/v1/query_range_cost
+POST /api/v1/query_range_cost
+```
+
+`/api/v1/query_cost` accepts the same URL query parameters as
+[`/api/v1/query`](#instant-queries), and `/api/v1/query_range_cost` accepts the
+same parameters as [`/api/v1/query_range`](#range-queries), so a request accepted
+by one endpoint is accepted by the other. The parameters that only shape the
+response of an executed query (`limit`, `stats` and `cost`) are validated in the
+same way and then ignored, since these endpoints return no query result. As with
+the other query endpoints, parameters may be URL-encoded in the request body
+using the `POST` method with a `Content-Type: application/x-www-form-urlencoded`
+header.
+
+The `data` section of the response has the following format:
+
+```json
+{
+  "estimate": {
+    "seriesTouched": <number>,
+    "samplesRead": <number>
+  }
+}
+```
+
+- `seriesTouched`: the number of series the query reads, summed per selector.
+- `samplesRead`: an estimate of the `samplesRead`
+  [query statistic](#query-statistics), the samples the evaluator reads in the
+  engine's sample units, rather than the peak number of samples in memory.
+
+Estimation enumerates matching series in the index and, when supported by
+storage, samples chunk data to measure sample density and native histogram size.
+The number of chunk samples is bounded, but index enumeration still scales with
+selector cardinality and the number of storage blocks. Samples are expressed in
+the engine's sample units: a float counts as one unit, while native histograms
+are weighted by their in-memory size.
+
+Estimates include the extra lookback window consumed by anchored and smoothed
+selectors. Anchored range selectors extend their window by one lookback delta;
+smoothed range selectors extend it by two. Smoothed instant selectors also read
+a window spanning two lookback deltas.
+
+Density sampling examines up to 50 chunks in each selector's actual time window.
+For fully sampled series, the observed sample counts constrain range-selector
+estimates so that gaps and short-lived series do not imply continuous scraping.
+A series cut short by the sampling budget contributes only its measured sample
+interval, including gaps between chunks. Histogram sizing samples up to 50 series
+and may use a shorter window near the selector's end. These samples may not
+represent the full population, especially when series have different densities
+or histogram sizes. Density sampling follows storage iteration order and can
+favor earlier series or earlier portions of a long query window.
+
+Both values may overestimate or underestimate actual cost. Shared selectors can
+count the same series repeatedly, indexed series can lack samples in the query
+window, and sampled density and histogram sizes may not represent all matching
+series. `info()` produces an incomplete-estimate warning because its additional
+runtime-dependent selections are omitted; its second argument is a label filter,
+not an independent selector.
+
+When remote read is configured, series enumeration also queries the remote read
+endpoints, and density sampling is unavailable. Estimates then assume the global
+`scrape_interval` and float-sized samples, with a warning for each selector that
+matches series.
+
+Estimation occupies one of the `--query.max-concurrency` slots for its duration.
+The deadline also applies while waiting for a slot. It uses `query_max_duration`
+when configured and otherwise `--query.timeout`, unless the request sets a shorter `timeout` or
+`max_query_duration`. Exceeding the deadline returns a `timeout` error rather
+than a partial estimate.
+
+```bash
+curl 'http://localhost:9090/api/v1/query_cost?query=up'
+```
+
+```json
+{
+   "status" : "success",
+   "data" : {
+      "estimate" : {
+         "seriesTouched" : 42,
+         "samplesRead" : 42
+      }
+   }
+}
+```
+
+Estimates are advisory and never used to reject a query. Cost estimation is
+unavailable in agent mode.
+
+When the `query-cost` feature flag is enabled, the engine also enforces the
+reloadable cost limits configured under the `global:` section of the
+[configuration file](../configuration/configuration.md#configuration-file)
+(`query_max_series`, `query_max_samples_read`, and `query_max_duration`).
+These limits are enforced *during* query execution against the query's actual
+running cost, not against the estimate above. A query is rejected as soon as the
+number of series it loads or the number of samples it reads exceeds the
+configured limit, and `query_max_duration` surfaces as a query timeout. The
+estimate returned by these endpoints is informational only and is never used to
+reject a query.
+
+These limits apply to every query the engine evaluates, not only to API
+requests. Recording and alerting rules are subject to them too: a rule whose
+query exceeds a limit fails to evaluate like any other query error, and
+`query_max_duration` replaces `--query.timeout` as the timeout of rule queries.
+
+With query-cost enabled, sample accounting includes all storage input consumed
+by child evaluators, even when their output falls between outer query windows.
+Reusing a materialized child result does not charge its storage reads again.
+
+A client may lower any of these ceilings for a single request with the
+`max_series`, `max_samples_read` and `max_query_duration` parameters. These can
+only tighten the operator-set value, never loosen it: a request asking for a
+value above the ceiling is rejected with HTTP 400 (`bad_data`) so that the
+caller sees that the limit it asked for was not applied, instead of being
+silently clamped down. The `timeout` parameter can also shorten the deadline,
+but a larger value is capped at the effective duration ceiling rather than
+rejected.
+
+A query rejected by the series or samples-read limit during execution returns
+HTTP 422 with the `errorType` `cost_limit`, distinguishing a cost rejection from
+other execution failures. A query stopped by the duration limit usually fails
+like any other query timeout, with HTTP 503 and the `errorType` `timeout`. If the
+limit expires while the query is still loading series from storage, local or
+remote, the query can instead fail with HTTP 422 and the `errorType` `execution`
+(`expanding series: context deadline exceeded`), and is not counted under
+`max_duration` below.
+
+The engine also exposes three metrics while the feature flag is enabled:
+`prometheus_engine_query_rejected_total` (rejections by `reason`),
+`prometheus_engine_query_series_touched` and
+`prometheus_engine_query_samples_read` (per-query distributions). The `reason`
+is `max_series`, `max_samples_read` or `max_duration`. `max_duration` counts
+queries stopped by `query_max_duration` or `max_query_duration`; expiries of
+`--query.timeout` or a request `timeout` are not counted.
 
 ## Formatting query expressions
 
@@ -385,6 +586,10 @@ URL query parameters:
 - `end=<rfc3339 | unix_timestamp>`: End timestamp.
 - `limit=<number>`: Maximum number of returned series. Optional. 0 means disabled.
 
+If `--enable-feature=metadata-default-time-range` is set and `start` or `end` is
+omitted, a default time range applies and the response contains a warning. See
+[Metadata default time range](../feature_flags.md#metadata-default-time-range).
+
 You can URL-encode these parameters directly in the request body by using the `POST` method and
 `Content-Type: application/x-www-form-urlencoded` header. This is useful when specifying a large
 or dynamic number of series selectors that may breach server-side URL character limits.
@@ -441,6 +646,10 @@ URL query parameters:
   series from which to read the label names. Optional.
 - `limit=<number>`: Maximum number of returned series. Optional. 0 means disabled.
 
+If `--enable-feature=metadata-default-time-range` is set and `start` or `end` is
+omitted, a default time range applies and the response contains a warning. See
+[Metadata default time range](../feature_flags.md#metadata-default-time-range).
+
 The `data` section of the JSON response is a list of string label names. Note
 that the `start` and `end` times are approximate and the result may contain
 label names for series which have no samples in the given interval.
@@ -495,6 +704,10 @@ URL query parameters:
 - `match[]=<series_selector>`: Repeated series selector argument that selects the
   series from which to read the label values. Optional.
 - `limit=<number>`: Maximum number of returned series. Optional. 0 means disabled.
+
+If `--enable-feature=metadata-default-time-range` is set and `start` or `end` is
+omitted, a default time range applies and the response contains a warning. See
+[Metadata default time range](../feature_flags.md#metadata-default-time-range).
 
 The `data` section of the JSON response is a list of string label values. Note
 that the `start` and `end` times are approximate and the result may contain
@@ -566,8 +779,12 @@ These endpoints return newline-delimited JSON with content type
 - Zero or more **batch lines**, each with a `results` array and an optional
   `warnings` array.
 - The stream then ends with **either** a **trailer line** (`status`, `has_more`,
-  optional `warnings`) **or** an **error line** (`status`, `errorType`, `error`)
-  if iteration failed mid-stream after the first batch was sent.
+  `returned`, optional `warnings`) **or** an **error line** (`status`,
+  `errorType`, `error`) if iteration failed mid-stream after the first batch was
+  sent.
+
+The `returned` field in the trailer is the number of results in the response,
+across all batch lines.
 
 Searches return results from supported storage backends. Participating
 remote-read storage that does not support search contributes a warning instead
@@ -579,7 +796,7 @@ only describes truncation of the available results by the requested limit.
 
 ```json
 {"results":[{"name":"http_requests_total","type":"counter","help":"Total HTTP requests."}]}
-{"status":"success","has_more":false}
+{"status":"success","has_more":false,"returned":1}
 ```
 
 If an error occurs **before** streaming starts, the API returns the usual
@@ -602,6 +819,13 @@ Common URL query parameters:
   search. Optional.
 - `search[]=<string>`: Repeated search string matched against names or values.
   Multiple values use OR semantics. Optional.
+- `search_expr=<string>`: Boolean search expression matched against names or
+  values. Optional. You cannot use it together with a non-empty `search[]`
+  value. Prometheus treats an empty value as absent. A value with only spaces
+  is not empty, so Prometheus returns an error for it. If the request repeats
+  `search_expr`, Prometheus uses only the first value. In a POST request, the
+  values in the body come before the values in the URL. See the search
+  expression syntax below.
 - `fuzz_threshold=<number>`: Fuzzy threshold from 0 to 100. Optional. A value
   of 0 is the lowest fuzzy threshold.
 - `fuzz_alg=<subsequence | jarowinkler>`: Matching algorithm. Optional. Default
@@ -621,6 +845,10 @@ Common URL query parameters:
 The `start` and `end` parameters narrow results to the selected time window.
 Results may include values from series active slightly outside that window,
 because Prometheus stores data in fixed-size blocks (typically 2 hours each).
+
+If `--enable-feature=metadata-default-time-range` is set and `start` or `end` is
+omitted, a default time range applies and the response contains a warning. See
+[Metadata default time range](../feature_flags.md#metadata-default-time-range).
 
 Additional parameters for `/api/v1/search/metric_names`:
 
@@ -655,6 +883,25 @@ Additional parameters for `/api/v1/search/label_values`:
 - `label=<label_name>`: Label name whose values should be searched. Required.
 - `sort_by=<alpha | score>`
 
+A `search_expr` expression combines terms with `NOT`, `AND`, `OR`, and
+parentheses. `NOT` binds more tightly than `AND`, and `AND` binds more tightly
+than `OR`. Operators are case-insensitive. Write each operator explicitly:
+`http requests` is not valid, but `http AND requests` is. To search for a term
+that contains a space, a parenthesis, or an operator word, put it in double
+quotes. Inside quotes, `\"` and `\\` are the only escapes.
+
+A positive term has an even number of `NOT` operators above it. A negated term
+has an odd number, so in `NOT NOT http` the term `http` is positive. Every
+accepting path must contain a positive term, so `NOT http` alone is not valid.
+An expression can have at most 4096 bytes, 32 terms, and 16 nesting levels.
+Each `NOT` and each parenthesized group adds one nesting level.
+
+A positive term uses the same matching as a `search[]` term, with `fuzz_alg`,
+`fuzz_threshold`, and `case_sensitive`. A negated term excludes only the values
+that contain the term as a substring. A fuzzy match of a negated term never
+excludes a value. The score of a result is the highest mean score of the
+positive terms on any path that accepts the value.
+
 This example searches metric names for autocomplete:
 
 ```bash
@@ -663,7 +910,7 @@ curl -g 'http://localhost:9090/api/v1/search/metric_names?search[]=http_req&sort
 
 ```json
 {"results":[{"name":"http_requests_total","type":"counter","help":"Total HTTP requests."}]}
-{"status":"success","has_more":false}
+{"status":"success","has_more":false,"returned":1}
 ```
 
 This example searches label values for the `instance` label within the `up`
@@ -675,7 +922,13 @@ curl -g 'http://localhost:9090/api/v1/search/label_values?label=instance&match[]
 
 ```json
 {"results":[{"value":"localhost:9090"},{"value":"localhost:9091"}]}
-{"status":"success","has_more":true}
+{"status":"success","has_more":true,"returned":2}
+```
+
+This example searches metric names that contain `http` but not `bucket`:
+
+```bash
+curl -G 'http://localhost:9090/api/v1/search/metric_names' --data-urlencode 'search_expr=http AND NOT bucket'
 ```
 
 ## Querying exemplars
@@ -1927,12 +2180,13 @@ endpoint is `/api/v1/otlp/v1/metrics`.
 
 ### OTLP Delta
 
-Prometheus can convert incoming metrics from delta temporality to their cumulative equivalent.
-This is done using [deltatocumulative](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/deltatocumulativeprocessor) from the OpenTelemetry Collector.
+Prometheus can natively ingest incoming OTLP metrics with delta temporality, storing their raw sample values without conversion.
 
-To enable, pass `--enable-feature=otlp-deltatocumulative`.
+To enable native delta ingestion, pass `--enable-feature=otlp-native-delta-ingestion`. To retain OTLP start timestamps and use them in PromQL rate calculations, also enable `st-storage` and `use-start-timestamps`. See [OTLP Native Delta Support](../feature_flags.md#otlp-native-delta-support) for details.
 
-*New in v3.2*
+*New in v3.4; start-timestamp-aware querying was added in v3.12.*
+
+The previous `--enable-feature=otlp-deltatocumulative` flag, which converts delta metrics to cumulative metrics using the OpenTelemetry Collector's [deltatocumulative processor](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/deltatocumulativeprocessor), is deprecated and will be removed in a future major version.
 
 ## Notifications
 
@@ -2051,6 +2305,7 @@ curl http://localhost:9090/api/v1/features
       "!~": true
     },
     "rules": {
+      "auto_recording_metadata": false,
       "concurrent_rule_eval": false,
       "keep_firing_for": true
     },

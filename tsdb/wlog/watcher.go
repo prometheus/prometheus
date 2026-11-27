@@ -320,6 +320,14 @@ func (w *Watcher) Run() error {
 		if err = w.readCheckpoint(lastCheckpoint, (*Watcher).readSegment); err != nil {
 			return fmt.Errorf("readCheckpoint: %w", err)
 		}
+		// If Run is retried by loop() after a WAL read error (e.g. when a lagging
+		// watcher's next segment was deleted by WAL truncation), it can land on a
+		// newer checkpoint that garbageCollectSeries never processed. Since
+		// w.lastCheckpoint is updated below, garbageCollectSeries would then skip
+		// this checkpoint, so reset series older than checkpointIndex here.
+		if lastCheckpoint != w.lastCheckpoint {
+			w.writer.SeriesReset(checkpointIndex)
+		}
 	}
 	w.lastCheckpoint = lastCheckpoint
 
@@ -486,7 +494,6 @@ func (w *Watcher) garbageCollectSeries(segmentNum int) error {
 	if dir == "" || dir == w.lastCheckpoint {
 		return nil
 	}
-	w.lastCheckpoint = dir
 
 	index, err := checkpointNum(dir)
 	if err != nil {
@@ -503,6 +510,7 @@ func (w *Watcher) garbageCollectSeries(segmentNum int) error {
 	if err = w.readCheckpoint(dir, (*Watcher).readSegmentForGC); err != nil {
 		return fmt.Errorf("readCheckpoint: %w", err)
 	}
+	w.lastCheckpoint = dir
 
 	// Clear series with a checkpoint or segment index # lower than the checkpoint we just read.
 	w.writer.SeriesReset(index)

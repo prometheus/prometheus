@@ -16,6 +16,7 @@ package remote
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math"
@@ -117,7 +118,7 @@ func TestOTLPWriteHandler(t *testing.T) {
 					Count:           10,
 					Sum:             30.0,
 					Schema:          2,
-					ZeroThreshold:   1e-128,
+					ZeroThreshold:   0,
 					ZeroCount:       2,
 					PositiveSpans:   []histogram.Span{{Offset: 1, Length: 5}},
 					PositiveBuckets: []int64{2, 0, 0, 0, 0},
@@ -318,26 +319,69 @@ func TestOTLPWriteHandler(t *testing.T) {
 			require.NoError(t, ex.ConsumeMetrics(t.Context(), request.Metrics()))
 			require.Equal(t, 1.0, testutil.ToFloat64(ex.translationWarnings.WithLabelValues("empty_data_points")))
 		})
+
+		t.Run("invalid temporality", func(t *testing.T) {
+			request := pmetricotlp.NewExportRequest()
+			m := request.Metrics().ResourceMetrics().AppendEmpty().ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
+			m.SetName("test_delta_sum")
+			sum := m.SetEmptySum()
+			sum.SetAggregationTemporality(pmetric.AggregationTemporalityDelta)
+			dp := sum.DataPoints().AppendEmpty()
+			dp.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
+			dp.SetIntValue(1)
+
+			ex := newExporter()
+			require.Equal(t, 0.0, testutil.ToFloat64(ex.translationWarnings.WithLabelValues("invalid_temporality")))
+			require.NoError(t, ex.ConsumeMetrics(t.Context(), request.Metrics()))
+			require.Equal(t, 1.0, testutil.ToFloat64(ex.translationWarnings.WithLabelValues("invalid_temporality")))
+		})
 	})
 
-	t.Run("empty metric does not reject healthy metrics", func(t *testing.T) {
-		request := pmetricotlp.NewExportRequest()
-		metrics := request.Metrics().ResourceMetrics().AppendEmpty().ScopeMetrics().AppendEmpty().Metrics()
+	t.Run("dropped metric does not reject healthy metrics", func(t *testing.T) {
+		for _, tc := range []struct {
+			name         string
+			buildDropped func(pmetric.Metric)
+		}{
+			{
+				name: "empty data points",
+				buildDropped: func(m pmetric.Metric) {
+					m.SetEmptyGauge()
+				},
+			},
+			{
+				// Delta temporality is dropped unless native delta ingestion
+				// is enabled.
+				name: "delta temporality",
+				buildDropped: func(m pmetric.Metric) {
+					sum := m.SetEmptySum()
+					sum.SetAggregationTemporality(pmetric.AggregationTemporalityDelta)
+					sum.SetIsMonotonic(true)
+					dp := sum.DataPoints().AppendEmpty()
+					dp.SetTimestamp(pcommon.NewTimestampFromTime(ts))
+					dp.SetIntValue(1)
+				},
+			},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				request := pmetricotlp.NewExportRequest()
+				metrics := request.Metrics().ResourceMetrics().AppendEmpty().ScopeMetrics().AppendEmpty().Metrics()
 
-		healthy := metrics.AppendEmpty()
-		healthy.SetName("healthy_metric")
-		dp := healthy.SetEmptyGauge().DataPoints().AppendEmpty()
-		dp.SetTimestamp(pcommon.NewTimestampFromTime(ts))
-		dp.SetIntValue(1)
+				healthy := metrics.AppendEmpty()
+				healthy.SetName("healthy_metric")
+				dp := healthy.SetEmptyGauge().DataPoints().AppendEmpty()
+				dp.SetTimestamp(pcommon.NewTimestampFromTime(ts))
+				dp.SetIntValue(1)
 
-		empty := metrics.AppendEmpty()
-		empty.SetName("empty_metric")
-		empty.SetEmptyGauge()
+				dropped := metrics.AppendEmpty()
+				dropped.SetName("dropped_metric")
+				tc.buildDropped(dropped)
 
-		appendable := handleOTLP(t, request, config.OTLPConfig{}, OTLPOptions{})
-		samples := appendable.ResultSamples()
-		require.Len(t, samples, 1)
-		require.Equal(t, "healthy_metric", samples[0].L.Get(labels.MetricName))
+				appendable := handleOTLP(t, request, config.OTLPConfig{}, OTLPOptions{})
+				samples := appendable.ResultSamples()
+				require.Len(t, samples, 1)
+				require.Equal(t, "healthy_metric", samples[0].L.Get(labels.MetricName))
+			})
+		}
 	})
 
 	t.Run("future exemplar is dropped without failing request", func(t *testing.T) {
@@ -714,6 +758,43 @@ func (discardAppender) Commit() error {
 
 func (discardAppender) Rollback() error {
 	return nil
+}
+
+// commitErrorAppendable returns an appender whose Commit always fails.
+type commitErrorAppendable struct {
+	err error
+}
+
+func (a commitErrorAppendable) AppenderV2(context.Context) storage.AppenderV2 {
+	return commitErrorAppender{err: a.err}
+}
+
+type commitErrorAppender struct {
+	discardAppender
+	err error
+}
+
+func (a commitErrorAppender) Commit() error { return a.err }
+
+func TestConsumeMetricsPropagatesCommitError(t *testing.T) {
+	t.Parallel()
+
+	commitErr := errors.New("commit failed")
+	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
+	reg := prometheus.NewRegistry()
+	handler := NewOTLPWriteHandler(log, reg, commitErrorAppendable{err: commitErr}, func() config.Config {
+		return config.Config{OTLPConfig: config.DefaultOTLPConfig}
+	}, OTLPOptions{})
+	ex := handler.(*otlpWriteHandler).defaultConsumer.(*rwExporter)
+
+	request := pmetricotlp.NewExportRequest()
+	m := request.Metrics().ResourceMetrics().AppendEmpty().ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
+	m.SetName("test_gauge")
+	dp := m.SetEmptyGauge().DataPoints().AppendEmpty()
+	dp.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
+	dp.SetIntValue(1)
+
+	require.ErrorIs(t, ex.ConsumeMetrics(t.Context(), request.Metrics()), commitErr)
 }
 
 func BenchmarkOTLP(b *testing.B) {

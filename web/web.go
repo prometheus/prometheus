@@ -282,6 +282,7 @@ type Options struct {
 	ExemplarStorage       storage.ExemplarQueryable
 	QueryEngine           *promql.Engine
 	LookbackDelta         time.Duration
+	QueryTimeout          time.Duration
 	ScrapeManager         *scrape.Manager
 	RuleManager           *rules.Manager
 	Notifier              *notifier.Manager
@@ -304,7 +305,9 @@ type Options struct {
 	EnableLifecycle             bool
 	EnableAdminAPI              bool
 	EnableSearch                bool
+	EnableQueryCost             bool
 	MaxSearchLimit              int
+	MetadataDefaultTimeRange    time.Duration // Zero disables the default time range.
 	PageTitle                   string
 	RemoteReadSampleLimit       int
 	RemoteReadConcurrencyLimit  int
@@ -451,6 +454,9 @@ func New(logger *slog.Logger, o *Options) *Handler {
 			MaxSearchLimit: o.MaxSearchLimit,
 		},
 		o.Parser,
+		o.EnableQueryCost,
+		o.QueryTimeout,
+		o.MetadataDefaultTimeRange,
 	)
 
 	if r := o.FeatureRegistry; r != nil {
@@ -460,7 +466,9 @@ func New(logger *slog.Logger, o *Options) *Handler {
 		r.Set(features.API, "remote_write_receiver", o.EnableRemoteWriteReceiver)
 		r.Set(features.API, "otlp_write_receiver", o.EnableOTLPWriteReceiver)
 		r.Set(features.API, "receive_relabel_configs", o.EnableReceiveRelabelConfigs)
+		r.Set(features.API, "query_cost", o.EnableQueryCost)
 		r.Set(features.API, "search", o.EnableSearch)
+		r.Set(features.API, "metadata_default_time_range", o.MetadataDefaultTimeRange > 0)
 		for _, alg := range api_v1.FuzzAlgorithms() {
 			r.Enable(features.API, "search_fuzz_alg_"+alg)
 		}
@@ -502,7 +510,14 @@ func New(logger *slog.Logger, o *Options) *Handler {
 
 	if !o.UseOldUI {
 		router.Get("/graph", func(w http.ResponseWriter, r *http.Request) {
-			http.Redirect(w, r, path.Join(o.ExternalURL.Path, "/query?"+r.URL.RawQuery), http.StatusFound)
+			// Join only the path. The query string must not go through
+			// path.Join, as its path.Clean would resolve ".." segments
+			// inside the query and let a request rewrite the redirect target.
+			u := path.Join(o.ExternalURL.Path, "/query")
+			if r.URL.RawQuery != "" {
+				u += "?" + r.URL.RawQuery
+			}
+			http.Redirect(w, r, u, http.StatusFound)
 		})
 	}
 
