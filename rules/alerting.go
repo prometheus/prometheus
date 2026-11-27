@@ -548,7 +548,16 @@ func (r *AlertingRule) Eval(ctx context.Context, queryOffset time.Duration, ts t
 	}
 
 	if limit > 0 && numActivePending > limit {
-		r.active = map[uint64]*Alert{}
+		// Discard the alerts newly added by this evaluation, but keep the state
+		// of alerts that were already active. Resetting the whole map here
+		// restarts their "for" timers and sends bogus resolved/firing
+		// notifications to Alertmanager on the next evaluation.
+		for h, a := range alerts {
+			if existing, ok := r.active[h]; ok && existing.State != StateInactive && existing != a {
+				continue
+			}
+			delete(r.active, h)
+		}
 		return nil, fmt.Errorf("exceeded limit of %d with %d alerts", limit, numActivePending)
 	}
 
