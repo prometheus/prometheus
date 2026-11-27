@@ -2883,6 +2883,7 @@ func (db *DB) CleanTombstones() (err error) {
 			// The lock protects against race conditions when deleting blocks
 			// during an already running reload.
 			db.mtx.Lock()
+			wasDeletable := pb.meta.Compaction.Deletable
 			pb.meta.Compaction.Deletable = safeToDelete
 			db.mtx.Unlock()
 			cleanUpCompleted = false
@@ -2891,6 +2892,11 @@ func (db *DB) CleanTombstones() (err error) {
 				// We need to loop over the new set of blocks.
 				break
 			}
+
+			// Keep the original block when rolling back its replacement.
+			db.mtx.Lock()
+			pb.meta.Compaction.Deletable = wasDeletable
+			db.mtx.Unlock()
 
 			// Delete new block if it was created.
 			for _, uid := range uids {
