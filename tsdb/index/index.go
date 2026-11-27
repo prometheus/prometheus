@@ -27,7 +27,6 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
-	"unsafe"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -1880,8 +1879,4 @@ func (dec *Decoder) Series(b []byte, builder *labels.ScratchBuilder, chks *[]chu
 		})
 	}
 	return d.Err()
-}
-
-func yoloString(b []byte) string {
-	return unsafe.String(unsafe.SliceData(b), len(b))
 }
