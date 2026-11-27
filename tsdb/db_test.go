@@ -2801,8 +2801,6 @@ func TestBlockClosingBlockedDuringRemoteRead(t *testing.T) {
 }
 
 func TestBlockReloadInterval(t *testing.T) {
-	t.Parallel()
-
 	cases := []struct {
 		name             string
 		opts             *Options
@@ -2838,7 +2836,6 @@ func TestBlockReloadInterval(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			t.Parallel()
 			db := newTestDB(t, withOpts(c.opts))
 			require.Equal(t, c.expectedInterval, db.opts.BlockReloadInterval)
 			if !c.verifyReloads {
