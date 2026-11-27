@@ -141,6 +141,73 @@ var testExpr = []struct {
 		},
 	},
 	{
+		input: "010",
+		expected: &NumberLiteral{
+			Val:      8,
+			PosRange: posrange.PositionRange{Start: 0, End: 3},
+		},
+	},
+	{
+		input: "08",
+		expected: &NumberLiteral{
+			Val:      8,
+			PosRange: posrange.PositionRange{Start: 0, End: 2},
+		},
+	},
+	{
+		input: "09.5",
+		expected: &NumberLiteral{
+			Val:      9.5,
+			PosRange: posrange.PositionRange{Start: 0, End: 4},
+		},
+	},
+	{
+		input: "017e1",
+		expected: &NumberLiteral{
+			Val:      170,
+			PosRange: posrange.PositionRange{Start: 0, End: 5},
+		},
+	},
+	{
+		input: "0_10",
+		expected: &NumberLiteral{
+			Val:      8,
+			PosRange: posrange.PositionRange{Start: 0, End: 4},
+		},
+	},
+	{
+		input: "1_000",
+		expected: &NumberLiteral{
+			Val:      1000,
+			PosRange: posrange.PositionRange{Start: 0, End: 5},
+		},
+	},
+	{
+		input: "0x_1F",
+		expected: &NumberLiteral{
+			Val:      31,
+			PosRange: posrange.PositionRange{Start: 0, End: 5},
+		},
+	},
+	{
+		input: "9223372036854775808",
+		expected: &NumberLiteral{
+			Val:      9223372036854775808,
+			PosRange: posrange.PositionRange{Start: 0, End: 19},
+		},
+	},
+	{
+		input: "0xFFFFFFFFFFFFFFFF",
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 0, End: 18},
+				Err:           errors.New(`error parsing number: strconv.ParseFloat: parsing "0xFFFFFFFFFFFFFFFF": invalid syntax`),
+				Query:         "0xFFFFFFFFFFFFFFFF",
+			},
+		},
+	},
+	{
 		input: "1 + 1",
 		expected: &BinaryExpr{
 			Op: ADD,
@@ -768,6 +835,138 @@ var testExpr = []struct {
 				PositionRange: posrange.PositionRange{Start: 0, End: 13},
 				Err:           errors.New("offset may not be set multiple times"),
 				Query:         "foo offset 1s offset 2s",
+			},
+		},
+	},
+	{
+		input: "sum(foo) offset 5m",
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 0, End: 8},
+				Err:           errors.New("offset modifier must be preceded by an instant vector selector or range vector selector or a subquery"),
+				Query:         "sum(foo) offset 5m",
+			},
+		},
+	},
+	{
+		input: "(foo) offset 5m",
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 0, End: 5},
+				Err:           errors.New("offset modifier must be preceded by an instant vector selector or range vector selector or a subquery"),
+				Query:         "(foo) offset 5m",
+			},
+		},
+	},
+	{
+		input: "foo[5m] offset 1m offset 2m",
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 0, End: 17},
+				Err:           errors.New("offset may not be set multiple times"),
+				Query:         "foo[5m] offset 1m offset 2m",
+			},
+		},
+	},
+	{
+		input: "foo[5m:1m] offset 1m offset 2m",
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 0, End: 20},
+				Err:           errors.New("offset may not be set multiple times"),
+				Query:         "foo[5m:1m] offset 1m offset 2m",
+			},
+		},
+	},
+	{
+		input: "sum(foo) @ 100",
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 0, End: 8},
+				Err:           errors.New("@ modifier must be preceded by an instant vector selector or range vector selector or a subquery"),
+				Query:         "sum(foo) @ 100",
+			},
+		},
+	},
+	{
+		input: "(foo) @ end()",
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 0, End: 5},
+				Err:           errors.New("@ modifier must be preceded by an instant vector selector or range vector selector or a subquery"),
+				Query:         "(foo) @ end()",
+			},
+		},
+	},
+	{
+		input: "foo @ 1 @ 2",
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 0, End: 7},
+				Err:           errors.New("@ <timestamp> may not be set multiple times"),
+				Query:         "foo @ 1 @ 2",
+			},
+		},
+	},
+	{
+		input: "foo @ start() @ 1",
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 0, End: 13},
+				Err:           errors.New("@ <timestamp> may not be set multiple times"),
+				Query:         "foo @ start() @ 1",
+			},
+		},
+	},
+	{
+		input: "foo @ end() @ start()",
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 0, End: 11},
+				Err:           errors.New("@ <timestamp> may not be set multiple times"),
+				Query:         "foo @ end() @ start()",
+			},
+		},
+	},
+	{
+		input: "foo offset 5m @ 1 @ 2",
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 0, End: 17},
+				Err:           errors.New("@ <timestamp> may not be set multiple times"),
+				Query:         "foo offset 5m @ 1 @ 2",
+			},
+		},
+	},
+	{
+		input: "foo[5m] @ 1 @ 2",
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 0, End: 11},
+				Err:           errors.New("@ <timestamp> may not be set multiple times"),
+				Query:         "foo[5m] @ 1 @ 2",
+			},
+		},
+	},
+	{
+		input: "foo[5m:1m] @ 1 @ 2",
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 0, End: 14},
+				Err:           errors.New("@ <timestamp> may not be set multiple times"),
+				Query:         "foo[5m:1m] @ 1 @ 2",
 			},
 		},
 	},
@@ -3324,6 +3523,17 @@ var testExpr = []struct {
 				PositionRange: posrange.PositionRange{Start: 0, End: 18},
 				Err:           errors.New("wrong number of arguments for aggregate expression provided, expected 2, got 1"),
 				Query:         "topk(some_metric,)",
+			},
+		},
+	},
+	{
+		input: "sum(foo, bar)",
+		fail:  true,
+		errors: ParseErrors{
+			ParseErr{
+				PositionRange: posrange.PositionRange{Start: 0, End: 13},
+				Err:           errors.New("wrong number of arguments for aggregate expression provided, expected 1, got 2"),
+				Query:         "sum(foo, bar)",
 			},
 		},
 	},
