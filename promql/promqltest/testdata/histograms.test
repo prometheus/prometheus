@@ -1079,6 +1079,11 @@ eval instant at 50m histogram_quantiles(nonmonotonic_bucket, "q", 0.01, 0.5, 0.9
     {q="0.5"} 8.5
     {q="0.99"} 979.75
 
+# Each step with nonmonotonic buckets is counted once in the info annotation.
+eval range from 10m to 50m step 10m histogram_quantile(0.5, nonmonotonic_bucket)
+    expect info msg: PromQL info: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile) for metric name "nonmonotonic_bucket", from buckets 1 to +Inf, with a max diff of 10, over 5 samples from 1970-01-01T00:10:00Z to 1970-01-01T00:50:00Z (1:25)
+    {} 8.5 8.5 8.5 8.5 8.5
+
 # Buckets with different representations of the same upper bound.
 eval instant at 50m histogram_quantile(0.5, rate(mixed_bucket[10m]))
 	{instance="ins1", job="job1"} 0.15
