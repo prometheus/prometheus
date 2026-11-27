@@ -54,7 +54,7 @@ func TestHCloudSDRefresh(t *testing.T) {
 	targetGroup := targetGroups[0]
 	require.NotNil(t, targetGroup, "targetGroup should not be nil")
 	require.NotNil(t, targetGroup.Targets, "targetGroup.targets should not be nil")
-	require.Len(t, targetGroup.Targets, 3)
+	require.Len(t, targetGroup.Targets, 4)
 
 	for i, labelSet := range []model.LabelSet{
 		{
@@ -116,6 +116,21 @@ func TestHCloudSDRefresh(t *testing.T) {
 			"__meta_hetzner_server_status":                           model.LabelValue("stopped"),
 			"__meta_hetzner_public_ipv4":                             model.LabelValue("1.2.3.6"),
 			"__meta_hetzner_public_ipv6_network":                     model.LabelValue("2001:db7::/64"),
+			"__meta_hetzner_hcloud_location":                         model.LabelValue("fsn1"),
+			"__meta_hetzner_hcloud_location_network_zone":            model.LabelValue("eu-central"),
+			"__meta_hetzner_hcloud_datacenter_location":              model.LabelValue("fsn1"),
+			"__meta_hetzner_hcloud_datacenter_location_network_zone": model.LabelValue("eu-central"),
+			"__meta_hetzner_hcloud_cpu_cores":                        model.LabelValue("2"),
+			"__meta_hetzner_hcloud_cpu_type":                         model.LabelValue("shared"),
+			"__meta_hetzner_hcloud_memory_size_gb":                   model.LabelValue("1"),
+			"__meta_hetzner_hcloud_disk_size_gb":                     model.LabelValue("50"),
+			"__meta_hetzner_hcloud_server_type":                      model.LabelValue("cpx11"),
+		},
+		{
+			"__meta_hetzner_role":                                    model.LabelValue("hcloud"),
+			"__meta_hetzner_server_id":                               model.LabelValue("37"),
+			"__meta_hetzner_server_name":                             model.LabelValue("no-public-net-server"),
+			"__meta_hetzner_server_status":                           model.LabelValue("running"),
 			"__meta_hetzner_hcloud_location":                         model.LabelValue("fsn1"),
 			"__meta_hetzner_hcloud_location_network_zone":            model.LabelValue("eu-central"),
 			"__meta_hetzner_hcloud_datacenter_location":              model.LabelValue("fsn1"),

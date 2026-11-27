@@ -346,6 +346,67 @@ func (m *SDMock) HandleHcloudServers() {
       "labels": {},
       "volumes": [],
       "load_balancers": []
+    },
+    {
+      "id": 37,
+      "name": "no-public-net-server",
+      "status": "running",
+      "created": "2016-01-30T23:50:00+00:00",
+      "public_net": {
+        "ipv4": null,
+        "ipv6": null,
+        "floating_ips": []
+      },
+      "private_net": [],
+      "server_type": {
+        "id": 2,
+        "name": "cpx11",
+        "description": "CPX11",
+        "cores": 2,
+        "memory": 1,
+        "disk": 50,
+        "deprecated": false,
+        "prices": [
+          {
+            "location": "fsn1",
+            "price_hourly": {
+              "net": "1.0000000000",
+              "gross": "1.1900000000000000"
+            },
+            "price_monthly": {
+              "net": "1.0000000000",
+              "gross": "1.1900000000000000"
+            }
+          }
+        ],
+        "storage_type": "local",
+        "cpu_type": "shared"
+      },
+      "location": {
+        "id": 1,
+        "name": "fsn1",
+        "description": "Falkenstein DC Park 1",
+        "country": "DE",
+        "city": "Falkenstein",
+        "latitude": 50.47612,
+        "longitude": 12.370071,
+        "network_zone": "eu-central"
+      },
+      "image": null,
+      "iso": null,
+      "rescue_enabled": false,
+      "locked": false,
+      "backup_window": "22-02",
+      "outgoing_traffic": 123456,
+      "ingoing_traffic": 123456,
+      "included_traffic": 654321,
+      "protection": {
+        "delete": false,
+        "rebuild": false
+      },
+      "labels": {},
+      "volumes": [],
+      "load_balancers": []
     }
   ],
   "meta": {

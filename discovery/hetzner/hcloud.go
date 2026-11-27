@@ -97,12 +97,10 @@ func (d *hcloudDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, er
 	targets := make([]model.LabelSet, len(servers))
 	for i, server := range servers {
 		labels := model.LabelSet{
-			hetznerLabelRole:              model.LabelValue(HetznerRoleHcloud),
-			hetznerLabelServerID:          model.LabelValue(strconv.FormatInt(server.ID, 10)),
-			hetznerLabelServerName:        model.LabelValue(server.Name),
-			hetznerLabelPublicIPv4:        model.LabelValue(server.PublicNet.IPv4.IP.String()),
-			hetznerLabelPublicIPv6Network: model.LabelValue(server.PublicNet.IPv6.Network.String()),
-			hetznerLabelServerStatus:      model.LabelValue(server.Status),
+			hetznerLabelRole:         model.LabelValue(HetznerRoleHcloud),
+			hetznerLabelServerID:     model.LabelValue(strconv.FormatInt(server.ID, 10)),
+			hetznerLabelServerName:   model.LabelValue(server.Name),
+			hetznerLabelServerStatus: model.LabelValue(server.Status),
 
 			hetznerLabelHcloudLocation:                      model.LabelValue(server.Location.Name),
 			hetznerLabelHcloudLocationNetworkZone:           model.LabelValue(server.Location.NetworkZone),
@@ -113,8 +111,15 @@ func (d *hcloudDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, er
 			hetznerLabelHcloudCPUType:                       model.LabelValue(server.ServerType.CPUType),
 			hetznerLabelHcloudMemoryGB:                      model.LabelValue(strconv.Itoa(int(server.ServerType.Memory))),
 			hetznerLabelHcloudDiskGB:                        model.LabelValue(strconv.Itoa(server.ServerType.Disk)),
+		}
 
-			model.AddressLabel: model.LabelValue(net.JoinHostPort(server.PublicNet.IPv4.IP.String(), strconv.FormatUint(uint64(d.port), 10))),
+		// Servers can be created without a public IPv4 or IPv6 address.
+		if ip := server.PublicNet.IPv4.IP; ip != nil {
+			labels[hetznerLabelPublicIPv4] = model.LabelValue(ip.String())
+			labels[model.AddressLabel] = model.LabelValue(net.JoinHostPort(ip.String(), strconv.FormatUint(uint64(d.port), 10)))
+		}
+		if network := server.PublicNet.IPv6.Network; network != nil {
+			labels[hetznerLabelPublicIPv6Network] = model.LabelValue(network.String())
 		}
 
 		if server.Image != nil {
