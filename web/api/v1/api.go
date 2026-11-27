@@ -2954,6 +2954,11 @@ func parseTimeParam(r *http.Request, paramName string, defaultValue time.Time) (
 
 func parseTime(s string) (time.Time, error) {
 	if t, err := strconv.ParseFloat(s, 64); err == nil {
+		// float64(math.MaxInt64) is 2^63, which int64 cannot hold, and NaN passes
+		// every comparison. Reject such values before converting to int64.
+		if math.IsNaN(t) || math.IsInf(t, 0) || t >= float64(math.MaxInt64) || t < float64(math.MinInt64) {
+			return time.Time{}, fmt.Errorf("cannot parse %q to a valid timestamp: out of range", s)
+		}
 		s, ns := math.Modf(t)
 		ns = math.Round(ns*1000) / 1000
 		return time.Unix(int64(s), int64(ns*float64(time.Second))).UTC(), nil
