@@ -14,7 +14,9 @@
 package chunkenc
 
 import (
+	"encoding/binary"
 	"fmt"
+	"math"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -109,5 +111,28 @@ func TestBstreamReader(t *testing.T) {
 		}
 		require.NoError(t, err)
 		require.Equal(t, uint64(v), actual, "v=%d", v)
+	}
+}
+
+func TestBstreamReaderUvarint(t *testing.T) {
+	for _, v := range []uint64{0, 1, 127, 128, 1 << 32, 1<<63 - 1, 1 << 63, math.MaxUint64} {
+		r := newBReader(binary.AppendUvarint(nil, v))
+		got, err := r.readUvarint()
+		require.NoError(t, err)
+		require.Equal(t, v, got)
+	}
+
+	// Ten-byte encodings whose last byte is above 1 do not fit in a uint64.
+	// encoding/binary rejects them, and so should readUvarint.
+	for _, in := range [][]byte{
+		{0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x02},
+		{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x7f},
+	} {
+		_, n := binary.Uvarint(in)
+		require.Negative(t, n)
+
+		r := newBReader(in)
+		_, err := r.readUvarint()
+		require.Error(t, err, "input %x", in)
 	}
 }

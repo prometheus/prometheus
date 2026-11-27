@@ -43,6 +43,7 @@ package chunkenc
 
 import (
 	"encoding/binary"
+	"errors"
 	"io"
 )
 
@@ -356,6 +357,10 @@ func (b *bstreamReader) readXOR2Control() (uint8, error) {
 	return 5, nil
 }
 
+// errUvarintOverflow matches encoding/binary: a 10-byte varint whose last
+// byte exceeds 1 does not fit in a uint64.
+var errUvarintOverflow = errors.New("bstream: varint overflows a 64-bit integer")
+
 // readUvarint decodes a varint-encoded uint64 using direct method calls,
 // avoiding the io.ByteReader interface dispatch used by binary.ReadUvarint,
 // which causes the receiver to escape to the heap.
@@ -368,6 +373,11 @@ func (b *bstreamReader) readUvarint() (uint64, error) {
 			return x, err
 		}
 		if byt < 0x80 {
+			// Tenth byte may only be 0 or 1. A larger value overflows uint64:
+			// the shift is 63 and bits above bit 0 are discarded.
+			if s == 63 && byt > 1 {
+				return x, errUvarintOverflow
+			}
 			return x | uint64(byt)<<s, nil
 		}
 		x |= uint64(byt&0x7f) << s
