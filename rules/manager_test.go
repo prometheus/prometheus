@@ -888,6 +888,32 @@ func TestCopyState(t *testing.T) {
 	require.Equal(t, oldGroup.evaluationTime, newGroup.evaluationTime)
 	require.Equal(t, oldGroup.lastEvaluation, newGroup.lastEvaluation)
 	require.Equal(t, []trackedSeries{{labels: labels.FromStrings("l1", "v3")}}, newGroup.staleSeries)
+
+	t.Run("partially removed duplicate rules", func(t *testing.T) {
+		firstSeries := trackedSeries{labels: labels.FromStrings("series", "first")}
+		removedSeries := trackedSeries{labels: labels.FromStrings("series", "removed")}
+		oldGroup := &Group{
+			rules: []Rule{
+				NewRecordingRule("duplicate", nil, labels.EmptyLabels()),
+				NewRecordingRule("duplicate", nil, labels.EmptyLabels()),
+			},
+			seriesInPreviousEval: []map[string]trackedSeries{
+				{"first": firstSeries},
+				{"removed": removedSeries},
+			},
+		}
+		newGroup := &Group{
+			rules: []Rule{
+				NewRecordingRule("duplicate", nil, labels.EmptyLabels()),
+			},
+			seriesInPreviousEval: make([]map[string]trackedSeries, 1),
+		}
+
+		newGroup.CopyState(oldGroup)
+
+		require.Equal(t, map[string]trackedSeries{"first": firstSeries}, newGroup.seriesInPreviousEval[0])
+		require.Equal(t, []trackedSeries{removedSeries}, newGroup.staleSeries)
+	})
 }
 
 func TestDeletedRuleMarkedStale(t *testing.T) {
