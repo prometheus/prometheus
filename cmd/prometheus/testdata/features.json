@@ -118,6 +118,8 @@
     "range": false,
     "rate": true,
     "resets": true,
+    "robust_zscore": false,
+    "robust_zscore_over_time": false,
     "round": true,
     "scalar": true,
     "sgn": true,
@@ -143,7 +145,9 @@
     "ts_of_max_over_time": false,
     "ts_of_min_over_time": false,
     "vector": true,
-    "year": true
+    "year": true,
+    "zscore": false,
+    "zscore_over_time": false
   },
   "promql_operators": {
     "!=": true,

@@ -1549,6 +1549,487 @@ eval instant at 55s stdvar_over_time(metric[1m])
 eval instant at 55s stddev_over_time(metric[1m])
 	{} 0
 
+# Tests for zscore_over_time.
+clear
+load 10s
+	metric          0 8 8 2 3
+	metric_const    5 5 5 5 5
+	metric_one      7
+	metric_histogram{type="only_histogram"} {{schema:1 sum:2 count:3}}x5
+	metric_histogram{type="mix"}             1 1 1 {{schema:1 sum:2 count:3}} {{schema:1 sum:2 count:3}}
+
+# Last sample is 3, mean = (0+8+8+2+3)/5 = 4.2, stddev = sqrt(((0-4.2)^2+(8-4.2)^2+(8-4.2)^2+(2-4.2)^2+(3-4.2)^2)/5) ≈ 3.249615.
+# zscore = (3 - 4.2) / 3.249615 ≈ -0.369275.
+eval instant at 1m zscore_over_time(metric[2m])
+	{} -0.3692744729379982
+
+# Stddev == 0 => NaN (avoid div-by-zero, mirrors statistical convention).
+eval instant at 1m zscore_over_time(metric_const[2m])
+	{} NaN
+
+# Single sample => stddev is 0 over one element => NaN.
+eval instant at 1m zscore_over_time(metric_one[2m])
+	{} NaN
+
+# Native histograms are skipped, like stddev_over_time.
+eval instant at 1m zscore_over_time(metric_histogram{type="only_histogram"}[2m])
+	#empty
+
+eval instant at 1m zscore_over_time(metric_histogram{type="mix"}[2m])
+	expect info
+	{type="mix"} NaN
+
+# Minimal non-degenerate case: 2 samples.
+# mean=5, var=1, stddev=1, last=6 => z = (6-5)/1 = 1.
+clear
+load 10s
+	metric 4 6
+
+eval instant at 15s zscore_over_time(metric[20s])
+	{} 1
+
+# Last sample is a high outlier:
+# mean=3, var=((-2)^2*4 + 8^2)/5 = 16, stddev=4, last=11 => z = (11-3)/4 = 2.
+clear
+load 10s
+	metric 1 1 1 1 11
+
+eval instant at 1m zscore_over_time(metric[2m])
+	{} 2
+
+# Mirrored low outlier:
+# mean=8, var=16, stddev=4, last=0 => z = -2.
+clear
+load 10s
+	metric 10 10 10 10 0
+
+eval instant at 1m zscore_over_time(metric[2m])
+	{} -2
+
+# Negative values handled like any other floats:
+# mean=-1, var=8, stddev=sqrt(8), last=3 => z = 4/sqrt(8) = sqrt(2).
+clear
+load 10s
+	metric -5 -3 -1 1 3
+
+eval instant at 1m zscore_over_time(metric[2m])
+	{} 1.4142135623730951
+
+# Per-series evaluation: each series gets its own z-score.
+clear
+load 10s
+	demo{path="a"} 1 1 1 1 11
+	demo{path="b"} 10 10 10 10 0
+
+eval instant at 1m zscore_over_time(demo[2m])
+	{path="a"} 2
+	{path="b"} -2
+
+# Sliding window: same series, different instant => different z-score.
+# Range (0s, 30s] yields samples 8, 8, 2; mean=6, var=8, stddev=sqrt(8), last=2.
+# z = (2 - 6) / sqrt(8) = -sqrt(2).
+clear
+load 10s
+	metric 0 8 8 2 3
+
+eval instant at 30s zscore_over_time(metric[30s])
+	{} -1.4142135623730951
+
+# Numerical stability: tiny variation on a large mean.
+# Naive (x-mean)^2 sum would lose precision; Welford+Kahan keeps it exact.
+# Samples 1e10, 1e10+2, 1e10+4 => mean=1e10+2, var=8/3, stddev=sqrt(8/3),
+# last=1e10+4 => z = 2 / sqrt(8/3) = sqrt(1.5).
+clear
+load 10s
+	metric 10000000000 10000000002 10000000004
+
+eval instant at 25s zscore_over_time(metric[30s])
+	{} 1.2247448713915890
+
+# Tests for robust_zscore_over_time (robust z-score, range).
+clear
+load 10s
+	metric          1 2 3 4 5
+	metric_const    5 5 5 5 5
+	metric_one      7
+	metric_outlier  1 1 1 1 100
+	metric_histogram{type="only_histogram"} {{schema:1 sum:2 count:3}}x5
+	metric_histogram{type="mix"}             1 2 3 {{schema:1 sum:2 count:3}} {{schema:1 sum:2 count:3}}
+
+# median=3, |x-3|={2,1,0,1,2}, MAD=1, scaled=1.4826. last=5 => rz=2/1.4826.
+eval instant at 1m robust_zscore_over_time(metric[2m])
+	{} 1.348981518953
+
+# MAD==0 (constant) => NaN (avoid div-by-zero).
+eval instant at 1m robust_zscore_over_time(metric_const[2m])
+	{} NaN
+
+# Single sample => |x-x|=0 => MAD=0 => NaN.
+eval instant at 1m robust_zscore_over_time(metric_one[2m])
+	{} NaN
+
+# MAD-zero edge case: majority equal, last value is an outlier =>
+# abs deviations are {0,0,0,0,99}, their median is 0 => MAD=0 => NaN.
+# Demonstrates the robustness/limit tradeoff inherent to MAD.
+eval instant at 1m robust_zscore_over_time(metric_outlier[2m])
+	{} NaN
+
+# Histograms only => empty.
+eval instant at 1m robust_zscore_over_time(metric_histogram{type="only_histogram"}[2m])
+	#empty
+
+# Mixed: histograms skipped, floats {1,2,3}: median=2, |x-2|={1,0,1}, MAD=1.
+# Last float = 3 => rz=(3-2)/1.4826.
+eval instant at 1m robust_zscore_over_time(metric_histogram{type="mix"}[2m])
+	expect info
+	{type="mix"} 0.674490759477
+
+# Negative values handled like any other floats.
+# Samples {-5,-3,-1,1,3}: median=-1, |x-(-1)|={4,2,0,2,4}, MAD=2.
+# last=3 => rz=(3-(-1))/(1.4826*2)=4/2.9652.
+clear
+load 10s
+	metric -5 -3 -1 1 3
+
+eval instant at 1m robust_zscore_over_time(metric[2m])
+	{} 1.348981518953
+
+# Per-series evaluation: each series gets its own robust z-score.
+clear
+load 10s
+	demo{path="a"} 1 2 3 4 5
+	demo{path="b"} 10 10 10 10 0
+
+eval instant at 1m robust_zscore_over_time(demo[2m])
+	{path="a"} 1.348981518953
+	{path="b"} NaN
+
+# Operational example: REST endpoint request rate.
+# Two POST endpoints scraped as the same counter http_requests_total
+# every 30s. /api/orders has a steady ~50 req/s baseline that spikes to
+# ~250 req/s in the final minute; /api/auth has a steady ~30 req/s
+# baseline with no spike. The query derives a 1m rate, builds a
+# 10-minute 1m-step subquery, applies zscore_over_time, and filters
+# with `> 2`. Classical zscore_over_time flags the spike at z=3 (the
+# spike itself drags up the mean and inflates the stddev). /api/auth
+# is filtered out because its steady rate produces a z-score near 0.
+# Results rounded to 0.01 to keep the expectations independent of
+# low-bit floating-point details.
+clear
+load 30s
+	http_requests_total{endpoint="/api/orders", method="POST"} 0 1500 3000 4470 5940 7470 9000 10500 12000 13470 14940 16470 18000 19500 21000 22470 23940 25470 27000 34500 42000
+	http_requests_total{endpoint="/api/auth", method="POST"}   0 900 1800 2730 3660 4530 5400 6300 7200 8130 9060 9930 10800 11700 12600 13530 14460 15330 16200 17100 18000
+
+eval instant at 10m round(zscore_over_time(rate(http_requests_total[1m])[10m:1m]), 0.01) > 2
+	{endpoint="/api/orders", method="POST"} 3
+
+# Robust robust_zscore_over_time anchors on the median (~50) and MAD (~1)
+# and flags the same spike at z=134.9, a much louder signal than the
+# classical zscore_over_time above.
+eval instant at 10m round(robust_zscore_over_time(rate(http_requests_total[1m])[10m:1m]), 0.01) > 2
+	{endpoint="/api/orders", method="POST"} 134.9
+
+# Tests for zscore (instant, across-series).
+clear
+load 10s
+	metric{n="a"} 0
+	metric{n="b"} 1
+	metric{n="c"} 2
+
+# mean=1, var=2/3, stddev=sqrt(2/3). z values = -sqrt(1.5), 0, sqrt(1.5).
+eval instant at 10s zscore(metric)
+	{n="a"} -1.2247448713915890
+	{n="b"} 0
+	{n="c"} 1.2247448713915890
+
+# Two samples: mean=5, var=1, stddev=1.
+clear
+load 10s
+	metric{n="a"} 4
+	metric{n="b"} 6
+
+eval instant at 10s zscore(metric)
+	{n="a"} -1
+	{n="b"} 1
+
+# Constant series => variance=0 => all NaN (avoid div-by-zero).
+clear
+load 10s
+	metric{n="a"} 5
+	metric{n="b"} 5
+	metric{n="c"} 5
+
+eval instant at 10s zscore(metric)
+	{n="a"} NaN
+	{n="b"} NaN
+	{n="c"} NaN
+
+# Single series => variance=0 => NaN.
+clear
+load 10s
+	metric{n="a"} 7
+
+eval instant at 10s zscore(metric)
+	{n="a"} NaN
+
+# Empty input => empty result.
+clear
+load 10s
+	other 1
+
+eval instant at 10s zscore(metric)
+	#empty
+
+# Native histograms are skipped.
+clear
+load 10s
+	metric{n="a"} {{schema:1 sum:2 count:3}}
+	metric{n="b"} {{schema:1 sum:2 count:3}}
+
+eval instant at 10s zscore(metric)
+	#empty
+
+# Mixed float and histogram samples: histograms skipped, annotation emitted.
+# Floats {0, 2}: mean=1, var=1, stddev=1, z: -1, 1.
+clear
+load 10s
+	metric{n="a"} 0
+	metric{n="b"} 2
+	metric{n="c"} {{schema:1 sum:2 count:3}}
+
+eval instant at 10s zscore(metric)
+	expect info
+	{n="a"} -1
+	{n="b"} 1
+
+# Negative values are handled like any other floats.
+# mean=-1, var=8, stddev=sqrt(8), z: -sqrt(2), -sqrt(2)/2, 0, sqrt(2)/2, sqrt(2).
+clear
+load 10s
+	metric{n="a"} -5
+	metric{n="b"} -3
+	metric{n="c"} -1
+	metric{n="d"} 1
+	metric{n="e"} 3
+
+eval instant at 10s zscore(metric)
+	{n="a"} -1.4142135623730951
+	{n="b"} -0.7071067811865476
+	{n="c"} 0
+	{n="d"} 0.7071067811865476
+	{n="e"} 1.4142135623730951
+
+# Numerical stability: tiny variation on a large mean.
+clear
+load 10s
+	metric{n="a"} 10000000000
+	metric{n="b"} 10000000002
+	metric{n="c"} 10000000004
+
+eval instant at 10s zscore(metric)
+	{n="a"} -1.2247448713915890
+	{n="b"} 0
+	{n="c"} 1.2247448713915890
+
+# Tests for robust_zscore (robust z-score, instant, across-series).
+clear
+load 10s
+	metric{n="a"} 1
+	metric{n="b"} 2
+	metric{n="c"} 3
+	metric{n="d"} 4
+	metric{n="e"} 5
+
+# median=3, |x-3|={2,1,0,1,2}, MAD=1, scaled=1.4826.
+eval instant at 10s robust_zscore(metric)
+	{n="a"} -1.348981518953
+	{n="b"} -0.674490759477
+	{n="c"} 0
+	{n="d"} 0.674490759477
+	{n="e"} 1.348981518953
+
+# Two samples: median=5, MAD=2, scaled=2.9652.
+clear
+load 10s
+	metric{n="a"} 3
+	metric{n="b"} 7
+
+eval instant at 10s robust_zscore(metric)
+	{n="a"} -0.674490759477
+	{n="b"} 0.674490759477
+
+# Constant vector => MAD=0 => all NaN.
+clear
+load 10s
+	metric{n="a"} 5
+	metric{n="b"} 5
+	metric{n="c"} 5
+
+eval instant at 10s robust_zscore(metric)
+	{n="a"} NaN
+	{n="b"} NaN
+	{n="c"} NaN
+
+# Single series => MAD=0 => NaN.
+clear
+load 10s
+	metric{n="a"} 7
+
+eval instant at 10s robust_zscore(metric)
+	{n="a"} NaN
+
+# Empty input => empty.
+clear
+load 10s
+	other 1
+
+eval instant at 10s robust_zscore(metric)
+	#empty
+
+# Histograms only => empty.
+clear
+load 10s
+	metric{n="a"} {{schema:1 sum:2 count:3}}
+	metric{n="b"} {{schema:1 sum:2 count:3}}
+
+eval instant at 10s robust_zscore(metric)
+	#empty
+
+# Mixed: floats {0, 2}, histogram skipped => median=1, |x-1|={1,1}, MAD=1.
+# rz: (0-1)/1.4826, (2-1)/1.4826.
+clear
+load 10s
+	metric{n="a"} 0
+	metric{n="b"} 2
+	metric{n="c"} {{schema:1 sum:2 count:3}}
+
+eval instant at 10s robust_zscore(metric)
+	expect info
+	{n="a"} -0.674490759477
+	{n="b"} 0.674490759477
+
+# MAD-zero with non-constant vector: majority equal, single outlier.
+# values={1,1,1,1,100}: median=1, |x-1|={0,0,0,0,99}, MAD=0 => all NaN.
+clear
+load 10s
+	metric{n="a"} 1
+	metric{n="b"} 1
+	metric{n="c"} 1
+	metric{n="d"} 1
+	metric{n="e"} 100
+
+eval instant at 10s robust_zscore(metric)
+	{n="a"} NaN
+	{n="b"} NaN
+	{n="c"} NaN
+	{n="d"} NaN
+	{n="e"} NaN
+
+# Operational example: memory usage outlier across replicas of the same
+# workload. Five pods of the "checkout" deployment: four steady around
+# 500-520 MiB, and checkout-4 leaking up to 1536 MiB. Classical zscore
+# only marks the leaking pod at z~2 because the outlier itself drags the
+# mean up (713.8) and inflates the stddev (~411), nearly burying the
+# signal. Results rounded to 0.01 to keep the expectations independent
+# of low-bit floating-point details.
+clear
+load 1m
+	container_memory_usage_mib{deployment="checkout", pod="checkout-0"} 500
+	container_memory_usage_mib{deployment="checkout", pod="checkout-1"} 512
+	container_memory_usage_mib{deployment="checkout", pod="checkout-2"} 504
+	container_memory_usage_mib{deployment="checkout", pod="checkout-3"} 517
+	container_memory_usage_mib{deployment="checkout", pod="checkout-4"} 1536
+
+eval instant at 0s round(zscore(container_memory_usage_mib), 0.01)
+	{deployment="checkout", pod="checkout-0"} -0.52
+	{deployment="checkout", pod="checkout-1"} -0.49
+	{deployment="checkout", pod="checkout-2"} -0.51
+	{deployment="checkout", pod="checkout-3"} -0.48
+	{deployment="checkout", pod="checkout-4"} 2
+
+# Robust robust_zscore stays anchored at the healthy-majority median (512)
+# and MAD (8), so the leaking pod stands out at z~86 while the healthy peers
+# stay within |z|<=~1.
+eval instant at 0s round(robust_zscore(container_memory_usage_mib), 0.01)
+	{deployment="checkout", pod="checkout-0"} -1.01
+	{deployment="checkout", pod="checkout-1"} 0
+	{deployment="checkout", pod="checkout-2"} -0.67
+	{deployment="checkout", pod="checkout-3"} 0.42
+	{deployment="checkout", pod="checkout-4"} 86.33
+
+# Operational example: when classical zscore is operationally worthwhile.
+# p99 request latency derived from a Prometheus classical-histogram
+# bucket counter (http_request_duration_seconds_bucket — the standard
+# Prom idiom), evaluated per pod across ten replicas of the
+# "recommendations" service. The bucket distributions are designed so
+# that nine pods cluster around 100-110 ms and rec-9 sits at the 120 ms
+# boundary — moderately elevated rather than catastrophic. Because the
+# resulting per-pod p99 distribution is approximately normal-ish, the
+# classical zscore flags rec-9 at z~2.4 — well above the textbook
+# "z > 2" threshold — and the `> 2` filter keeps only the anomalous pod.
+clear
+load 1m
+	http_request_duration_seconds_bucket{service="recommendations", pod="rec-0", le="0.090"} 0+80x10
+	http_request_duration_seconds_bucket{service="recommendations", pod="rec-0", le="0.100"} 0+99x10
+	http_request_duration_seconds_bucket{service="recommendations", pod="rec-0", le="0.110"} 0+100x10
+	http_request_duration_seconds_bucket{service="recommendations", pod="rec-0", le="0.120"} 0+100x10
+	http_request_duration_seconds_bucket{service="recommendations", pod="rec-0", le="+Inf"}  0+100x10
+	http_request_duration_seconds_bucket{service="recommendations", pod="rec-1", le="0.090"} 0+70x10
+	http_request_duration_seconds_bucket{service="recommendations", pod="rec-1", le="0.100"} 0+95x10
+	http_request_duration_seconds_bucket{service="recommendations", pod="rec-1", le="0.110"} 0+100x10
+	http_request_duration_seconds_bucket{service="recommendations", pod="rec-1", le="0.120"} 0+100x10
+	http_request_duration_seconds_bucket{service="recommendations", pod="rec-1", le="+Inf"}  0+100x10
+	http_request_duration_seconds_bucket{service="recommendations", pod="rec-2", le="0.090"} 0+90x10
+	http_request_duration_seconds_bucket{service="recommendations", pod="rec-2", le="0.100"} 0+99x10
+	http_request_duration_seconds_bucket{service="recommendations", pod="rec-2", le="0.110"} 0+100x10
+	http_request_duration_seconds_bucket{service="recommendations", pod="rec-2", le="0.120"} 0+100x10
+	http_request_duration_seconds_bucket{service="recommendations", pod="rec-2", le="+Inf"}  0+100x10
+	http_request_duration_seconds_bucket{service="recommendations", pod="rec-3", le="0.090"} 0+60x10
+	http_request_duration_seconds_bucket{service="recommendations", pod="rec-3", le="0.100"} 0+90x10
+	http_request_duration_seconds_bucket{service="recommendations", pod="rec-3", le="0.110"} 0+99x10
+	http_request_duration_seconds_bucket{service="recommendations", pod="rec-3", le="0.120"} 0+100x10
+	http_request_duration_seconds_bucket{service="recommendations", pod="rec-3", le="+Inf"}  0+100x10
+	http_request_duration_seconds_bucket{service="recommendations", pod="rec-4", le="0.090"} 0+85x10
+	http_request_duration_seconds_bucket{service="recommendations", pod="rec-4", le="0.100"} 0+97x10
+	http_request_duration_seconds_bucket{service="recommendations", pod="rec-4", le="0.110"} 0+100x10
+	http_request_duration_seconds_bucket{service="recommendations", pod="rec-4", le="0.120"} 0+100x10
+	http_request_duration_seconds_bucket{service="recommendations", pod="rec-4", le="+Inf"}  0+100x10
+	http_request_duration_seconds_bucket{service="recommendations", pod="rec-5", le="0.090"} 0+75x10
+	http_request_duration_seconds_bucket{service="recommendations", pod="rec-5", le="0.100"} 0+92x10
+	http_request_duration_seconds_bucket{service="recommendations", pod="rec-5", le="0.110"} 0+100x10
+	http_request_duration_seconds_bucket{service="recommendations", pod="rec-5", le="0.120"} 0+100x10
+	http_request_duration_seconds_bucket{service="recommendations", pod="rec-5", le="+Inf"}  0+100x10
+	http_request_duration_seconds_bucket{service="recommendations", pod="rec-6", le="0.090"} 0+88x10
+	http_request_duration_seconds_bucket{service="recommendations", pod="rec-6", le="0.100"} 0+98x10
+	http_request_duration_seconds_bucket{service="recommendations", pod="rec-6", le="0.110"} 0+100x10
+	http_request_duration_seconds_bucket{service="recommendations", pod="rec-6", le="0.120"} 0+100x10
+	http_request_duration_seconds_bucket{service="recommendations", pod="rec-6", le="+Inf"}  0+100x10
+	http_request_duration_seconds_bucket{service="recommendations", pod="rec-7", le="0.090"} 0+78x10
+	http_request_duration_seconds_bucket{service="recommendations", pod="rec-7", le="0.100"} 0+98x10
+	http_request_duration_seconds_bucket{service="recommendations", pod="rec-7", le="0.110"} 0+100x10
+	http_request_duration_seconds_bucket{service="recommendations", pod="rec-7", le="0.120"} 0+100x10
+	http_request_duration_seconds_bucket{service="recommendations", pod="rec-7", le="+Inf"}  0+100x10
+	http_request_duration_seconds_bucket{service="recommendations", pod="rec-8", le="0.090"} 0+82x10
+	http_request_duration_seconds_bucket{service="recommendations", pod="rec-8", le="0.100"} 0+99x10
+	http_request_duration_seconds_bucket{service="recommendations", pod="rec-8", le="0.110"} 0+100x10
+	http_request_duration_seconds_bucket{service="recommendations", pod="rec-8", le="0.120"} 0+100x10
+	http_request_duration_seconds_bucket{service="recommendations", pod="rec-8", le="+Inf"}  0+100x10
+	http_request_duration_seconds_bucket{service="recommendations", pod="rec-9", le="0.090"} 0+40x10
+	http_request_duration_seconds_bucket{service="recommendations", pod="rec-9", le="0.100"} 0+60x10
+	http_request_duration_seconds_bucket{service="recommendations", pod="rec-9", le="0.110"} 0+80x10
+	http_request_duration_seconds_bucket{service="recommendations", pod="rec-9", le="0.120"} 0+99x10
+	http_request_duration_seconds_bucket{service="recommendations", pod="rec-9", le="+Inf"}  0+100x10
+
+eval instant at 10m round(zscore(histogram_quantile(0.99, sum by (service, pod, le) (rate(http_request_duration_seconds_bucket[5m])))), 0.01) > 2
+	{service="recommendations", pod="rec-9"} 2.37
+
+# Robust robust_zscore agrees on flagging rec-9 at a similar magnitude
+# (z=2.7), which is the regime where zscore is operationally worthwhile
+# and robust_zscore is essentially insurance for cases where the bell-
+# curve assumption breaks.
+eval instant at 10m round(robust_zscore(histogram_quantile(0.99, sum by (service, pod, le) (rate(http_request_duration_seconds_bucket[5m])))), 0.01) > 2
+	{service="recommendations", pod="rec-9"} 2.7
+
 # Tests for mad_over_time.
 clear
 load 10s

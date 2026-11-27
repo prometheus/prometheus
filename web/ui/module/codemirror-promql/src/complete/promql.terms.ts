@@ -615,6 +615,30 @@ export const functionIdentifierTerms = [
     info: 'Return the year for provided timestamps',
     type: 'function',
   },
+  {
+    label: 'zscore',
+    detail: 'function',
+    info: 'Return the z-score of each sample relative to the mean and stddev across the instant vector',
+    type: 'function',
+  },
+  {
+    label: 'zscore_over_time',
+    detail: 'function',
+    info: 'Return the z-score of the most recent sample relative to the range window mean and stddev',
+    type: 'function',
+  },
+  {
+    label: 'robust_zscore',
+    detail: 'function',
+    info: 'Return the robust z-score of each sample relative to the median and MAD across the instant vector',
+    type: 'function',
+  },
+  {
+    label: 'robust_zscore_over_time',
+    detail: 'function',
+    info: 'Return the robust z-score of the most recent sample relative to the range window median and MAD',
+    type: 'function',
+  },
 ];
 
 export const aggregateOpTerms = [
