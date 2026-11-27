@@ -406,10 +406,10 @@ func NewOOOCompactionHead(ctx context.Context, head *Head) (*OOOCompactionHead, 
 	return ch, nil
 }
 
-// NewOOOSnapshotHead collects read-only references to all uncompacted out-of-order
+// newOOOSnapshotHead collects read-only references to all uncompacted out-of-order
 // chunks (both mmapped and in-memory head chunks) without rotating the WBL or
 // mmapping in-memory chunks so Snapshot remains non-destructive.
-func NewOOOSnapshotHead(ctx context.Context, head *Head, lastGarbageCollectedMmapRef chunks.ChunkDiskMapperRef) (*OOOCompactionHead, *oooIsolationState, error) {
+func newOOOSnapshotHead(ctx context.Context, head *Head, lastGarbageCollectedMmapRef chunks.ChunkDiskMapperRef) (*OOOCompactionHead, *oooIsolationState, error) {
 	ch := &OOOCompactionHead{
 		head:                        head,
 		lastGarbageCollectedMmapRef: lastGarbageCollectedMmapRef,

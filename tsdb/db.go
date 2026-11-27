@@ -2630,7 +2630,7 @@ func (db *DB) Snapshot(dir string, withHead bool) error {
 	}
 
 	if db.oooWasEnabled.Load() {
-		oooHead, oooIso, err := NewOOOSnapshotHead(context.Background(), db.head, db.lastGarbageCollectedMmapRef)
+		oooHead, oooIso, err := newOOOSnapshotHead(context.Background(), db.head, db.lastGarbageCollectedMmapRef)
 		if err != nil {
 			return fmt.Errorf("snapshot ooo head: %w", err)
 		}
