@@ -1216,11 +1216,13 @@ func (p *populateWithDelChunkSeriesIterator) At() chunks.Meta { return p.currMet
 // Samples from chunks are also trimmed to requested min and max time.
 type blockSeriesSet struct {
 	blockBaseSeriesSet
+
+	entry *blockSeriesEntry
 }
 
 func newBlockSeriesSet(i IndexReader, c ChunkReader, t tombstones.Reader, p index.Postings, mint, maxt int64, disableTrimming bool) storage.SeriesSet {
 	return &blockSeriesSet{
-		blockBaseSeriesSet{
+		blockBaseSeriesSet: blockBaseSeriesSet{
 			index:           i,
 			chunks:          c,
 			tombstones:      t,
@@ -1232,13 +1234,21 @@ func newBlockSeriesSet(i IndexReader, c ChunkReader, t tombstones.Reader, p inde
 	}
 }
 
+func (b *blockSeriesSet) Next() bool {
+	b.entry = nil
+	return b.blockBaseSeriesSet.Next()
+}
+
 func (b *blockSeriesSet) At() storage.Series {
 	// At can be looped over before iterating, so save the current values locally.
-	return &blockSeriesEntry{
-		chunks:     b.chunks,
-		blockID:    b.blockID,
-		seriesData: b.curr,
+	if b.entry == nil {
+		b.entry = &blockSeriesEntry{
+			chunks:     b.chunks,
+			blockID:    b.blockID,
+			seriesData: b.curr,
+		}
 	}
+	return b.entry
 }
 
 // blockChunkSeriesSet allows to iterate over sorted, populated series with applied tombstones.
