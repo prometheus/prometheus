@@ -41,7 +41,7 @@ load <interval>
     <series> <points>
 ```
 
-* `<interval>` is the step between points (eg. `1m` or `30s`)
+* `<interval>` is the step between points (e.g. `1m` or `30s`)
 * `<series>` is a Prometheus series name in the usual `metric{label="value"}` syntax
 * `<points>` is a specification of the points to add for that series, following the same expanding syntax as for `promtool unittest` documented [here](../../docs/configuration/unit_testing_rules.md#series)
 
@@ -102,9 +102,9 @@ eval range from <start> to <end> step <step> <query>
     <series> <points>
 ```
 
-* `<time>` is the timestamp to evaluate the instant query at (eg. `1m`)
+* `<time>` is the timestamp to evaluate the instant query at (e.g. `1m`)
 * `<start>` and `<end>` specify the time range of the range query, and use the same syntax as `<time>`
-* `<step>` is the step of the range query, and uses the same syntax as `<time>` (eg. `30s`) 
+* `<step>` is the step of the range query, and uses the same syntax as `<time>` (e.g. `30s`) 
 * `<expect>`(optional) specifies expected annotations, errors, or result ordering.
 * `<expect range vector>` (optional) for an instant query you can specify expected range vector timestamps
 * `<expect string> "<string>"` (optional) for matching a string literal
