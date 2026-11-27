@@ -95,3 +95,54 @@ describe('CachedPrometheusClient destroy', () => {
     expect(() => cachedClient.destroy()).not.toThrow();
   });
 });
+
+describe('CachedPrometheusClient label caches', () => {
+  // A client that knows two metrics: "up" has the label "job", "node_load1" has "job" and "instance".
+  const fakeClient = () => {
+    const calls = { labelNames: 0, labelValues: 0 };
+    const client = {
+      labelNames: (metricName?: string) => {
+        calls.labelNames++;
+        return Promise.resolve(metricName === 'up' ? ['__name__', 'job'] : ['__name__', 'instance', 'job']);
+      },
+      labelValues: (labelName: string, metricName?: string) => {
+        calls.labelValues++;
+        return Promise.resolve(metricName === 'up' ? ['prometheus'] : ['node', 'prometheus']);
+      },
+      metricMetadata: () => Promise.resolve({}),
+      series: () => Promise.resolve([]),
+      metricNames: () => Promise.resolve([]),
+      flags: () => Promise.resolve({}),
+    };
+    return { client, calls };
+  };
+
+  it('does not replace the global label names with the names of one metric', async () => {
+    const { client, calls } = fakeClient();
+    const cachedClient = new CachedPrometheusClient(client);
+
+    expect(await cachedClient.labelNames('up')).toEqual(['job']);
+    expect(await cachedClient.labelNames()).toEqual(['__name__', 'instance', 'job']);
+    expect(calls.labelNames).toBe(2);
+  });
+
+  it('does not replace the global label values with the values of one metric', async () => {
+    const { client, calls } = fakeClient();
+    const cachedClient = new CachedPrometheusClient(client);
+
+    expect(await cachedClient.labelValues('job', 'up')).toEqual(['prometheus']);
+    expect(await cachedClient.labelValues('job')).toEqual(['node', 'prometheus']);
+    expect(calls.labelValues).toBe(2);
+  });
+
+  it('still caches the global lists', async () => {
+    const { client, calls } = fakeClient();
+    const cachedClient = new CachedPrometheusClient(client);
+
+    await cachedClient.labelNames();
+    await cachedClient.labelNames();
+    await cachedClient.labelValues('job');
+    await cachedClient.labelValues('job');
+    expect(calls).toEqual({ labelNames: 1, labelValues: 1 });
+  });
+});
