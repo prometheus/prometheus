@@ -49,7 +49,7 @@ func (p *Parameters) toLabels() model.LabelSet {
 		case int64:
 			labelValue = strconv.FormatInt(value, 10)
 		case float64:
-			labelValue = strconv.FormatFloat(value, 'g', -1, 64)
+			labelValue = strconv.FormatFloat(value, 'f', -1, 64)
 		case []string:
 			labelValue = separator + strings.Join(value, separator) + separator
 		case []any:
@@ -66,7 +66,7 @@ func (p *Parameters) toLabels() model.LabelSet {
 				case int64:
 					values[i] = strconv.FormatInt(value, 10)
 				case float64:
-					values[i] = strconv.FormatFloat(value, 'g', -1, 64)
+					values[i] = strconv.FormatFloat(value, 'f', -1, 64)
 				case []string:
 					values[i] = separator + strings.Join(value, separator) + separator
 				}
