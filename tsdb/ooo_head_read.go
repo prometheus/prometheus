@@ -379,26 +379,100 @@ func NewOOOCompactionHead(ctx context.Context, head *Head) (*OOOCompactionHead, 
 		ch.lastWBLFile = lastWBLFile
 	}
 
-	hr := headIndexReader{head: head, mint: ch.mint, maxt: ch.maxt}
+	var lastSeq, lastOff int
+	err := forEachHeadSeries(ctx, head, func(seriesRef storage.SeriesRef, ms *memSeries) {
+		ch.mmapOOOSeriesChunk(ms, seriesRef, &lastSeq, &lastOff)
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return ch, nil
+}
+
+// forEachHeadSeries calls f for every series in the head's series index, in
+// postings order. Series that were removed concurrently are skipped. f is
+// responsible for locking ms if it needs the chunks of the series.
+//
+// It is shared by NewOOOCompactionHead and newOOOHeadReadView so both views of
+// the out-of-order head walk the same series set.
+func forEachHeadSeries(ctx context.Context, head *Head, f func(seriesRef storage.SeriesRef, ms *memSeries)) error {
+	hr := headIndexReader{head: head, mint: math.MaxInt64, maxt: math.MinInt64}
 	n, v := index.AllPostingsKey()
 	// TODO: filter to series with OOO samples, before sorting.
 	p, err := hr.Postings(ctx, n, v)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	p = hr.SortedPostings(p)
 
-	var lastSeq, lastOff int
 	for p.Next() {
 		seriesRef := p.At()
 		ms := head.series.getByID(chunks.HeadSeriesRef(seriesRef))
 		if ms == nil {
 			continue
 		}
+		f(seriesRef, ms)
+	}
+	return p.Err()
+}
 
-		ch.mmapOOOSeriesChunk(ms, seriesRef, &lastSeq, &lastOff)
+// addOOOSeriesRange records whether ms holds out-of-order chunks and, if it
+// does, widens ch.mint/ch.maxt to cover them. The caller must hold ms.Lock().
+func (ch *OOOCompactionHead) addOOOSeriesRange(ms *memSeries) bool {
+	if ms.ooo == nil {
+		return false
 	}
 
+	hasOOOChunks := false
+	if c := ms.ooo.oooHeadChunk; c != nil && len(c.chunk.samples) > 0 {
+		hasOOOChunks = true
+		ch.mint = min(ch.mint, c.minTime)
+		ch.maxt = max(ch.maxt, c.maxTime)
+	}
+	for _, c := range ms.ooo.oooMmappedChunks {
+		hasOOOChunks = true
+		ch.mint = min(ch.mint, c.minTime)
+		ch.maxt = max(ch.maxt, c.maxTime)
+	}
+	return hasOOOChunks
+}
+
+// newOOOHeadReadView returns a read-only view of the out-of-order head as a
+// BlockReader.
+//
+// Unlike NewOOOCompactionHead it does not modify the head: it does not m-map the
+// in-memory OOO chunks and does not cut a new WBL segment. The view also includes
+// the chunks that are still in memory, so it sees every OOO sample that queries
+// see. It must only be used while the OOO data cannot be truncated, for example
+// while holding db.cmtx; callers must not use it for compaction.
+//
+// It shares the series scan and the out-of-order chunk range bookkeeping with
+// NewOOOCompactionHead, so the two views cannot drift apart.
+func newOOOHeadReadView(ctx context.Context, head *Head) (*OOOCompactionHead, error) {
+	ch := &OOOCompactionHead{
+		head:       head,
+		chunkRange: head.chunkRange.Load(),
+		mint:       math.MaxInt64,
+		maxt:       math.MinInt64,
+	}
+
+	// lastMmapRef must stay 0 here. OOOCompactionHead.Chunks passes it to
+	// NewHeadAndOOOChunkReader as the max m-map ref, and getOOOSeriesChunks only
+	// returns the in-memory oooHeadChunk when maxMmapRef is 0; with a non-zero
+	// lastMmapRef the in-memory out-of-order samples would silently disappear
+	// from the view. Only NewOOOCompactionHead sets lastMmapRef, after it has
+	// m-mapped every in-memory OOO chunk.
+	err := forEachHeadSeries(ctx, head, func(seriesRef storage.SeriesRef, ms *memSeries) {
+		ms.Lock()
+		defer ms.Unlock()
+		if ch.addOOOSeriesRange(ms) {
+			ch.postings = append(ch.postings, seriesRef)
+		}
+	})
+	if err != nil {
+		return nil, err
+	}
 	return ch, nil
 }
 
@@ -433,16 +507,8 @@ func (ch *OOOCompactionHead) mmapOOOSeriesChunk(ms *memSeries, seriesRef storage
 	if seq > *lastSeq || (seq == *lastSeq && off > *lastOff) {
 		ch.lastMmapRef, *lastSeq, *lastOff = lastMmapRef, seq, off
 	}
-	if len(ms.ooo.oooMmappedChunks) > 0 {
+	if ch.addOOOSeriesRange(ms) {
 		ch.postings = append(ch.postings, seriesRef)
-		for _, c := range ms.ooo.oooMmappedChunks {
-			if c.minTime < ch.mint {
-				ch.mint = c.minTime
-			}
-			if c.maxTime > ch.maxt {
-				ch.maxt = c.maxTime
-			}
-		}
 	}
 }
 

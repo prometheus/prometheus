@@ -1741,24 +1741,14 @@ func (db *DB) compactOOOHead(ctx context.Context) error {
 	return nil
 }
 
-// compactOOO creates a new block per possible block range in the compactor's directory from the OOO Head given.
-// Each ULID in the result corresponds to a block in a unique time range.
+// writeOOOHeadBlocks writes the given out-of-order head to dest as one block
+// per block range and returns the ULIDs of the written blocks. Each block
+// carries the from-out-of-order compaction hint.
 // The db.cmtx mutex should be held before calling this method.
-func (db *DB) compactOOO(dest string, oooHead *OOOCompactionHead) (_ []ulid.ULID, err error) {
-	db.logger.Info("out-of-order compaction started")
-	start := time.Now()
-
+func (db *DB) writeOOOHeadBlocks(dest string, oooHead *OOOCompactionHead) ([]ulid.ULID, error) {
 	blockSize := oooHead.ChunkRange()
 	oooHeadMint, oooHeadMaxt := oooHead.MinTime(), oooHead.MaxTime()
-	ulids := make([]ulid.ULID, 0)
-	defer func() {
-		if err != nil {
-			// Best effort removal of created block on any error.
-			for _, uid := range ulids {
-				_ = os.RemoveAll(filepath.Join(db.dir, uid.String()))
-			}
-		}
-	}()
+	var ulids []ulid.ULID
 
 	meta := &BlockMeta{}
 	meta.Compaction.SetOutOfOrder()
@@ -1767,9 +1757,27 @@ func (db *DB) compactOOO(dest string, oooHead *OOOCompactionHead) (_ []ulid.ULID
 		// Block intervals are half-open: [b.MinTime, b.MaxTime). Block intervals are always +1 than the total samples it includes.
 		uids, err := db.compactor.Write(dest, oooHead.CloneForTimeRange(mint, maxt-1), mint, maxt, meta)
 		if err != nil {
-			return nil, err
+			return ulids, err
 		}
 		ulids = append(ulids, uids...)
+	}
+	return ulids, nil
+}
+
+// compactOOO creates a new block per possible block range in the compactor's directory from the OOO Head given.
+// Each ULID in the result corresponds to a block in a unique time range.
+// The db.cmtx mutex should be held before calling this method.
+func (db *DB) compactOOO(dest string, oooHead *OOOCompactionHead) (_ []ulid.ULID, err error) {
+	db.logger.Info("out-of-order compaction started")
+	start := time.Now()
+
+	ulids, err := db.writeOOOHeadBlocks(dest, oooHead)
+	if err != nil {
+		// Best effort removal of created block on any error.
+		for _, uid := range ulids {
+			_ = os.RemoveAll(filepath.Join(dest, uid.String()))
+		}
+		return nil, err
 	}
 
 	if len(ulids) == 0 {
@@ -2593,7 +2601,7 @@ func (db *DB) ForceHeadMMap() {
 
 // Snapshot writes the current data to the directory. If withHead is set to true it
 // will create a new block containing all data that's currently in the memory buffer/WAL.
-func (db *DB) Snapshot(dir string, withHead bool) error {
+func (db *DB) Snapshot(dir string, withHead bool) (returnErr error) {
 	if dir == db.dir {
 		return errors.New("cannot snapshot into base directory")
 	}
@@ -2621,10 +2629,48 @@ func (db *DB) Snapshot(dir string, withHead bool) error {
 	mint := db.head.MinTime()
 	maxt := db.head.MaxTime()
 	head := NewRangeHead(db.head, mint, maxt)
+
+	// Keep track of the blocks written for the head so that a failure does not
+	// leave a partial snapshot behind. Blocks copied from db.blocks above are
+	// complete and are left untouched.
+	var writtenULIDs []ulid.ULID
+	defer func() {
+		if returnErr == nil {
+			return
+		}
+		// Best effort removal of the blocks written by this snapshot attempt,
+		// the same way compactOOO removes its partial blocks on error.
+		for _, uid := range writtenULIDs {
+			_ = os.RemoveAll(filepath.Join(dir, uid.String()))
+		}
+	}()
+
 	// Add +1 millisecond to block maxt because block intervals are half-open: [b.MinTime, b.MaxTime).
 	// Because of this block intervals are always +1 than the total samples it includes.
-	if _, err := db.compactor.Write(dir, head, mint, maxt+1, nil); err != nil {
+	uids, err := db.compactor.Write(dir, head, mint, maxt+1, nil)
+	if err != nil {
 		return fmt.Errorf("snapshot head block: %w", err)
+	}
+	writtenULIDs = append(writtenULIDs, uids...)
+
+	// The range head used above only covers the samples in the in-order head, so the samples
+	// still in the out-of-order head need their own blocks, the same way compactOOO writes them.
+	if db.oooWasEnabled.Load() {
+		// Read the out-of-order head without modifying the source DB, so a snapshot neither
+		// m-maps the in-memory OOO chunks nor cuts a new WBL segment.
+		oooHead, err := newOOOHeadReadView(context.Background(), db.head)
+		if err != nil {
+			return fmt.Errorf("get ooo head for snapshot: %w", err)
+		}
+		if oooHead.MinTime() != math.MaxInt64 {
+			uids, err := db.writeOOOHeadBlocks(dir, oooHead)
+			// Track the partial blocks as well, so the deferred cleanup can
+			// remove them if writeOOOHeadBlocks failed midway.
+			writtenULIDs = append(writtenULIDs, uids...)
+			if err != nil {
+				return fmt.Errorf("snapshot ooo head blocks: %w", err)
+			}
+		}
 	}
 	return nil
 }
