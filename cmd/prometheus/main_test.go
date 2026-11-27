@@ -1247,7 +1247,7 @@ func TestReloadConfigLogLevel(t *testing.T) {
 	logger := promslog.New(&promslog.Config{Level: level, Writer: &output})
 	interval := &safePromQLNoStepSubqueryInterval{}
 
-	require.NoError(t, reloadConfig(configFile, false, logger, interval, level, func(bool) {}))
+	require.NoError(t, reloadConfig(configFile, false, false, logger, interval, level, func(bool) {}))
 	require.Equal(t, "debug", level.String())
 	output.Reset()
 	logger.Debug("debug message")
@@ -1256,7 +1256,7 @@ func TestReloadConfigLogLevel(t *testing.T) {
 	require.NoError(t, os.WriteFile(configFile, []byte(`runtime:
   log_level: error
 `), 0o600))
-	err := reloadConfig(configFile, false, logger, interval, level, func(bool) {}, reloader{
+	err := reloadConfig(configFile, false, false, logger, interval, level, func(bool) {}, reloader{
 		name: "failing",
 		reloader: func(*config.Config) error {
 			return errors.New("failed to apply")
@@ -1268,7 +1268,7 @@ func TestReloadConfigLogLevel(t *testing.T) {
 	logger.Debug("still visible")
 	require.Contains(t, output.String(), "still visible")
 
-	require.NoError(t, reloadConfig(configFile, false, logger, interval, level, func(bool) {}))
+	require.NoError(t, reloadConfig(configFile, false, false, logger, interval, level, func(bool) {}))
 	require.Equal(t, "error", level.String())
 	output.Reset()
 	logger.Warn("hidden warning")
@@ -1277,7 +1277,7 @@ func TestReloadConfigLogLevel(t *testing.T) {
 	require.Contains(t, output.String(), "visible error")
 
 	require.NoError(t, os.WriteFile(configFile, []byte("{}\n"), 0o600))
-	require.NoError(t, reloadConfig(configFile, false, logger, interval, level, func(bool) {}))
+	require.NoError(t, reloadConfig(configFile, false, false, logger, interval, level, func(bool) {}))
 	require.Equal(t, "info", level.String())
 	output.Reset()
 	logger.Info("visible info")
@@ -1575,4 +1575,33 @@ func TestFeatureFlagsDocumented(t *testing.T) {
 	require.NotEmpty(t, docFlags)
 	require.True(t, slices.IsSorted(helpFlags))
 	require.ElementsMatch(t, helpFlags, docFlags)
+}
+
+func TestReloadConfigReceiveRelabelConfigs(t *testing.T) {
+	rule := `
+    - action: drop
+      source_labels: [__name__]
+      regex: foo
+`
+	level := promslog.NewLevel()
+	logger := promslog.NewNopLogger()
+	interval := &safePromQLNoStepSubqueryInterval{}
+
+	for _, tc := range []struct {
+		name   string
+		config string
+		field  string
+	}{
+		{name: "remote write receiver", config: "remote_write_receiver:\n  metric_relabel_configs:" + rule, field: "remote_write_receiver.metric_relabel_configs"},
+		{name: "otlp", config: "otlp:\n  metric_relabel_configs:" + rule, field: "otlp.metric_relabel_configs"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			configFile := filepath.Join(t.TempDir(), "prometheus.yml")
+			require.NoError(t, os.WriteFile(configFile, []byte(tc.config), 0o600))
+
+			err := reloadConfig(configFile, false, false, logger, interval, level, func(bool) {})
+			require.ErrorContains(t, err, tc.field+" requires --enable-feature=receive-relabel-configs")
+			require.NoError(t, reloadConfig(configFile, false, true, logger, interval, level, func(bool) {}))
+		})
+	}
 }

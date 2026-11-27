@@ -305,6 +305,8 @@ type Config struct {
 	RemoteReadConfigs  []*RemoteReadConfig  `yaml:"remote_read,omitempty"`
 	OTLPConfig         OTLPConfig           `yaml:"otlp,omitempty"`
 
+	RemoteWriteReceiverConfig RemoteWriteReceiverConfig `yaml:"remote_write_receiver,omitempty"`
+
 	loaded bool // Certain methods require configuration to use Load validation.
 }
 
@@ -477,6 +479,24 @@ func (c *Config) UnmarshalYAML(unmarshal func(any) error) error {
 		}
 		rrNames[rrcfg.Name] = struct{}{}
 	}
+
+	for _, rlcfg := range c.RemoteWriteReceiverConfig.MetricRelabelConfigs {
+		if rlcfg == nil {
+			return errors.New("empty or null relabeling rule in remote_write_receiver metric_relabel_configs")
+		}
+		if err := rlcfg.Validate(c.GlobalConfig.MetricNameValidationScheme); err != nil {
+			return err
+		}
+	}
+	for _, rlcfg := range c.OTLPConfig.MetricRelabelConfigs {
+		if rlcfg == nil {
+			return errors.New("empty or null relabeling rule in otlp metric_relabel_configs")
+		}
+		if err := rlcfg.Validate(c.GlobalConfig.MetricNameValidationScheme); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -1831,6 +1851,17 @@ type OTLPConfig struct {
 	// in label names when AllowUTF8 is false. When false, multiple consecutive underscores are
 	// collapsed to a single underscore during label name sanitization.
 	LabelNamePreserveMultipleUnderscores bool `yaml:"label_name_preserve_multiple_underscores,omitempty"`
+	// MetricRelabelConfigs are applied to samples ingested via the OTLP
+	// receiver, after translation to the Prometheus data model. Gated by the
+	// receive-relabel-configs feature flag.
+	MetricRelabelConfigs []*relabel.Config `yaml:"metric_relabel_configs,omitempty"`
+}
+
+// RemoteWriteReceiverConfig is the configuration of the remote-write receiver.
+type RemoteWriteReceiverConfig struct {
+	// MetricRelabelConfigs are applied to samples ingested via the remote-write
+	// receiver. Gated by the receive-relabel-configs feature flag.
+	MetricRelabelConfigs []*relabel.Config `yaml:"metric_relabel_configs,omitempty"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.

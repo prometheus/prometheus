@@ -2280,6 +2280,23 @@ func TestOTLPAllowUTF8(t *testing.T) {
 	})
 }
 
+func TestReceiveRelabelConfigs(t *testing.T) {
+	c, err := LoadFile(filepath.Join("testdata", "receive_relabel_configs.good.yml"), false, promslog.NewNopLogger())
+	require.NoError(t, err)
+
+	rw := c.RemoteWriteReceiverConfig.MetricRelabelConfigs
+	require.Len(t, rw, 1)
+	require.Equal(t, model.LabelNames{"__name__"}, rw[0].SourceLabels)
+	require.Equal(t, relabel.Replace, rw[0].Action)
+	require.Equal(t, "__name__", rw[0].TargetLabel)
+
+	otlp := c.OTLPConfig.MetricRelabelConfigs
+	require.Len(t, otlp, 1)
+	require.Equal(t, model.LabelNames{"env"}, otlp[0].SourceLabels)
+	require.Equal(t, relabel.Replace, otlp[0].Action)
+	require.Equal(t, "environment", otlp[0].TargetLabel)
+}
+
 func TestLoadConfig(t *testing.T) {
 	// Parse a valid file that sets a global scrape timeout. This tests whether parsing
 	// an overwritten default field in the global config permanently changes the default.
@@ -2723,6 +2740,14 @@ var expectedErrors = []struct {
 	{
 		filename: "empty_rw_relabel_config.bad.yml",
 		errMsg:   "empty or null relabeling rule in remote write config",
+	},
+	{
+		filename: "empty_rw_receiver_relabel_config.bad.yml",
+		errMsg:   "empty or null relabeling rule in remote_write_receiver metric_relabel_configs",
+	},
+	{
+		filename: "empty_otlp_relabel_config.bad.yml",
+		errMsg:   "empty or null relabeling rule in otlp metric_relabel_configs",
 	},
 	{
 		filename: "empty_static_config.bad.yml",

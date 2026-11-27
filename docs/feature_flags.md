@@ -527,3 +527,31 @@ last hour and do not return a warning.
 
 Clients can detect the feature through [`/api/v1/features`](querying/api.md#features),
 where it is reported as `metadata_default_time_range` in the `api` category.
+
+## Receive relabeling
+
+`--enable-feature=receive-relabel-configs`
+
+Enables applying `remote_write_receiver.metric_relabel_configs` to samples ingested
+through the remote-write receiver (`--web.enable-remote-write-receiver`) and
+`otlp.metric_relabel_configs` to samples ingested through the OTLP receiver
+(`--web.enable-otlp-receiver`). Each receiver has its own rules. For OTLP, the
+rules see the labels after the OTLP-to-Prometheus translation.
+
+Both lists use the same [`<relabel_config>`](configuration/configuration.md#relabel_config)
+syntax as scrape-time `metric_relabel_configs`. A series dropped by these rules
+(e.g. via `action: drop`), or left invalid (e.g. missing `__name__`), is
+discarded before it reaches storage.
+
+This is disabled by default. When disabled, a configuration file that sets
+either list is rejected, both at startup and on reload. The rules are re-read on
+every config reload, so changes take effect without restarting Prometheus.
+
+To avoid recomputing relabeling for samples already seen, decisions are
+cached per receiver. The Prometheus server exposes metrics for these caches,
+labeled with `receiver="remote_write"` or `receiver="otlp"`:
+`prometheus_api_receive_relabel_cache_entries` (current size),
+`prometheus_api_receive_relabel_cache_hits_total` (cache hits),
+`prometheus_api_receive_relabel_cache_misses_total` (cache misses), and
+`prometheus_api_receive_relabel_cache_evicted_total` (entries evicted to
+bound the cache's size).

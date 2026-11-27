@@ -367,6 +367,9 @@ func (c *flagConfig) setFeatureListOptions(logger *slog.Logger) error {
 			case "search-api":
 				c.web.EnableSearch = true
 				logger.Info("Experimental search API enabled.")
+			case "receive-relabel-configs":
+				c.web.EnableReceiveRelabelConfigs = true
+				logger.Info("Experimental receive_relabel_configs enabled. Relabeling rules will now be applied to samples ingested via the remote-write and OTLP receivers.")
 			case "metadata-default-time-range":
 				if c.metadataDefaultTimeRange <= 0 {
 					return fmt.Errorf("--web.metadata.default-time-range must be greater than 0 when metadata-default-time-range is enabled; got %s", c.metadataDefaultTimeRange)
@@ -683,7 +686,7 @@ func main() {
 	a.Flag("scrape.discovery-reload-interval", "Interval used by scrape manager to throttle target groups updates.").
 		Hidden().Default("5s").SetValue(&cfg.scrape.DiscoveryReloadInterval)
 
-	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: auto-recording-metadata, concurrent-rule-eval, created-timestamp-zero-ingestion, delayed-compaction, exemplar-storage, extra-scrape-metrics, histograms-st-encoding, memory-snapshot-on-shutdown, metadata-default-time-range, metadata-relabeling, metadata-wal-records, old-ui, openmetrics2, otlp-deltatocumulative, otlp-native-delta-ingestion, promql-binop-fill-modifiers, promql-delayed-name-removal, promql-experimental-functions, promql-native-histograms-as-classic, promql-per-step-stats, promql-unquoted-utf8-names, query-cost, search-api, st-storage, st-synthesis, type-and-unit-labels, use-start-timestamps, use-uncached-io, xor2-encoding, zstd-scrape. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
+	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: auto-recording-metadata, concurrent-rule-eval, created-timestamp-zero-ingestion, delayed-compaction, exemplar-storage, extra-scrape-metrics, histograms-st-encoding, memory-snapshot-on-shutdown, metadata-default-time-range, metadata-relabeling, metadata-wal-records, old-ui, openmetrics2, otlp-deltatocumulative, otlp-native-delta-ingestion, promql-binop-fill-modifiers, promql-delayed-name-removal, promql-experimental-functions, promql-native-histograms-as-classic, promql-per-step-stats, promql-unquoted-utf8-names, query-cost, receive-relabel-configs, search-api, st-storage, st-synthesis, type-and-unit-labels, use-start-timestamps, use-uncached-io, xor2-encoding, zstd-scrape. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
 		StringsVar(&cfg.featureList)
 
 	a.Flag("agent", "Run Prometheus in 'Agent mode'.").BoolVar(&agentMode)
@@ -1476,7 +1479,7 @@ func main() {
 				for {
 					select {
 					case <-hup:
-						if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, cfg.promslogConfig.Level, callback, reloaders...); err != nil {
+						if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, cfg.web.EnableReceiveRelabelConfigs, logger, noStepSubqueryInterval, cfg.promslogConfig.Level, callback, reloaders...); err != nil {
 							logger.Error("Error reloading config", "err", err)
 						} else if cfg.enableAutoReload {
 							checksum, err = config.GenerateChecksum(cfg.configFile)
@@ -1485,7 +1488,7 @@ func main() {
 							}
 						}
 					case rc := <-webHandler.Reload():
-						if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, cfg.promslogConfig.Level, callback, reloaders...); err != nil {
+						if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, cfg.web.EnableReceiveRelabelConfigs, logger, noStepSubqueryInterval, cfg.promslogConfig.Level, callback, reloaders...); err != nil {
 							logger.Error("Error reloading config", "err", err)
 							rc <- err
 						} else {
@@ -1510,7 +1513,7 @@ func main() {
 						}
 						logger.Info("Configuration file change detected, reloading the configuration.")
 
-						if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, cfg.promslogConfig.Level, callback, reloaders...); err != nil {
+						if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, cfg.web.EnableReceiveRelabelConfigs, logger, noStepSubqueryInterval, cfg.promslogConfig.Level, callback, reloaders...); err != nil {
 							logger.Error("Error reloading config", "err", err)
 						} else {
 							checksum = currentChecksum
@@ -1542,7 +1545,7 @@ func main() {
 					return nil
 				}
 
-				if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, cfg.promslogConfig.Level, func(bool) {}, reloaders...); err != nil {
+				if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, cfg.web.EnableReceiveRelabelConfigs, logger, noStepSubqueryInterval, cfg.promslogConfig.Level, func(bool) {}, reloaders...); err != nil {
 					return fmt.Errorf("error loading config from %q: %w", cfg.configFile, err)
 				}
 
@@ -1785,7 +1788,7 @@ type reloader struct {
 	reloader func(*config.Config) error
 }
 
-func reloadConfig(filename string, enableExemplarStorage bool, logger *slog.Logger, noStepSubqueryInterval *safePromQLNoStepSubqueryInterval, logLevel *promslog.Level, callback func(bool), rls ...reloader) (err error) {
+func reloadConfig(filename string, enableExemplarStorage, enableReceiveRelabelConfigs bool, logger *slog.Logger, noStepSubqueryInterval *safePromQLNoStepSubqueryInterval, logLevel *promslog.Level, callback func(bool), rls ...reloader) (err error) {
 	start := time.Now()
 	timingsLogger := logger
 	logger.Info("Loading configuration file", "filename", filename)
@@ -1804,6 +1807,16 @@ func reloadConfig(filename string, enableExemplarStorage bool, logger *slog.Logg
 	conf, err := config.LoadFile(filename, agentMode, logger)
 	if err != nil {
 		return fmt.Errorf("couldn't load configuration (--config.file=%q): %w", filename, err)
+	}
+	if !enableReceiveRelabelConfigs {
+		for field, rules := range map[string][]*relabel.Config{
+			"remote_write_receiver.metric_relabel_configs": conf.RemoteWriteReceiverConfig.MetricRelabelConfigs,
+			"otlp.metric_relabel_configs":                  conf.OTLPConfig.MetricRelabelConfigs,
+		} {
+			if len(rules) > 0 {
+				return fmt.Errorf("invalid configuration (--config.file=%q): %s requires --enable-feature=receive-relabel-configs", filename, field)
+			}
+		}
 	}
 
 	if enableExemplarStorage {

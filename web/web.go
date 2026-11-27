@@ -52,12 +52,14 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/template"
 	"github.com/prometheus/prometheus/util/features"
 	"github.com/prometheus/prometheus/util/httputil"
@@ -290,35 +292,36 @@ type Options struct {
 	NotificationsSub      func() (<-chan notifications.Notification, func(), bool)
 	Flags                 map[string]string
 
-	ListenAddresses            []string
-	CORSOrigin                 *regexp.Regexp
-	ReadTimeout                time.Duration
-	MaxConnections             int
-	ExternalURL                *url.URL
-	RoutePrefix                string
-	UseLocalAssets             bool
-	UserAssetsPath             string
-	ConsoleTemplatesPath       string
-	ConsoleLibrariesPath       string
-	UseOldUI                   bool
-	EnableLifecycle            bool
-	EnableAdminAPI             bool
-	EnableSearch               bool
-	EnableQueryCost            bool
-	MaxSearchLimit             int
-	MetadataDefaultTimeRange   time.Duration // Zero disables the default time range.
-	PageTitle                  string
-	RemoteReadSampleLimit      int
-	RemoteReadConcurrencyLimit int
-	RemoteReadBytesInFrame     int
-	EnableRemoteWriteReceiver  bool
-	EnableOTLPWriteReceiver    bool
-	ConvertOTLPDelta           bool
-	NativeOTLPDeltaIngestion   bool
-	IsAgent                    bool
-	EnableTypeAndUnitLabels    bool
-	AppendMetadata             bool
-	AppName                    string
+	ListenAddresses             []string
+	CORSOrigin                  *regexp.Regexp
+	ReadTimeout                 time.Duration
+	MaxConnections              int
+	ExternalURL                 *url.URL
+	RoutePrefix                 string
+	UseLocalAssets              bool
+	UserAssetsPath              string
+	ConsoleTemplatesPath        string
+	ConsoleLibrariesPath        string
+	UseOldUI                    bool
+	EnableLifecycle             bool
+	EnableAdminAPI              bool
+	EnableSearch                bool
+	EnableQueryCost             bool
+	MaxSearchLimit              int
+	MetadataDefaultTimeRange    time.Duration // Zero disables the default time range.
+	PageTitle                   string
+	RemoteReadSampleLimit       int
+	RemoteReadConcurrencyLimit  int
+	RemoteReadBytesInFrame      int
+	EnableRemoteWriteReceiver   bool
+	EnableOTLPWriteReceiver     bool
+	ConvertOTLPDelta            bool
+	NativeOTLPDeltaIngestion    bool
+	IsAgent                     bool
+	EnableTypeAndUnitLabels     bool
+	AppendMetadata              bool
+	EnableReceiveRelabelConfigs bool
+	AppName                     string
 
 	AcceptRemoteWriteProtoMsgs remoteapi.MessageTypes
 
@@ -383,9 +386,28 @@ func New(logger *slog.Logger, o *Options) *Handler {
 	factoryAr := func(context.Context) api_v1.AlertmanagerRetriever { return h.notifier }
 	FactoryRr := func(context.Context) api_v1.RulesRetriever { return h.ruleManager }
 
-	var appV2 storage.AppendableV2
+	var appV2, otlpAppV2 storage.AppendableV2
 	if o.EnableRemoteWriteReceiver || o.EnableOTLPWriteReceiver {
-		appV2 = h.storage
+		appV2, otlpAppV2 = h.storage, h.storage
+		if o.EnableReceiveRelabelConfigs {
+			relabelConfigFunc := func() config.Config {
+				h.mtx.RLock()
+				defer h.mtx.RUnlock()
+				if h.config == nil {
+					return config.Config{}
+				}
+				return *h.config
+			}
+			newCache := func(receiver string) *remote.RelabelCache {
+				return remote.NewRelabelCache(prometheus.WrapRegistererWith(prometheus.Labels{"receiver": receiver}, o.Registerer))
+			}
+			appV2 = remote.NewRelabelingAppendableV2(appV2, relabelConfigFunc,
+				func(c *config.Config) []*relabel.Config { return c.RemoteWriteReceiverConfig.MetricRelabelConfigs },
+				newCache("remote_write"))
+			otlpAppV2 = remote.NewRelabelingAppendableV2(otlpAppV2, relabelConfigFunc,
+				func(c *config.Config) []*relabel.Config { return c.OTLPConfig.MetricRelabelConfigs },
+				newCache("otlp"))
+		}
 	}
 
 	version := ""
@@ -393,7 +415,7 @@ func New(logger *slog.Logger, o *Options) *Handler {
 		version = o.Version.Version
 	}
 
-	h.apiV1 = api_v1.NewAPI(h.queryEngine, h.storage, appV2, h.exemplarStorage, factorySPr, factoryTr, factoryAr,
+	h.apiV1 = api_v1.NewAPI(h.queryEngine, h.storage, appV2, otlpAppV2, h.exemplarStorage, factorySPr, factoryTr, factoryAr,
 		func() config.Config {
 			h.mtx.RLock()
 			defer h.mtx.RUnlock()
@@ -452,6 +474,7 @@ func New(logger *slog.Logger, o *Options) *Handler {
 		r.Set(features.API, "admin", o.EnableAdminAPI)
 		r.Set(features.API, "remote_write_receiver", o.EnableRemoteWriteReceiver)
 		r.Set(features.API, "otlp_write_receiver", o.EnableOTLPWriteReceiver)
+		r.Set(features.API, "receive_relabel_configs", o.EnableReceiveRelabelConfigs)
 		r.Set(features.API, "query_cost", o.EnableQueryCost)
 		r.Set(features.API, "search", o.EnableSearch)
 		r.Set(features.API, "metadata_default_time_range", o.MetadataDefaultTimeRange > 0)
