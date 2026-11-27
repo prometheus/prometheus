@@ -525,6 +525,204 @@ func TestCheckpoint(t *testing.T) {
 	}
 }
 
+// TestCheckpoint_FilteredHistogramSamplesDoNotAlias verifies that the
+// checkpoint's in-place mint filtering does not corrupt the histogram
+// contents of subsequent records: dropping samples leaves stale, duplicated
+// pointers in the reused decode slice's spare capacity, so a later record's
+// decode could otherwise take the same histogram object for two different
+// samples (see nextHistogram in tsdb/record).
+func TestCheckpoint_FilteredHistogramSamplesDoNotAlias(t *testing.T) {
+	t.Parallel()
+	mkInt := func(i int) *histogram.Histogram {
+		return &histogram.Histogram{
+			Count:           uint64(100 + i),
+			ZeroCount:       uint64(i),
+			ZeroThreshold:   0.001,
+			Sum:             float64(i),
+			Schema:          1,
+			PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+			PositiveBuckets: []int64{int64(i)},
+		}
+	}
+	mkCustom := func(i int) *histogram.Histogram {
+		return &histogram.Histogram{
+			Count:           uint64(100 + i),
+			Sum:             float64(i),
+			Schema:          -53,
+			PositiveSpans:   []histogram.Span{{Offset: 0, Length: 4}},
+			PositiveBuckets: []int64{int64(i), 1, -1, 0},
+			CustomValues:    []float64{float64(i), float64(i) + 1, float64(i) + 2, float64(i) + 3, float64(i) + 4},
+		}
+	}
+	mkFloat := func(i int) *histogram.FloatHistogram {
+		return &histogram.FloatHistogram{
+			Count:           float64(100 + i),
+			ZeroCount:       float64(i),
+			ZeroThreshold:   0.001,
+			Sum:             float64(i),
+			Schema:          1,
+			PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+			PositiveBuckets: []float64{float64(i)},
+		}
+	}
+	mkCustomFloat := func(i int) *histogram.FloatHistogram {
+		return &histogram.FloatHistogram{
+			Count:           float64(100 + i),
+			Sum:             float64(i),
+			Schema:          -53,
+			PositiveSpans:   []histogram.Span{{Offset: 0, Length: 4}},
+			PositiveBuckets: []float64{float64(i), 1, -1, 0},
+			CustomValues:    []float64{float64(i), float64(i) + 1, float64(i) + 2, float64(i) + 3, float64(i) + 4},
+		}
+	}
+
+	const mint = int64(50)
+
+	for _, enableSTStorage := range []bool{false, true} {
+		for _, compress := range compression.Types() {
+			t.Run(fmt.Sprintf("compress=%s,stStorage=%v", compress, enableSTStorage), func(t *testing.T) {
+				dir := t.TempDir()
+				enc := record.Encoder{EnableSTStorage: enableSTStorage}
+
+				w, err := NewSize(nil, nil, dir, 128*1024, compress)
+				require.NoError(t, err)
+
+				series := make([]record.RefSeries, 16)
+				for i := range series {
+					series[i] = record.RefSeries{Ref: chunks.HeadSeriesRef(i), Labels: labels.FromStrings("a", "b", "c", strconv.Itoa(i))}
+				}
+				require.NoError(t, w.Log(enc.Series(series, nil)))
+
+				// Each record type gets a first record whose first sample is below
+				// mint (dropped by the filter) and a second record that survives
+				// the filter completely. The dropped samples force the in-place
+				// compaction to relocate the surviving pointers, which is what
+				// triggers the aliasing in the next record's decode.
+				intDropped := []record.RefHistogramSample{
+					{Ref: 0, T: 1, H: mkInt(1)},
+					{Ref: 1, T: 100, H: mkInt(2)},
+				}
+				intKept := []record.RefHistogramSample{
+					{Ref: 2, T: 101, H: mkInt(3)},
+					{Ref: 3, T: 102, H: mkInt(4)},
+				}
+				b, leftover := enc.HistogramSamples(intDropped, nil)
+				require.Empty(t, leftover)
+				require.NoError(t, w.Log(b))
+				b, leftover = enc.HistogramSamples(intKept, nil)
+				require.Empty(t, leftover)
+				require.NoError(t, w.Log(b))
+
+				customDropped := []record.RefHistogramSample{
+					{Ref: 4, T: 1, H: mkCustom(5)},
+					{Ref: 5, T: 100, H: mkCustom(6)},
+				}
+				customKept := []record.RefHistogramSample{
+					{Ref: 6, T: 101, H: mkCustom(7)},
+					{Ref: 7, T: 102, H: mkCustom(8)},
+				}
+				require.NoError(t, w.Log(enc.CustomBucketsHistogramSamples(customDropped, nil)))
+				require.NoError(t, w.Log(enc.CustomBucketsHistogramSamples(customKept, nil)))
+
+				floatDropped := []record.RefFloatHistogramSample{
+					{Ref: 8, T: 1, FH: mkFloat(9)},
+					{Ref: 9, T: 100, FH: mkFloat(10)},
+				}
+				floatKept := []record.RefFloatHistogramSample{
+					{Ref: 10, T: 101, FH: mkFloat(11)},
+					{Ref: 11, T: 102, FH: mkFloat(12)},
+				}
+				b, floatLeftover := enc.FloatHistogramSamples(floatDropped, nil)
+				require.Empty(t, floatLeftover)
+				require.NoError(t, w.Log(b))
+				b, floatLeftover = enc.FloatHistogramSamples(floatKept, nil)
+				require.Empty(t, floatLeftover)
+				require.NoError(t, w.Log(b))
+
+				customFloatDropped := []record.RefFloatHistogramSample{
+					{Ref: 12, T: 1, FH: mkCustomFloat(13)},
+					{Ref: 13, T: 100, FH: mkCustomFloat(14)},
+				}
+				customFloatKept := []record.RefFloatHistogramSample{
+					{Ref: 14, T: 101, FH: mkCustomFloat(15)},
+					{Ref: 15, T: 102, FH: mkCustomFloat(16)},
+				}
+				require.NoError(t, w.Log(enc.CustomBucketsFloatHistogramSamples(customFloatDropped, nil)))
+				require.NoError(t, w.Log(enc.CustomBucketsFloatHistogramSamples(customFloatKept, nil)))
+
+				require.NoError(t, w.Close())
+
+				first, last, err := Segments(w.Dir())
+				require.NoError(t, err)
+				stats, err := Checkpoint(promslog.NewNopLogger(), w, first, last, func(chunks.HeadSeriesRef) bool {
+					return true
+				}, mint, enableSTStorage)
+				require.NoError(t, err)
+				require.Equal(t, 16, stats.TotalSamples)
+				require.Equal(t, 4, stats.DroppedSamples)
+
+				// Read the checkpoint back and verify that every surviving sample
+				// carries its original histogram contents.
+				cpDir, _, err := LastCheckpoint(dir)
+				require.NoError(t, err)
+				sr, err := NewSegmentsReader(cpDir)
+				require.NoError(t, err)
+				t.Cleanup(func() {
+					require.NoError(t, sr.Close())
+				})
+				dec := record.NewDecoder(labels.NewSymbolTable(), promslog.NewNopLogger())
+				expectedInt := map[chunks.HeadSeriesRef]*histogram.Histogram{
+					1: mkInt(2), 2: mkInt(3), 3: mkInt(4),
+					5: mkCustom(6), 6: mkCustom(7), 7: mkCustom(8),
+				}
+				expectedFloat := map[chunks.HeadSeriesRef]*histogram.FloatHistogram{
+					9: mkFloat(10), 10: mkFloat(11), 11: mkFloat(12),
+					13: mkCustomFloat(14), 14: mkCustomFloat(15), 15: mkCustomFloat(16),
+				}
+
+				r := NewReader(sr)
+				require.True(t, r.Next())
+				require.Equal(t, record.MinValidTime, dec.Type(r.Record()))
+				for r.Next() {
+					rec := r.Record()
+					switch dec.Type(rec) {
+					case record.HistogramSamples, record.CustomBucketsHistogramSamples, record.HistogramSamplesV2:
+						hs, err := dec.HistogramSamples(rec, nil)
+						require.NoError(t, err)
+						for _, s := range hs {
+							exp, ok := expectedInt[s.Ref]
+							require.True(t, ok, "unexpected histogram sample for series ref %d", s.Ref)
+							require.Equal(t, exp, s.H, "histogram sample for series ref %d has wrong contents", s.Ref)
+							// Consume the entry so the final check asserts that every
+							// surviving sample appears in the checkpoint exactly once,
+							// and that none was dropped or duplicated.
+							delete(expectedInt, s.Ref)
+						}
+					case record.FloatHistogramSamples, record.CustomBucketsFloatHistogramSamples, record.FloatHistogramSamplesV2:
+						fhs, err := dec.FloatHistogramSamples(rec, nil)
+						require.NoError(t, err)
+						for _, s := range fhs {
+							exp, ok := expectedFloat[s.Ref]
+							require.True(t, ok, "unexpected float histogram sample for series ref %d", s.Ref)
+							require.Equal(t, exp, s.FH, "float histogram sample for series ref %d has wrong contents", s.Ref)
+							delete(expectedFloat, s.Ref)
+						}
+					case record.Series:
+						// Covered by TestCheckpoint.
+					default:
+						t.Fatalf("unexpected record type %v in checkpoint", dec.Type(rec))
+					}
+				}
+				require.NoError(t, r.Err())
+				// Every surviving sample must have appeared exactly once: dropping
+				// or duplicating samples must not masquerade as a fix.
+				require.Empty(t, expectedInt, "histogram samples missing from the checkpoint")
+				require.Empty(t, expectedFloat, "float histogram samples missing from the checkpoint")
+			})
+		}
+	}
+}
+
 // TestCheckpointMetadataAcrossBatches checkpoints more series than a single
 // metadata record covers, so the metadata is written as several records.
 func TestCheckpointMetadataAcrossBatches(t *testing.T) {
