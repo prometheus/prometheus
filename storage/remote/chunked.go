@@ -104,8 +104,8 @@ func NewChunkedReader(r io.Reader, sizeLimit uint64, data []byte) *ChunkedReader
 }
 
 // Next returns the next length-delimited record from the input, or io.EOF if
-// there are no more records available. Returns io.ErrUnexpectedEOF if a short
-// record is found, with a length of n but fewer than n bytes of data.
+// there are no more records available. Returns io.ErrUnexpectedEOF if a record
+// is truncated mid-frame (in its length prefix, checksum, or payload).
 // Next also verifies the given checksum with Castagnoli polynomial CRC-32 checksum.
 //
 // NOTE: The slice returned is valid only until a subsequent call to Next. It's a caller's responsibility to copy the
@@ -128,11 +128,17 @@ func (r *ChunkedReader) Next() ([]byte, error) {
 
 	var crc32 uint32
 	if err := binary.Read(r.b, binary.BigEndian, &crc32); err != nil {
+		if errors.Is(err, io.EOF) {
+			return nil, io.ErrUnexpectedEOF
+		}
 		return nil, err
 	}
 
 	r.crc32.Reset()
 	if _, err := io.ReadFull(io.TeeReader(r.b, r.crc32), r.data); err != nil {
+		if errors.Is(err, io.EOF) {
+			return nil, io.ErrUnexpectedEOF
+		}
 		return nil, err
 	}
 
