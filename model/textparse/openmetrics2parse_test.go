@@ -1170,6 +1170,12 @@ foo_total 1.0 # {id="x"} 1.0
 			err:   "gcount must not be negative",
 		},
 		{
+			// NaN count must be rejected on the native histogram path too,
+			// as it is for summary and classic histogram samples.
+			input: "# TYPE foo histogram\nfoo {count:NaN,sum:1,schema:0,zero_threshold:0,zero_count:0,positive_spans:[0:1],positive_buckets:[1]}\n# EOF\n",
+			err:   "count must not be negative or NaN",
+		},
+		{
 			input: "# TYPE foo histogram\nfoo {count:1,sum:1.0,schema:0,zero_threshold:0,zero_count:-1}\n# EOF\n",
 			err:   "zero_count must not be negative",
 		},

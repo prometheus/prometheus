@@ -1207,8 +1207,8 @@ func buildNativeHistogram(cf compositeFields, isGauge bool) (*histogram.Histogra
 	// The spec does permit a negative gcount, but neither histogram type can
 	// hold one: Count is a uint64 in the integer form, and Validate rejects a
 	// negative count in the float form.
-	if count < 0 {
-		return nil, nil, fmt.Errorf("%s must not be negative, got %v", countKey, count)
+	if math.IsNaN(count) || count < 0 {
+		return nil, nil, fmt.Errorf("%s must not be negative or NaN, got %v", countKey, count)
 	}
 	sum, ok, err := getFloat(sumField)
 	if err != nil {
