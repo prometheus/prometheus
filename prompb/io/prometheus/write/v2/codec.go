@@ -50,10 +50,10 @@ func (m TimeSeries) ToMetadata(symbols []string) (metadata.Metadata, error) {
 	case Metadata_METRIC_TYPE_STATESET:
 		typ = model.MetricTypeStateset
 	}
-	if int(m.Metadata.UnitRef) >= len(symbols) {
+	if uint64(m.Metadata.UnitRef) >= uint64(len(symbols)) {
 		return metadata.Metadata{}, fmt.Errorf("metadata unit_ref %d outside of symbols table (size %d)", m.Metadata.UnitRef, len(symbols))
 	}
-	if int(m.Metadata.HelpRef) >= len(symbols) {
+	if uint64(m.Metadata.HelpRef) >= uint64(len(symbols)) {
 		return metadata.Metadata{}, fmt.Errorf("metadata help_ref %d outside of symbols table (size %d)", m.Metadata.HelpRef, len(symbols))
 	}
 	return metadata.Metadata{
