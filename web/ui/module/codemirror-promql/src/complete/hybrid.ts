@@ -130,6 +130,8 @@ export interface Context {
   metricName?: string;
   labelName?: string;
   matchers?: Matcher[];
+  // The quote character that opens the label value string (' or `), when it isn't ".
+  quote?: string;
 }
 
 function getMetricNameInGroupBy(tree: SyntaxNode, state: EditorState): string {
@@ -182,15 +184,17 @@ function arrayToCompletionResult(data: Completion[], from: number, to: number, i
   } as CompletionResult;
 }
 
-function escapePromQLString(str: string): string {
-  // PromQL only evaluates escape sequences in single- and double-quoted strings.
-  // Backtick-quoted string completions are not handled separately today, so keep
-  // the inserted value escaped unconditionally. A raw line break would end the
-  // string literal with a syntax error, so line breaks are escaped as well.
-  return str
-    .replace(/([\\"])/g, '\\$1')
-    .replace(/\n/g, '\\n')
-    .replace(/\r/g, '\\r');
+function escapePromQLString(str: string, quote = '"'): string {
+  // PromQL doesn't evaluate escape sequences in backtick-quoted (raw) strings, so the value
+  // is inserted as it is.
+  if (quote === '`') {
+    return str;
+  }
+  // In single- and double-quoted strings, escape backslashes and the quote character that
+  // delimits the string. A raw line break would end the string literal with a syntax error,
+  // so line breaks are escaped as well.
+  const specialChars = quote === "'" ? /([\\'])/g : /([\\"])/g;
+  return str.replace(specialChars, '\\$1').replace(/\n/g, '\\n').replace(/\r/g, '\\r');
 }
 
 function isAfterClosedFunctionCallBody(state: EditorState, node: SyntaxNode, pos: number): boolean {
@@ -592,11 +596,14 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode, pos: num
         for (const labelMatcherOpt of labelMatcherOpts) {
           labelMatchers = labelMatchers.concat(buildLabelMatchers(matcherNode ? matcherNode.getChildren(labelMatcherOpt) : [], state));
         }
+        // The inserted value must be escaped for the kind of string the user opened.
+        const quote = state.sliceDoc(node.from, node.from + 1);
         result.push({
           kind: ContextKind.LabelValue,
           metricName: metricName,
           labelName: labelName,
           matchers: labelMatchers,
+          ...(quote === "'" || quote === '`' ? { quote } : {}),
         });
       } else if (node.parent?.parent?.type.id === GroupingLabels) {
         // In this case we are in the given situation:
@@ -929,7 +936,7 @@ export class HybridComplete implements CompleteStrategy {
       return result;
     }
     return this.prometheusClient.labelValues(context.labelName, context.metricName, context.matchers).then((labelValues: string[]) => {
-      return result.concat(labelValues.map((value) => ({ label: value, apply: escapePromQLString(value), type: 'text' })));
+      return result.concat(labelValues.map((value) => ({ label: value, apply: escapePromQLString(value, context.quote), type: 'text' })));
     });
   }
 }

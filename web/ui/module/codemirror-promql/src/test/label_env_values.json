@@ -4,6 +4,7 @@
     "demo",
     "\\x2d",
     "quoted\"value",
-    "multi\nline"
+    "multi\nline",
+    "it's"
   ]
 }

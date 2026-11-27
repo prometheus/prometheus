@@ -1809,6 +1809,87 @@ describe('autocomplete promQL test', () => {
             apply: 'multi\\nline',
             type: 'text',
           },
+          {
+            label: "it's",
+            apply: "it's",
+            type: 'text',
+          },
+        ],
+        from: 25,
+        to: 25,
+        validFor: /^[\p{L}0-9_:.]+$/u,
+      },
+    },
+    {
+      title: 'online autocomplete of label value in a single-quoted string',
+      expr: "alertmanager_alerts{env=''}",
+      pos: 25,
+      conf: { remote: { url: 'http://localhost:8080' } },
+      expectedResult: {
+        options: [
+          {
+            label: 'demo',
+            apply: 'demo',
+            type: 'text',
+          },
+          {
+            label: '\\x2d',
+            apply: '\\\\x2d',
+            type: 'text',
+          },
+          {
+            label: 'quoted"value',
+            apply: 'quoted"value',
+            type: 'text',
+          },
+          {
+            label: 'multi\nline',
+            apply: 'multi\\nline',
+            type: 'text',
+          },
+          {
+            label: "it's",
+            apply: "it\\'s",
+            type: 'text',
+          },
+        ],
+        from: 25,
+        to: 25,
+        validFor: /^[\p{L}0-9_:.]+$/u,
+      },
+    },
+    {
+      title: 'online autocomplete of label value in a raw string',
+      expr: 'alertmanager_alerts{env=``}',
+      pos: 25,
+      conf: { remote: { url: 'http://localhost:8080' } },
+      expectedResult: {
+        options: [
+          {
+            label: 'demo',
+            apply: 'demo',
+            type: 'text',
+          },
+          {
+            label: '\\x2d',
+            apply: '\\x2d',
+            type: 'text',
+          },
+          {
+            label: 'quoted"value',
+            apply: 'quoted"value',
+            type: 'text',
+          },
+          {
+            label: 'multi\nline',
+            apply: 'multi\nline',
+            type: 'text',
+          },
+          {
+            label: "it's",
+            apply: "it's",
+            type: 'text',
+          },
         ],
         from: 25,
         to: 25,
