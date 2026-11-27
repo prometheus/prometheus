@@ -543,8 +543,8 @@ syntax as scrape-time `metric_relabel_configs`. A series dropped by these rules
 (e.g. via `action: drop`), or left invalid (e.g. missing `__name__`), is
 discarded before it reaches storage.
 
-This is disabled by default and, when disabled, `receive_relabel_configs` in the
-config file has no effect. The rules are re-read on every config reload, so
+This is disabled by default. When disabled, a configuration file that sets
+`receive_relabel_configs` is rejected, both at startup and on reload. The rules are re-read on every config reload, so
 changes take effect without restarting Prometheus.
 
 To avoid recomputing relabeling for samples already seen, decisions are

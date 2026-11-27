@@ -1479,7 +1479,7 @@ func main() {
 				for {
 					select {
 					case <-hup:
-						if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, cfg.promslogConfig.Level, callback, reloaders...); err != nil {
+						if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, cfg.web.EnableReceiveRelabelConfigs, logger, noStepSubqueryInterval, cfg.promslogConfig.Level, callback, reloaders...); err != nil {
 							logger.Error("Error reloading config", "err", err)
 						} else if cfg.enableAutoReload {
 							checksum, err = config.GenerateChecksum(cfg.configFile)
@@ -1488,7 +1488,7 @@ func main() {
 							}
 						}
 					case rc := <-webHandler.Reload():
-						if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, cfg.promslogConfig.Level, callback, reloaders...); err != nil {
+						if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, cfg.web.EnableReceiveRelabelConfigs, logger, noStepSubqueryInterval, cfg.promslogConfig.Level, callback, reloaders...); err != nil {
 							logger.Error("Error reloading config", "err", err)
 							rc <- err
 						} else {
@@ -1513,7 +1513,7 @@ func main() {
 						}
 						logger.Info("Configuration file change detected, reloading the configuration.")
 
-						if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, cfg.promslogConfig.Level, callback, reloaders...); err != nil {
+						if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, cfg.web.EnableReceiveRelabelConfigs, logger, noStepSubqueryInterval, cfg.promslogConfig.Level, callback, reloaders...); err != nil {
 							logger.Error("Error reloading config", "err", err)
 						} else {
 							checksum = currentChecksum
@@ -1545,7 +1545,7 @@ func main() {
 					return nil
 				}
 
-				if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, cfg.promslogConfig.Level, func(bool) {}, reloaders...); err != nil {
+				if err := reloadConfig(cfg.configFile, cfg.tsdb.EnableExemplarStorage, cfg.web.EnableReceiveRelabelConfigs, logger, noStepSubqueryInterval, cfg.promslogConfig.Level, func(bool) {}, reloaders...); err != nil {
 					return fmt.Errorf("error loading config from %q: %w", cfg.configFile, err)
 				}
 
@@ -1788,7 +1788,7 @@ type reloader struct {
 	reloader func(*config.Config) error
 }
 
-func reloadConfig(filename string, enableExemplarStorage bool, logger *slog.Logger, noStepSubqueryInterval *safePromQLNoStepSubqueryInterval, logLevel *promslog.Level, callback func(bool), rls ...reloader) (err error) {
+func reloadConfig(filename string, enableExemplarStorage, enableReceiveRelabelConfigs bool, logger *slog.Logger, noStepSubqueryInterval *safePromQLNoStepSubqueryInterval, logLevel *promslog.Level, callback func(bool), rls ...reloader) (err error) {
 	start := time.Now()
 	timingsLogger := logger
 	logger.Info("Loading configuration file", "filename", filename)
@@ -1807,6 +1807,9 @@ func reloadConfig(filename string, enableExemplarStorage bool, logger *slog.Logg
 	conf, err := config.LoadFile(filename, agentMode, logger)
 	if err != nil {
 		return fmt.Errorf("couldn't load configuration (--config.file=%q): %w", filename, err)
+	}
+	if len(conf.ReceiveRelabelConfigs) > 0 && !enableReceiveRelabelConfigs {
+		return fmt.Errorf("invalid configuration (--config.file=%q): receive_relabel_configs requires --enable-feature=receive-relabel-configs", filename)
 	}
 
 	if enableExemplarStorage {
