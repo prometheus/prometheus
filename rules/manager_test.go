@@ -1151,79 +1151,120 @@ func TestNotify(t *testing.T) {
 }
 
 func TestMetricsUpdate(t *testing.T) {
-	files := []string{"fixtures/rules.yaml", "fixtures/rules2.yaml"}
-	metricNames := []string{
-		"prometheus_rule_evaluations_total",
-		"prometheus_rule_evaluation_failures_total",
-		"prometheus_rule_group_interval_seconds",
-		"prometheus_rule_group_last_duration_seconds",
-		"prometheus_rule_group_last_rule_duration_sum_seconds",
-		"prometheus_rule_group_last_evaluation_timestamp_seconds",
-		"prometheus_rule_group_rules",
-	}
-
-	storage := teststorage.New(t)
-
-	registry := prometheus.NewRegistry()
-	opts := promql.EngineOpts{
-		Logger:     nil,
-		Reg:        nil,
-		MaxSamples: 10,
-		Timeout:    10 * time.Second,
-	}
-	engine := promqltest.NewTestEngineWithOpts(t, opts)
-	ruleManager := NewManager(&ManagerOptions{
-		AppendableV2: storage,
-		Queryable:    storage,
-		QueryFunc:    EngineQueryFunc(engine, storage),
-		Context:      context.Background(),
-		Logger:       promslog.NewNopLogger(),
-		Registerer:   registry,
-	})
-	ruleManager.start()
-	defer ruleManager.Stop()
-
-	countMetrics := func() int {
-		ms, err := registry.Gather()
-		require.NoError(t, err)
-		var metrics int
-		for _, m := range ms {
-			s := m.GetName()
-			if slices.Contains(metricNames, s) {
-				metrics += len(m.Metric)
-			}
+	synctest.Test(t, func(t *testing.T) {
+		files := []string{"fixtures/rules.yaml", "fixtures/rules2.yaml"}
+		metricNames := []string{
+			"prometheus_rule_evaluations_total",
+			"prometheus_rule_evaluation_failures_total",
+			"prometheus_rule_group_interval_seconds",
+			"prometheus_rule_group_iterations_missed_total",
+			"prometheus_rule_group_iterations_total",
+			"prometheus_rule_group_last_duration_seconds",
+			"prometheus_rule_group_last_rule_duration_sum_seconds",
+			"prometheus_rule_group_last_evaluation_samples",
+			"prometheus_rule_group_last_evaluation_timestamp_seconds",
+			"prometheus_rule_group_last_restore_duration_seconds",
+			"prometheus_rule_group_rules",
 		}
-		return metrics
-	}
 
-	cases := []struct {
-		files   []string
-		metrics int
-	}{
-		{
-			files:   files,
-			metrics: 14,
-		},
-		{
-			files:   files[:1],
-			metrics: 7,
-		},
-		{
-			files:   files[:0],
-			metrics: 0,
-		},
-		{
-			files:   files[1:],
-			metrics: 7,
-		},
-	}
+		storage := teststorage.New(t)
 
-	for i, c := range cases {
-		err := ruleManager.Update(time.Second, c.files, labels.EmptyLabels(), "", nil)
-		require.NoError(t, err)
-		time.Sleep(2 * time.Second)
-		require.Equal(t, c.metrics, countMetrics(), "test %d: invalid count of metrics", i)
-	}
+		registry := prometheus.NewRegistry()
+		opts := promql.EngineOpts{
+			Logger:     nil,
+			Reg:        nil,
+			MaxSamples: 10,
+			Timeout:    10 * time.Second,
+		}
+		engine := promqltest.NewTestEngineWithOpts(t, opts)
+		ruleManager := NewManager(&ManagerOptions{
+			AppendableV2: storage,
+			Queryable:    storage,
+			QueryFunc:    EngineQueryFunc(engine, storage),
+			Context:      context.Background(),
+			Logger:       promslog.NewNopLogger(),
+			Registerer:   registry,
+		})
+		ruleManager.start()
+		defer ruleManager.Stop()
+
+		countMetrics := func() int {
+			ms, err := registry.Gather()
+			require.NoError(t, err)
+			var metrics int
+			for _, m := range ms {
+				s := m.GetName()
+				if slices.Contains(metricNames, s) {
+					metrics += len(m.Metric)
+				}
+			}
+			return metrics
+		}
+
+		cases := []struct {
+			files []string
+			// The keys in unload replace an update with files.
+			unload   []string
+			unloaded int
+			metrics  int
+		}{
+			{
+				files:   files,
+				metrics: 22,
+			},
+			{
+				files:   files[:1],
+				metrics: 11,
+			},
+			{
+				files:   files[:0],
+				metrics: 0,
+			},
+			{
+				// The test does not set RestoreNewRuleGroups. So only a group that the first Update loads
+				// runs the for-state restore and has a restore duration series. A group that a later Update
+				// loads has one series less.
+				files:   files[1:],
+				metrics: 10,
+			},
+			{
+				files:   files,
+				metrics: 20,
+			},
+			{
+				// Unloading one group should delete only its metrics. UnloadGroups should ignore a
+				// duplicate key and an unknown key.
+				unload:   []string{GroupKey("fixtures/rules.yaml", "test"), GroupKey("fixtures/rules.yaml", "test"), "unknown"},
+				unloaded: 1,
+				metrics:  10,
+			},
+			{
+				unload:   []string{GroupKey("fixtures/rules2.yaml", "test_2")},
+				unloaded: 1,
+				metrics:  0,
+			},
+			{
+				files:   files,
+				metrics: 20,
+			},
+			{
+				unload:   []string{GroupKey("fixtures/rules.yaml", "test"), GroupKey("fixtures/rules2.yaml", "test_2")},
+				unloaded: 2,
+				metrics:  0,
+			},
+		}
+
+		for i, c := range cases {
+			if c.unload != nil {
+				require.Equal(t, c.unloaded, ruleManager.UnloadGroups(c.unload...), "test %d: invalid count of unloaded groups", i)
+			} else {
+				err := ruleManager.Update(time.Second, c.files, labels.EmptyLabels(), "", nil)
+				require.NoError(t, err)
+			}
+			time.Sleep(2 * time.Second)
+			require.Equal(t, c.metrics, countMetrics(), "test %d: invalid count of metrics", i)
+		}
+	})
 }
 
 func TestGroupStalenessOnRemoval(t *testing.T) {
@@ -1232,77 +1273,153 @@ func TestGroupStalenessOnRemoval(t *testing.T) {
 		t.Skip("skipping test in short mode.")
 	}
 
-	files := []string{"fixtures/rules2.yaml"}
-	sameFiles := []string{"fixtures/rules2_copy.yaml"}
+	synctest.Test(t, func(t *testing.T) {
+		files := []string{"fixtures/rules2.yaml"}
+		sameFiles := []string{"fixtures/rules2_copy.yaml"}
 
-	storage := teststorage.New(t)
+		storage := teststorage.New(t)
 
-	opts := promql.EngineOpts{
-		Logger:     nil,
-		Reg:        nil,
-		MaxSamples: 10,
-		Timeout:    10 * time.Second,
-	}
-	engine := promqltest.NewTestEngineWithOpts(t, opts)
-	ruleManager := NewManager(&ManagerOptions{
-		AppendableV2: storage,
-		Queryable:    storage,
-		QueryFunc:    EngineQueryFunc(engine, storage),
-		Context:      context.Background(),
-		Logger:       promslog.NewNopLogger(),
-	})
-	var stopped bool
-	ruleManager.start()
-	defer func() {
-		if !stopped {
-			ruleManager.Stop()
+		opts := promql.EngineOpts{
+			Logger:     nil,
+			Reg:        nil,
+			MaxSamples: 10,
+			Timeout:    10 * time.Second,
 		}
-	}()
+		engine := promqltest.NewTestEngineWithOpts(t, opts)
+		ruleManager := NewManager(&ManagerOptions{
+			AppendableV2: storage,
+			Queryable:    storage,
+			QueryFunc:    EngineQueryFunc(engine, storage),
+			Context:      context.Background(),
+			Logger:       promslog.NewNopLogger(),
+		})
+		var stopped bool
+		ruleManager.start()
+		defer func() {
+			if !stopped {
+				ruleManager.Stop()
+			}
+		}()
 
-	cases := []struct {
-		files    []string
-		staleNaN int
-	}{
-		{
-			files:    files,
-			staleNaN: 0,
-		},
-		{
-			// When we remove the files, it should produce a staleness marker.
-			files:    files[:0],
-			staleNaN: 1,
-		},
-		{
-			// Rules that produce the same metrics but in a different file
-			// should not produce staleness marker.
-			files:    sameFiles,
-			staleNaN: 0,
-		},
-		{
-			// Staleness marker should be present as we don't have any rules
-			// loaded anymore.
-			files:    files[:0],
-			staleNaN: 1,
-		},
-		{
-			// Add rules back so we have rules loaded when we stop the manager
-			// and check for the absence of staleness markers.
-			files:    sameFiles,
-			staleNaN: 0,
-		},
-	}
+		cases := []struct {
+			files []string
+			// The keys in unload replace an update with files.
+			unload   []string
+			staleNaN int
+		}{
+			{
+				files:    files,
+				staleNaN: 0,
+			},
+			{
+				// When we remove the files, it should produce a staleness marker.
+				files:    files[:0],
+				staleNaN: 1,
+			},
+			{
+				// Rules that produce the same metrics but in a different file
+				// should not produce staleness marker.
+				files:    sameFiles,
+				staleNaN: 0,
+			},
+			{
+				// Staleness marker should be present as we don't have any rules
+				// loaded anymore.
+				files:    files[:0],
+				staleNaN: 1,
+			},
+			{
+				// Load the groups again. The next case unloads them.
+				files:    files,
+				staleNaN: 0,
+			},
+			{
+				// Unloading the groups stands for a hand-off to another evaluator. So it should not
+				// produce staleness markers.
+				unload:   []string{GroupKey("fixtures/rules2.yaml", "test_2")},
+				staleNaN: 0,
+			},
+			{
+				// The groups are unloaded already. So removing the files should not produce
+				// staleness markers.
+				files:    files[:0],
+				staleNaN: 0,
+			},
+			{
+				// Loading the same groups again stands for a move back to this evaluator.
+				files:    files,
+				staleNaN: 0,
+			},
+			{
+				// The groups that are loaded again should produce a staleness marker on removal.
+				files:    files[:0],
+				staleNaN: 1,
+			},
+			{
+				// Add rules back so we have rules loaded when we stop the manager
+				// and check for the absence of staleness markers.
+				files:    sameFiles,
+				staleNaN: 0,
+			},
+		}
 
-	var totalStaleNaN int
-	for i, c := range cases {
-		err := ruleManager.Update(time.Second, c.files, labels.EmptyLabels(), "", nil)
-		require.NoError(t, err)
-		time.Sleep(3 * time.Second)
-		totalStaleNaN += c.staleNaN
-		require.Equal(t, totalStaleNaN, countStaleNaN(t, storage), "test %d/%q: invalid count of staleness markers", i, c.files)
-	}
-	ruleManager.Stop()
-	stopped = true
-	require.Equal(t, totalStaleNaN, countStaleNaN(t, storage), "invalid count of staleness markers after stopping the engine")
+		var totalStaleNaN int
+		for i, c := range cases {
+			if c.unload != nil {
+				require.Equal(t, len(c.unload), ruleManager.UnloadGroups(c.unload...), "test %d: invalid count of unloaded groups", i)
+			} else {
+				err := ruleManager.Update(time.Second, c.files, labels.EmptyLabels(), "", nil)
+				require.NoError(t, err)
+			}
+			time.Sleep(3 * time.Second)
+			totalStaleNaN += c.staleNaN
+			require.Equal(t, totalStaleNaN, countStaleNaN(t, storage), "test %d/%q: invalid count of staleness markers", i, c.files)
+		}
+		ruleManager.Stop()
+		stopped = true
+		require.Equal(t, totalStaleNaN, countStaleNaN(t, storage), "invalid count of staleness markers after stopping the engine")
+
+		// Unloading groups from a stopped manager should do nothing.
+		require.Zero(t, ruleManager.UnloadGroups(GroupKey("fixtures/rules2_copy.yaml", "test_2 copy")))
+		require.Len(t, ruleManager.RuleGroups(), 1)
+	})
+}
+
+func TestUnloadGroupsWaitsForGroupStop(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		evaluating := make(chan struct{}, 10)
+		release := make(chan struct{})
+		storage := teststorage.New(t)
+		ruleManager := NewManager(&ManagerOptions{
+			AppendableV2: storage,
+			Queryable:    storage,
+			QueryFunc: func(context.Context, string, time.Time) (promql.Vector, error) {
+				evaluating <- struct{}{}
+				<-release
+				return promql.Vector{}, nil
+			},
+			Context: context.Background(),
+			Logger:  promslog.NewNopLogger(),
+		})
+		ruleManager.start()
+		defer ruleManager.Stop()
+
+		require.NoError(t, ruleManager.Update(time.Second, []string{"fixtures/rules.yaml"}, labels.EmptyLabels(), "", nil))
+		<-evaluating
+
+		unloaded := make(chan int, 1)
+		go func() {
+			unloaded <- ruleManager.UnloadGroups(GroupKey("fixtures/rules.yaml", "test"))
+		}()
+		// The group waits in a query. So UnloadGroups should not return yet.
+		synctest.Wait()
+		if len(unloaded) != 0 {
+			t.Error("UnloadGroups returned before the group stopped")
+		}
+
+		close(release)
+		require.Equal(t, 1, <-unloaded)
+	})
 }
 
 func TestMetricsStalenessOnManagerShutdown(t *testing.T) {
