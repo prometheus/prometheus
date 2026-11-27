@@ -165,6 +165,36 @@ func mockServer(code int, body string) (*httptest.Server, func() *http.Request) 
 	return server, f
 }
 
+func TestDebugWrite(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name   string
+		code   int
+		errMsg string
+	}{
+		{name: "ok", code: http.StatusOK},
+		{name: "service unavailable", code: http.StatusServiceUnavailable, errMsg: `unexpected HTTP status "503 Service Unavailable"`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			s, _ := mockServer(tc.code, "body")
+			defer s.Close()
+
+			err := debugWrite(debugWriterConfig{
+				serverURL:      s.URL,
+				tarballName:    filepath.Join(t.TempDir(), "debug.tar.gz"),
+				endPointGroups: metricsEndpoints,
+			})
+			if tc.errMsg == "" {
+				require.NoError(t, err)
+				return
+			}
+			require.ErrorContains(t, err, tc.errMsg)
+		})
+	}
+}
+
 func TestCheckSDFile(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
