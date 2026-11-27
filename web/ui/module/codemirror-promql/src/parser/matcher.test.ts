@@ -11,8 +11,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { EqlRegex, EqlSingle, Neq, NeqRegex } from '@prometheus-io/lezer-promql';
-import { labelMatchersToString } from './matcher';
+import { EqlRegex, EqlSingle, LabelMatchers, Neq, NeqRegex, QuotedLabelMatcher, UnquotedLabelMatcher } from '@prometheus-io/lezer-promql';
+import { syntaxTree } from '@codemirror/language';
+import { buildLabelMatchers, labelMatchersToString } from './matcher';
+import { createEditorState } from '../test/utils-test';
 import { Matcher } from '../types';
 
 describe('labelMatchersToString test', () => {
@@ -131,6 +133,31 @@ describe('labelMatchersToString test', () => {
   testCases.forEach((value) => {
     it(value.title, () => {
       expect(labelMatchersToString(value.metricName, value.matchers, value.labelName)).toEqual(value.result);
+    });
+  });
+});
+
+describe('buildLabelMatchers test', () => {
+  const testCases = [
+    { expr: 'foo{a="x\\"y"}', result: 'foo{a="x\\"y"}' },
+    { expr: `foo{a='x"y'}`, result: 'foo{a="x\\"y"}' },
+    { expr: "foo{a='it\\'s'}", result: `foo{a="it's"}` },
+    { expr: "foo{a=~'x\\\\.y'}", result: 'foo{a=~"x\\\\.y"}' },
+    { expr: 'foo{a=`C:\\dir`}', result: 'foo{a="C:\\\\dir"}' },
+    { expr: 'foo{a=~`x\\."y"`}', result: 'foo{a=~"x\\\\.\\"y\\""}' },
+    { expr: 'foo{a=`line1\nline2`}', result: 'foo{a="line1\\nline2"}' },
+  ];
+
+  testCases.forEach((value) => {
+    it(value.expr, () => {
+      const state = createEditorState(value.expr);
+      const node = syntaxTree(state).topNode.firstChild?.getChild(LabelMatchers);
+      expect(node).toBeTruthy();
+      const matchers = buildLabelMatchers(
+        [...(node?.getChildren(QuotedLabelMatcher) ?? []), ...(node?.getChildren(UnquotedLabelMatcher) ?? [])],
+        state
+      );
+      expect(labelMatchersToString('foo', matchers)).toEqual(value.result);
     });
   });
 });
