@@ -55,30 +55,51 @@ func TestAnnotations_AsStrings(t *testing.T) {
 		"PromQL info: ignored histogram in sum aggregation (1:4)",
 		`PromQL info: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile) for metric name "series_1", from buckets 2.5 to 100, with a max diff of 10, over 3 samples from 2023-12-25T00:00:00Z to 2024-12-25T00:00:00Z (1:4)`,
 	})
+
+	// Rendering doesn't change the annotations, so an annotation that is added after AsStrings
+	// still merges with the earlier ones.
+	annos.Add(NewHistogramQuantileForcedMonotonicityInfo("series_1", pos, 1733011200000, 2.5, 75, 7.5))
+	_, infos = annos.AsStrings("lorem ipsum dolor sit amet", 0, 0)
+	require.ElementsMatch(t, infos, []string{
+		"PromQL info: ignored histogram in sum aggregation (1:4)",
+		`PromQL info: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile) for metric name "series_1", from buckets 2.5 to 100, with a max diff of 10, over 4 samples from 2023-12-25T00:00:00Z to 2024-12-25T00:00:00Z (1:4)`,
+	})
+
+	// Without a query, annotations are rendered as their raw messages, without details or positions.
+	warnings, infos = annos.AsStrings("", 0, 0)
+	require.ElementsMatch(t, warnings, []string{
+		"this is a non-annotation error",
+		"PromQL warning: ratio value should be between -1 and 1, got 1.1, capping to 100",
+		"PromQL warning: ratio value should be between -1 and 1, got 1.2, capping to 123",
+		"PromQL warning: custom value set to 1.5",
+	})
+	require.ElementsMatch(t, infos, []string{
+		"PromQL info: ignored histogram in sum aggregation",
+		`PromQL info: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile) for metric name "series_1"`,
+	})
 }
 
 type testCustomError struct {
 	PositionRange posrange.PositionRange
 	Err           error
-	Query         string
 	Min           []float64
 	Max           []float64
 	Count         int
 }
 
 func (e *testCustomError) Error() string {
-	if e.Query == "" {
+	return e.Err.Error()
+}
+
+func (e *testCustomError) Render(query string) string {
+	if query == "" {
 		return e.Err.Error()
 	}
-	return fmt.Sprintf("%s, %d instances with smallest %g and biggest %g (%s)", e.Err, e.Count+1, e.Min[0], e.Max[0], e.PositionRange.StartPosInput(e.Query, 0))
+	return fmt.Sprintf("%s, %d instances with smallest %g and biggest %g", e.Err, e.Count+1, e.Min[0], e.Max[0]) + renderPosition(e.PositionRange, query)
 }
 
 func (e *testCustomError) Unwrap() error {
 	return e.Err
-}
-
-func (e *testCustomError) SetQuery(query string) {
-	e.Query = query
 }
 
 func (e *testCustomError) Merge(other error) error {
