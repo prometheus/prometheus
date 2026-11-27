@@ -44,13 +44,23 @@ type ClassicSeriesCache struct {
 	customValues []float64
 	leStrings    []string
 
-	bucketLabels    []labels.Labels // len(customValues)+1; last entry is the +Inf bucket.
+	bucketLabels    []labels.Labels // len(customValues)+1; empty entries are rejected; last entry is +Inf.
+	bucketFilter    func(string) bool
 	haveBuckets     bool
 	countLabels     labels.Labels
 	haveCount       bool
 	sumLabels       labels.Labels
 	haveSum         bool
 	positiveBuckets []float64
+}
+
+// SetBucketFilter restricts bucket emission to formatted le values accepted by filter.
+// A nil filter accepts all buckets. Count and sum series are not filtered.
+// The filter must give the same result until the next SetBucketFilter call,
+// which invalidates the cached bucket labels.
+func (c *ClassicSeriesCache) SetBucketFilter(filter func(string) bool) {
+	c.bucketFilter = filter
+	c.haveBuckets = false
 }
 
 // prepare updates the cache for lset and baseName, preserving reusable
@@ -262,25 +272,36 @@ func ConvertNHCBToClassic(nhcb any, lset labels.Labels, lsetBuilder *labels.Buil
 			}
 			lsetBuilder.Reset(lset)
 			lsetBuilder.Set(model.MetricNameLabel, cache.bucketName)
-			for i, leStr := range cache.leStrings {
+			for i := range nBuckets {
+				leStr := "+Inf"
+				if i < len(cache.leStrings) {
+					leStr = cache.leStrings[i]
+				}
+				if cache.bucketFilter != nil && !cache.bucketFilter(leStr) {
+					cache.bucketLabels[i] = labels.EmptyLabels()
+					continue
+				}
 				lsetBuilder.Set(model.BucketLabel, leStr)
 				cache.bucketLabels[i] = lsetBuilder.Labels()
 			}
-			lsetBuilder.Set(model.BucketLabel, "+Inf")
-			cache.bucketLabels[len(customValues)] = lsetBuilder.Labels()
 			cache.haveBuckets = true
 		}
 
 		for i, val := range customValues {
 			bucketLabels := bucketLabelsFor(cache, i, lsetBuilder, lset, baseName, val)
+			if bucketLabels.IsEmpty() {
+				continue
+			}
 			if err := emitSeriesFn(bucketLabels, buckets[i]); err != nil {
 				return err
 			}
 		}
 
 		infLabels := bucketLabelsFor(cache, len(customValues), lsetBuilder, lset, baseName, math.Inf(1))
-		if err := emitSeriesFn(infLabels, buckets[len(customValues)]); err != nil {
-			return err
+		if !infLabels.IsEmpty() {
+			if err := emitSeriesFn(infLabels, buckets[len(customValues)]); err != nil {
+				return err
+			}
 		}
 	}
 
