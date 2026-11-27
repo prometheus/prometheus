@@ -3797,6 +3797,14 @@ const funcDocs: Record<string, React.ReactNode> = {
         <code>timestamp(v instant-vector)</code> returns the timestamp of each of the samples of the given vector as the
         number of seconds since January 1, 1970 UTC. It acts on float and histogram samples in the same way.
       </p>
+
+      <p>
+        The original sample timestamps are only returned if <code>timestamp()</code> is used directly on an instant
+        vector selector, e.g. <code>timestamp(http_requests_total)</code>. Parentheses around the selector do not change
+        this. For any other expression, e.g. <code>timestamp(abs(http_requests_total))</code>, it returns the evaluation
+        timestamp (or the timestamp of the current step in the case of a range query), because the result of such an
+        expression consists of new samples with that timestamp.
+      </p>
     </>
   ),
   ts_of_first_over_time: (
