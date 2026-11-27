@@ -345,7 +345,7 @@ func (tg *testGroup) test(testname string, evalInterval time.Duration, groupOrde
 				for _, r := range g.Rules() {
 					if r.LastError() != nil {
 						evalErrs = append(evalErrs, fmt.Errorf("    rule: %s, time: %s, err: %w",
-							r.Name(), ts.Sub(time.Unix(0, 0).UTC()), r.LastError()))
+							r.Name(), ts.Sub(mint), r.LastError()))
 					}
 				}
 			}
