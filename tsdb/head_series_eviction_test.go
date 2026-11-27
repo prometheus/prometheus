@@ -916,7 +916,7 @@ func TestHead_GCSeriesDoesNotBlockRecreation(t *testing.T) {
 	require.Contains(t, deleted, ref0)
 	require.Nil(t, h.series.pendingTombstones.pending(lset0.Hash()))
 
-	deleted, _, _, _, _, _ = h.series.gcSeries([]storage.SeriesRef{ref1}, math.MaxInt64, func(*memSeries) bool { return true })
+	deleted, _, _, _, _, _, _ = h.series.gcSeries([]storage.SeriesRef{ref1}, math.MaxInt64, func(*memSeries) bool { return true })
 	require.Contains(t, deleted, ref1)
 	require.Nil(t, h.series.pendingTombstones.pending(lset1.Hash()))
 
