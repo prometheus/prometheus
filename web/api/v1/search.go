@@ -503,6 +503,9 @@ func sortOrdering(sortBy, sortDir string) storage.Ordering {
 }
 
 func searchAPIError(err error) *apiError {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return &apiError{errorTimeout, err}
+	}
 	result := setUnavailStatusOnTSDBNotReady(apiFuncResult{err: returnAPIError(err)})
 	return result.err
 }
@@ -518,6 +521,19 @@ func writeStreamSearchError(nw *ndjsonWriter, err error) {
 
 func writeStreamInternalError(nw *ndjsonWriter, err error) {
 	_ = nw.writeLine(searchErrorResponse{Status: "error", ErrorType: errorInternal.str, Error: err.Error()})
+}
+
+// streamContextDone reports whether ctx is done, ending the stream with a timeout
+// record on deadline expiry and writing nothing for a canceled request.
+func streamContextDone(ctx context.Context, nw *ndjsonWriter) bool {
+	err := ctx.Err()
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		writeStreamSearchError(nw, err)
+	}
+	return true
 }
 
 func searchWarnings(rs storage.SearchResultSet) []string {
@@ -575,6 +591,10 @@ func streamSearchResults[T any](ctx context.Context, api *API, w http.ResponseWr
 	}
 
 	firstBatch, firstErr := streamer.nextBatch()
+	if err := ctx.Err(); errors.Is(err, context.DeadlineExceeded) {
+		api.respondPreStreamSearchError(w, err)
+		return
+	}
 	// A non-nil firstErr with zero results means the underlying iterator
 	// could not produce anything; respond with the standard JSON error so
 	// clients see a well-formed failure. When firstErr arrives alongside
@@ -631,12 +651,13 @@ func streamSearchResults[T any](ctx context.Context, api *API, w http.ResponseWr
 		// Stop pulling from storage as soon as the client goes away.
 		// Without this check, an abandoned request keeps iterating the
 		// underlying SearchResultSet (which may itself be doing real I/O).
-		select {
-		case <-ctx.Done():
+		if streamContextDone(ctx, nw) {
 			return
-		default:
 		}
 		batch, err := streamer.nextBatch()
+		if streamContextDone(ctx, nw) {
+			return
+		}
 		if len(batch) > 0 {
 			if writeErr := nw.writeLine(searchBatch[T]{Results: batch}); writeErr != nil {
 				writeStreamInternalError(nw, writeErr)
