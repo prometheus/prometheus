@@ -20,6 +20,7 @@ import (
 	"slices"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
@@ -264,6 +265,113 @@ func TestDirectTimestampFunctionCalls(t *testing.T) {
 			})
 			require.Empty(t, annos)
 			require.Empty(t, got)
+		})
+	}
+}
+
+func TestFloatWinScanOverlapWarningEvictionAndFallbackParity(t *testing.T) {
+	metric := labels.FromStrings(model.MetricNameLabel, "overlap_counter_total")
+	args := parser.Expressions{&parser.MatrixSelector{
+		VectorSelector: &parser.VectorSelector{Name: "overlap_counter_total"},
+		Range:          10 * time.Second,
+	}}
+
+	scan := &floatWinScan{}
+	t.Cleanup(func() {
+		putFPointSlice(scan.win.buf)
+		putWinEventSeqs(scan.eventSeqs)
+	})
+	sts := &StartTimestamps{}
+	scan.win.reset(sts)
+	enh := &EvalNodeHelper{
+		Out:             make(Vector, 0, 1),
+		StartTimestamps: sts,
+		floatWinScan:    scan,
+	}
+
+	evalStep := func(ts int64, wantWarn bool) {
+		t.Helper()
+		mat := Matrix{{Metric: metric, Floats: scan.win.activeSlice()}}
+		enh.Ts = ts
+		enh.Out = enh.Out[:0]
+		gotVec, gotAnnos := extrapolatedRate(mat, args, enh, true, true)
+
+		// Cross-check against the nil-floatWinScan fallback path on every step.
+		fallbackEnh := &EvalNodeHelper{
+			Out:             make(Vector, 0, 1),
+			Ts:              ts,
+			StartTimestamps: &StartTimestamps{Floats: slices.Clone(sts.Floats)},
+		}
+		wantVec, wantAnnos := extrapolatedRate(mat, args, fallbackEnh, true, true)
+		require.Len(t, gotVec, len(wantVec))
+		for i := range wantVec {
+			require.InDelta(t, wantVec[i].F, gotVec[i].F, 1e-12)
+		}
+		gotWarns, _ := gotAnnos.AsStrings("rate(overlap_counter_total[10s])", 0, 0)
+		wantWarns, _ := wantAnnos.AsStrings("rate(overlap_counter_total[10s])", 0, 0)
+		require.Equal(t, wantWarns, gotWarns)
+		if wantWarn {
+			require.Len(t, gotWarns, 1)
+			require.Contains(t, gotWarns[0], "overlap_counter_total")
+		} else {
+			require.Empty(t, gotWarns)
+		}
+	}
+
+	// Step 0: pair (0,1) overlaps (currST=500 < prevT=1000 and != prevST=100).
+	scan.win.append(FPoint{T: 1000, F: 10}, 100, sts)
+	scan.win.append(FPoint{T: 2000, F: 20}, 500, sts)
+	scan.win.append(FPoint{T: 3000, F: 30}, 500, sts)
+	evalStep(3000, true)
+
+	// Step 1: drop seq 0 so the overlap pair (0,1) slides out at the exact startSeq == lastOverlapCurrSeq boundary.
+	scan.win.drop(1, sts)
+	scan.win.append(FPoint{T: 4000, F: 40}, 500, sts)
+	evalStep(4000, false)
+
+	// Step 2: append two consecutive overlap pairs (3,4) and (4,5).
+	scan.win.append(FPoint{T: 5000, F: 50}, 3500, sts)
+	scan.win.append(FPoint{T: 6000, F: 60}, 4500, sts)
+	evalStep(6000, true)
+
+	// Step 3: drop through seq 3 so first overlap (3,4) slides out while second overlap (4,5) stays in window.
+	scan.win.drop(3, sts)
+	evalStep(6000, true)
+
+	// Step 4: drop seq 4 and append a clean point so second overlap (4,5) slides out as well.
+	scan.win.drop(1, sts)
+	scan.win.append(FPoint{T: 7000, F: 70}, 4500, sts)
+	evalStep(7000, false)
+
+	// Verify direct FunctionCalls work both with nil floatWinScan and when a caller passes
+	// a mismatched Floats slice alongside an existing floatWinScan (forcing safe fallback).
+	synthFloats := []FPoint{
+		{T: 1000, F: 10},
+		{T: 2000, F: 5},
+		{T: 3000, F: 15},
+		{T: 4000, F: math.NaN()},
+		{T: 5000, F: math.NaN()},
+		{T: 6000, F: 20},
+	}
+	synthSTs := &StartTimestamps{Floats: []int64{100, 1500, 2500, 2500, 2500, 5500}}
+	synthMat := Matrix{{Metric: metric, Floats: synthFloats}}
+	for _, fnName := range []string{"rate", "increase", "resets", "changes"} {
+		t.Run("direct_fallback/"+fnName, func(t *testing.T) {
+			fn := FunctionCalls[fnName]
+			nilEnh := &EvalNodeHelper{Out: make(Vector, 0, 1), Ts: 6000, StartTimestamps: synthSTs}
+			wantVec, wantAnnos := fn(nil, synthMat, args, nilEnh)
+
+			mismatchEnh := &EvalNodeHelper{Out: make(Vector, 0, 1), Ts: 6000, StartTimestamps: synthSTs, floatWinScan: scan}
+			gotVec, gotAnnos := fn(nil, synthMat, args, mismatchEnh)
+			require.Len(t, gotVec, len(wantVec))
+			for i := range wantVec {
+				if math.IsNaN(wantVec[i].F) {
+					require.True(t, math.IsNaN(gotVec[i].F))
+				} else {
+					require.InDelta(t, wantVec[i].F, gotVec[i].F, 1e-12)
+				}
+			}
+			require.Equal(t, wantAnnos, gotAnnos)
 		})
 	}
 }

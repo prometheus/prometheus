@@ -44,8 +44,10 @@ import (
 // Vector, scalars a Vector with one series whose value is the scalar
 // value, and nil for strings.
 //
-// Scalar vectors passed to range-vector functions may be reused between series
-// and steps. Function implementations must not retain or modify them.
+// Scalar vectors, matrixVals sample slices (Floats, Histograms), and
+// enh.StartTimestamps slices passed to range-vector functions may be reused
+// between series and steps. Function implementations must copy any data they
+// need to keep and must not retain or modify those slices.
 //
 // args are the original arguments to the function, where you can access
 // matrixSelectors, vectorSelectors, and StringLiterals.
@@ -695,6 +697,29 @@ func extrapolatedRate(vals Matrix, args parser.Expressions, enh *EvalNodeHelper,
 		// Handle counter resets:
 		if enh.StartTimestamps != nil {
 			startTimestamps = enh.StartTimestamps.Floats
+		}
+		if s := enh.floatWinScan; s != nil {
+			if fromSeq, toSeq, ok := s.advance(samples.Floats); ok {
+				// Scan only newly appended adjacent pairs and evict reset indices that slid out of the window.
+				w := &s.win
+				for seq := fromSeq; seq < toSeq; seq++ {
+					i := seq - w.startSeq
+					prevPoint, currPoint := samples.Floats[i], samples.Floats[i+1]
+					if i+1 < len(startTimestamps) && checkStartTimeOverlap(startTimestamps[i], prevPoint.T, startTimestamps[i+1]) {
+						s.lastOverlapCurrSeq = seq + 1
+					}
+					if currPoint.F < prevPoint.F || (i+1 < len(startTimestamps) && isStartTimestampReset(startTimestamps[i], prevPoint.T, startTimestamps[i+1], currPoint.T)) {
+						s.appendEvent(seq)
+					}
+				}
+				if s.lastOverlapCurrSeq > w.startSeq && s.lastOverlapCurrSeq < w.endSeq {
+					annos.Add(annotations.NewStartTimeOverlapWarning(getMetricName(samples.Metric), args[0].PositionRange()))
+				}
+				for _, rSeq := range s.eventSeqs[s.eventOff:] {
+					resultFloat += samples.Floats[rSeq-w.startSeq].F
+				}
+				break
+			}
 		}
 		var overlapDetected bool
 		for i, currPoint := range samples.Floats[1:] {
@@ -2652,6 +2677,18 @@ func pickFirstSampleIndices(floats []FPoint, histograms []HPoint, args parser.Ex
 	}
 }
 
+func isAnchoredSelector(args parser.Expressions) bool {
+	if len(args) == 0 {
+		return false
+	}
+	ms, ok := args[0].(*parser.MatrixSelector)
+	if !ok {
+		return false
+	}
+	vs, ok := ms.VectorSelector.(*parser.VectorSelector)
+	return ok && vs.Anchored
+}
+
 // === resets(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
 func funcResets(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	if len(matrixVal) == 0 {
@@ -2672,6 +2709,19 @@ func funcResets(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *Eval
 	if sts := enh.StartTimestamps; sts != nil {
 		floatSTs = sts.Floats
 		histogramSTs = sts.Histograms
+	}
+	if s := enh.floatWinScan; s != nil && len(histograms) == 0 && !isAnchoredSelector(args) {
+		if fromSeq, toSeq, ok := s.advance(floats); ok {
+			startSeq := s.win.startSeq
+			for seq := fromSeq; seq < toSeq; seq++ {
+				i := seq - startSeq
+				prevPoint, curPoint := floats[i], floats[i+1]
+				if curPoint.F < prevPoint.F || (i+1 < len(floatSTs) && isStartTimestampReset(floatSTs[i], prevPoint.T, floatSTs[i+1], curPoint.T)) {
+					s.appendEvent(seq)
+				}
+			}
+			return append(enh.Out, Sample{F: float64(len(s.eventSeqs) - s.eventOff)}), nil
+		}
 	}
 	firstFloat, firstHistogram, found := pickFirstSampleIndices(floats, histograms, args, enh)
 	if !found {
@@ -2734,6 +2784,19 @@ func funcChanges(_ []Vector, matrixVal Matrix, args parser.Expressions, enh *Eva
 	changes := 0
 	if len(floats) == 0 && len(histograms) == 0 {
 		return enh.Out, nil
+	}
+	if s := enh.floatWinScan; s != nil && len(histograms) == 0 && !isAnchoredSelector(args) {
+		if fromSeq, toSeq, ok := s.advance(floats); ok {
+			startSeq := s.win.startSeq
+			for seq := fromSeq; seq < toSeq; seq++ {
+				i := seq - startSeq
+				prevF, curF := floats[i].F, floats[i+1].F
+				if curF != prevF && !(math.IsNaN(curF) && math.IsNaN(prevF)) {
+					s.appendEvent(seq)
+				}
+			}
+			return append(enh.Out, Sample{F: float64(len(s.eventSeqs) - s.eventOff)}), nil
+		}
 	}
 
 	var prevSample, curSample Sample

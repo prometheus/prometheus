@@ -34,6 +34,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
+	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/teststorage"
 )
 
@@ -727,6 +728,214 @@ load 10s
 					require.Len(t, mat, 1)
 					require.Equal(t, `{}`, mat[0].Metric.String())
 					require.Equal(t, []promql.FPoint{{T: 10_000, F: 2}, {T: 15_000, F: 2}, {T: 20_000, F: 2}}, mat[0].Floats)
+				})
+			}
+		})
+	}
+}
+
+func TestRangeSlidingWindowMatchesInstantQueries(t *testing.T) {
+	stor := teststorage.New(t, func(opts *tsdb.Options) {
+		opts.FloatChunkEncoding = chunkenc.EncXOR2
+		opts.EnableSTStorage = true
+	})
+	app := stor.AppenderV2(t.Context())
+
+	for seriesIdx, seriesID := range []string{"1", "2"} {
+		// Use distinct metric names so NewStartTimeOverlapWarning (which keys on metric name)
+		// catches any warning leak across series.
+		counter := labels.FromStrings("__name__", "sliding_counter_"+seriesID+"_total", "series", seriesID)
+		gauge := labels.FromStrings("__name__", "sliding_gauge", "series", seriesID)
+
+		// Populate 120 samples with counter resets, start-timestamp resets/overlaps, NaNs, a dense sub-second burst,
+		// and a mid-series gap so the window compacts, reallocates, resets, and slides across all boundary cases.
+		var val float64
+		st := int64(1000)
+		for i := range 120 {
+			if i >= 70 && i < 82 {
+				// Leave a gap larger than the 10s range window to exercise non-overlapping window resets.
+				continue
+			}
+			ts := int64((i + 1) * 1000)
+			switch {
+			case i%17 == 5:
+				// Value reset.
+				val = 2
+				st = ts - 500
+			case i == 31:
+				// Start-timestamp reset without value drop.
+				val += 5
+				st = ts - 200
+			case i == 44 && seriesID == "1":
+				// Start-timestamp overlap warning case on series="1" only, testing per-series warning isolation.
+				val += 3
+				st = ts - 5000
+			case i == 96:
+				// Start-timestamp reset right after the NaN at i == 95 so prevPoint.F (NaN)
+				// enters eventSeqs, poisons rate/increase, and recovers after sliding out.
+				val += 4
+				st = ts - 200
+			default:
+				val += float64((i % 5) + 1)
+			}
+			appendVal := val
+			if i == 60 || i == 95 {
+				// Plain NaN at i == 60 and NaN before an ST reset at i == 95.
+				appendVal = math.NaN()
+			}
+			_, err := app.Append(0, counter, st, ts, appendVal, nil, nil, storage.AOptions{})
+			require.NoError(t, err)
+
+			gVal := float64(i%4) + float64(seriesIdx)*10
+			if i == 22 || i == 23 {
+				gVal = math.NaN()
+			}
+			_, err = app.Append(0, gauge, 0, ts, gVal, nil, nil, storage.AOptions{})
+			require.NoError(t, err)
+
+			if i == 10 {
+				// Append a dense sub-second burst right after the 10s window begins sliding (off == 2)
+				// so both floatWindow.append and enh.appendWinEvent hit their 0 < off < n/4 growth branches.
+				for sub := int64(1); sub <= 9; sub++ {
+					subTS := ts + sub*100
+					if sub%2 == 1 {
+						val = 1
+						st = subTS - 50
+					} else {
+						val += 4
+					}
+					_, err := app.Append(0, counter, st, subTS, val, nil, nil, storage.AOptions{})
+					require.NoError(t, err)
+					_, err = app.Append(0, gauge, 0, subTS, float64(sub), nil, nil, storage.AOptions{})
+					require.NoError(t, err)
+				}
+			}
+		}
+	}
+
+	// Append a mixed float -> histogram -> float series whose float window stays overlapping
+	// across the histogram so range queries hit the floatWinScan nextPairSeq < startSeq resync path.
+	mixed := labels.FromStrings("__name__", "sliding_mixed_total", "series", "1")
+	var mVal float64
+	for i := range 40 {
+		ts := int64((i + 1) * 1000)
+		if i == 14 {
+			_, err := app.Append(0, mixed, 0, ts, 0, nil, &histogram.FloatHistogram{Count: 1, Sum: 1}, storage.AOptions{})
+			require.NoError(t, err)
+			continue
+		}
+		if i%9 == 4 {
+			mVal = 1
+		} else {
+			mVal += float64((i % 3) + 1)
+		}
+		_, err := app.Append(0, mixed, 0, ts, mVal, nil, nil, storage.AOptions{})
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+
+	engine := promqltest.NewTestEngineWithOpts(t, promql.EngineOpts{
+		MaxSamples:               promqltest.DefaultMaxSamplesPerQuery,
+		Timeout:                  10 * time.Second,
+		LookbackDelta:            5 * time.Second,
+		EnableDelayedNameRemoval: false,
+		Parser:                   parser.NewParser(promqltest.TestParserOpts),
+	})
+
+	queries := []string{
+		`increase({__name__=~"sliding_counter_.*_total"}[10s])`,
+		`rate({__name__=~"sliding_counter_.*_total"}[25s])`,
+		`resets({__name__=~"sliding_counter_.*_total"}[10s])`,
+		`resets({__name__=~"sliding_counter_.*_total"}[25s])`,
+		`resets({__name__=~"sliding_counter_.*_total"}[10s] anchored)`,
+		"changes(sliding_gauge[10s])",
+		"changes(sliding_gauge[25s])",
+		"changes(sliding_gauge[10s] anchored)",
+		"delta(sliding_gauge[10s])",
+		"absent_over_time(sliding_gauge[10s])",
+		"sliding_gauge smoothed",
+		`rate({__name__=~"sliding_counter_.*_total"}[10s:2s])`,
+		`resets({__name__=~"sliding_counter_.*_total"}[10s:2s])`,
+		"changes(sliding_gauge[10s:2s])",
+		"rate(sliding_mixed_total[10s])",
+		"increase(sliding_mixed_total[10s])",
+		"resets(sliding_mixed_total[10s])",
+		"changes(sliding_mixed_total[10s])",
+	}
+	start := time.Unix(1, 0)
+	end := time.Unix(125, 0)
+	step := time.Second
+
+	for _, enableST := range []bool{true, false} {
+		t.Run("enableST="+strconv.FormatBool(enableST), func(t *testing.T) {
+			qOpts := promql.NewPrometheusQueryOpts(false, 0, &enableST)
+			for _, expr := range queries {
+				t.Run("expr="+expr, func(t *testing.T) {
+					rq, err := engine.NewRangeQuery(t.Context(), stor, qOpts, expr, start, end, step)
+					require.NoError(t, err)
+					t.Cleanup(rq.Close)
+
+					rRes := rq.Exec(t.Context())
+					require.NoError(t, rRes.Err)
+					mat, err := rRes.Matrix()
+					require.NoError(t, err)
+
+					type sampleKey struct {
+						series string
+						ts     int64
+					}
+					gotByKey := make(map[sampleKey]float64)
+					for _, ser := range mat {
+						sID := ser.Metric.Get("series")
+						for _, pt := range ser.Floats {
+							gotByKey[sampleKey{series: sID, ts: pt.T}] = pt.F
+						}
+					}
+
+					var wantAnnos annotations.Annotations
+					for ts := start; !ts.After(end); ts = ts.Add(step) {
+						iq, err := engine.NewInstantQuery(t.Context(), stor, qOpts, expr, ts)
+						require.NoError(t, err)
+						iRes := iq.Exec(t.Context())
+						iq.Close()
+						require.NoError(t, iRes.Err)
+						wantAnnos.Merge(iRes.Warnings)
+						vec, err := iRes.Vector()
+						require.NoError(t, err)
+
+						tsMS := timestamp.FromTime(ts)
+						wantAtStep := make(map[string]float64, len(vec))
+						for _, smpl := range vec {
+							wantAtStep[smpl.Metric.Get("series")] = smpl.F
+						}
+						for _, sID := range []string{"", "1", "2"} {
+							got, hasGot := gotByKey[sampleKey{series: sID, ts: tsMS}]
+							want, hasWant := wantAtStep[sID]
+							if !hasWant {
+								require.False(t, hasGot, "unexpected sample for series=%q at ts=%d", sID, tsMS)
+								continue
+							}
+							require.True(t, hasGot, "missing sample for series=%q at ts=%d", sID, tsMS)
+							if math.IsNaN(want) {
+								require.True(t, math.IsNaN(got), "series=%q ts=%d", sID, tsMS)
+							} else {
+								require.InDelta(t, want, got, 1e-12, "series=%q ts=%d", sID, tsMS)
+							}
+						}
+					}
+					wantWarns, wantInfos := wantAnnos.AsStrings(expr, 0, 0)
+					gotWarns, gotInfos := rRes.Warnings.AsStrings(expr, 0, 0)
+					require.ElementsMatch(t, wantWarns, gotWarns)
+					require.ElementsMatch(t, wantInfos, gotInfos)
+					if expr == `increase({__name__=~"sliding_counter_.*_total"}[10s])` || expr == `rate({__name__=~"sliding_counter_.*_total"}[25s])` {
+						if enableST {
+							require.Len(t, gotWarns, 1)
+							require.Contains(t, gotWarns[0], "sliding_counter_1_total")
+							require.NotContains(t, gotWarns[0], "sliding_counter_2_total")
+						} else {
+							require.Empty(t, gotWarns)
+						}
+					}
 				})
 			}
 		})
