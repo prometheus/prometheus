@@ -52,6 +52,7 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -385,9 +386,9 @@ func New(logger *slog.Logger, o *Options) *Handler {
 	factoryAr := func(context.Context) api_v1.AlertmanagerRetriever { return h.notifier }
 	FactoryRr := func(context.Context) api_v1.RulesRetriever { return h.ruleManager }
 
-	var appV2 storage.AppendableV2
+	var appV2, otlpAppV2 storage.AppendableV2
 	if o.EnableRemoteWriteReceiver || o.EnableOTLPWriteReceiver {
-		appV2 = h.storage
+		appV2, otlpAppV2 = h.storage, h.storage
 		if o.EnableReceiveRelabelConfigs {
 			relabelConfigFunc := func() config.Config {
 				h.mtx.RLock()
@@ -397,7 +398,15 @@ func New(logger *slog.Logger, o *Options) *Handler {
 				}
 				return *h.config
 			}
-			appV2 = remote.NewRelabelingAppendableV2(appV2, relabelConfigFunc, remote.NewRelabelCache(o.Registerer))
+			newCache := func(receiver string) *remote.RelabelCache {
+				return remote.NewRelabelCache(prometheus.WrapRegistererWith(prometheus.Labels{"receiver": receiver}, o.Registerer))
+			}
+			appV2 = remote.NewRelabelingAppendableV2(appV2, relabelConfigFunc,
+				func(c *config.Config) []*relabel.Config { return c.RemoteWriteReceiverConfig.MetricRelabelConfigs },
+				newCache("remote_write"))
+			otlpAppV2 = remote.NewRelabelingAppendableV2(otlpAppV2, relabelConfigFunc,
+				func(c *config.Config) []*relabel.Config { return c.OTLPConfig.MetricRelabelConfigs },
+				newCache("otlp"))
 		}
 	}
 
@@ -406,7 +415,7 @@ func New(logger *slog.Logger, o *Options) *Handler {
 		version = o.Version.Version
 	}
 
-	h.apiV1 = api_v1.NewAPI(h.queryEngine, h.storage, appV2, h.exemplarStorage, factorySPr, factoryTr, factoryAr,
+	h.apiV1 = api_v1.NewAPI(h.queryEngine, h.storage, appV2, otlpAppV2, h.exemplarStorage, factorySPr, factoryTr, factoryAr,
 		func() config.Config {
 			h.mtx.RLock()
 			defer h.mtx.RUnlock()

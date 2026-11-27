@@ -66,10 +66,14 @@ var (
 func relabelTestConfigFunc(cfgs []*relabel.Config, validationScheme model.ValidationScheme) func() config.Config {
 	return func() config.Config {
 		return config.Config{
-			GlobalConfig:          config.GlobalConfig{MetricNameValidationScheme: validationScheme},
-			ReceiveRelabelConfigs: cfgs,
+			GlobalConfig:              config.GlobalConfig{MetricNameValidationScheme: validationScheme},
+			RemoteWriteReceiverConfig: config.RemoteWriteReceiverConfig{MetricRelabelConfigs: cfgs},
 		}
 	}
+}
+
+func remoteWriteReceiverRules(c *config.Config) []*relabel.Config {
+	return c.RemoteWriteReceiverConfig.MetricRelabelConfigs
 }
 
 func TestNewRelabelingAppendableV2(t *testing.T) {
@@ -93,7 +97,7 @@ func TestNewRelabelingAppendableV2(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			appendable := teststorage.NewAppendable()
-			wrapped := NewRelabelingAppendableV2(appendable, relabelTestConfigFunc(tc.configs, tc.scheme), NewRelabelCache(nil))
+			wrapped := NewRelabelingAppendableV2(appendable, relabelTestConfigFunc(tc.configs, tc.scheme), remoteWriteReceiverRules, NewRelabelCache(nil))
 			app := wrapped.AppenderV2(context.Background())
 
 			_, err := app.Append(0, tc.in, 0, 10, 1, nil, nil, storage.AOptions{
@@ -146,7 +150,7 @@ func TestNewRelabelingAppendableV2_MetricFamilyName(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			appendable := teststorage.NewAppendable()
-			wrapped := NewRelabelingAppendableV2(appendable, relabelTestConfigFunc(tc.configs, model.UTF8Validation), NewRelabelCache(nil))
+			wrapped := NewRelabelingAppendableV2(appendable, relabelTestConfigFunc(tc.configs, model.UTF8Validation), remoteWriteReceiverRules, NewRelabelCache(nil))
 			app := wrapped.AppenderV2(context.Background())
 
 			_, err := app.Append(0, tc.in, 0, 10, 1, nil, nil, storage.AOptions{MetricFamilyName: "keep_me"})

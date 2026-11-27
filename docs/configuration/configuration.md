@@ -326,17 +326,26 @@ otlp:
   # translation_strategy uses underscore escaping. When true (default), multiple
   # consecutive underscores are preserved during label name sanitization.
   [ label_name_preserve_multiple_underscores: <boolean> | default = true ]
+  # List of relabel configurations applied to samples ingested via the OTLP
+  # receiver, after translation to the Prometheus data model and before they
+  # reach storage. Only takes effect when the receive-relabel-configs feature
+  # flag is enabled; see
+  # https://prometheus.io/docs/prometheus/latest/feature_flags/#receive-relabeling.
+  metric_relabel_configs:
+    [ - <relabel_config> ... ]
 
 # Settings related to the remote read feature.
 remote_read:
   [ - <remote_read> ... ]
 
-# List of relabel configurations applied to samples ingested via the
-# remote-write and OTLP receivers, before they reach storage. Only takes
-# effect when the receive-relabel-configs feature flag is enabled; see
-# https://prometheus.io/docs/prometheus/latest/feature_flags/#receive-relabeling.
-receive_relabel_configs:
-  [ - <relabel_config> ... ]
+# Settings related to the remote-write receiver.
+remote_write_receiver:
+  # List of relabel configurations applied to samples ingested via the
+  # remote-write receiver, before they reach storage. Only takes effect when
+  # the receive-relabel-configs feature flag is enabled; see
+  # https://prometheus.io/docs/prometheus/latest/feature_flags/#receive-relabeling.
+  metric_relabel_configs:
+    [ - <relabel_config> ... ]
 
 # Storage related settings that are runtime reloadable.
 storage:
@@ -3899,15 +3908,16 @@ relabeling is applied after external labels.
 One use for this is ensuring a HA pair of Prometheus servers with different
 external labels send identical alerts.
 
-### `<receive_relabel_configs>`
+### Receive relabeling
 
-Receive relabeling is applied to samples ingested via the remote-write and
-OTLP receivers, before they reach storage. It has the same configuration
-format and actions as target relabeling.
+Receive relabeling is applied to samples ingested via the remote-write receiver
+(`remote_write_receiver.metric_relabel_configs`) and the OTLP receiver
+(`otlp.metric_relabel_configs`), before they reach storage. It has the same
+configuration format and actions as target relabeling.
 
 Requires the `receive-relabel-configs` feature flag; see
-[Receive relabeling](../feature_flags.md#receive-relabeling). Without it,
-`receive_relabel_configs` in the config file has no effect.
+[Receive relabeling](../feature_flags.md#receive-relabeling). Without it, a
+configuration that sets either list is rejected.
 
 ### `<alertmanager_config>`
 

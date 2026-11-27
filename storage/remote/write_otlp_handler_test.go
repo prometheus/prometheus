@@ -522,19 +522,19 @@ func TestOTLPWriteHandler_ReceiveRelabeling(t *testing.T) {
 	req.Header.Set("Content-Type", "application/x-protobuf")
 
 	configFunc := func() config.Config {
-		return config.Config{
-			OTLPConfig: config.DefaultOTLPConfig,
-			ReceiveRelabelConfigs: []*relabel.Config{{
-				SourceLabels:         model.LabelNames{"__name__"},
-				Regex:                relabel.MustNewRegexp(".+"),
-				Action:               relabel.Drop,
-				NameValidationScheme: model.UTF8Validation,
-			}},
-		}
+		otlpCfg := config.DefaultOTLPConfig
+		otlpCfg.MetricRelabelConfigs = []*relabel.Config{{
+			SourceLabels:         model.LabelNames{"__name__"},
+			Regex:                relabel.MustNewRegexp(".+"),
+			Action:               relabel.Drop,
+			NameValidationScheme: model.UTF8Validation,
+		}}
+		return config.Config{OTLPConfig: otlpCfg}
 	}
+	otlpRules := func(c *config.Config) []*relabel.Config { return c.OTLPConfig.MetricRelabelConfigs }
 
 	appendable := teststorage.NewAppendable()
-	wrapped := NewRelabelingAppendableV2(appendable, configFunc, NewRelabelCache(nil))
+	wrapped := NewRelabelingAppendableV2(appendable, configFunc, otlpRules, NewRelabelCache(nil))
 	handler := NewOTLPWriteHandler(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn})), nil, wrapped, configFunc, OTLPOptions{})
 
 	recorder := httptest.NewRecorder()

@@ -532,23 +532,24 @@ where it is reported as `metadata_default_time_range` in the `api` category.
 
 `--enable-feature=receive-relabel-configs`
 
-Enables applying the top-level `receive_relabel_configs` list to samples ingested
-through the remote-write receiver (`--web.enable-remote-write-receiver`) and the
-OTLP receiver (`--web.enable-otlp-receiver`). Both receivers see the same rules
-applied to the same, final label set (for OTLP, this is after the OTLP-to-Prometheus
-translation), so one set of rules covers samples arriving from either protocol.
+Enables applying `remote_write_receiver.metric_relabel_configs` to samples ingested
+through the remote-write receiver (`--web.enable-remote-write-receiver`) and
+`otlp.metric_relabel_configs` to samples ingested through the OTLP receiver
+(`--web.enable-otlp-receiver`). Each receiver has its own rules. For OTLP, the
+rules see the labels after the OTLP-to-Prometheus translation.
 
-`receive_relabel_configs` uses the same [`<relabel_config>`](configuration/configuration.md#relabel_config)
+Both lists use the same [`<relabel_config>`](configuration/configuration.md#relabel_config)
 syntax as scrape-time `metric_relabel_configs`. A series dropped by these rules
 (e.g. via `action: drop`), or left invalid (e.g. missing `__name__`), is
 discarded before it reaches storage.
 
 This is disabled by default. When disabled, a configuration file that sets
-`receive_relabel_configs` is rejected, both at startup and on reload. The rules are re-read on every config reload, so
-changes take effect without restarting Prometheus.
+either list is rejected, both at startup and on reload. The rules are re-read on
+every config reload, so changes take effect without restarting Prometheus.
 
 To avoid recomputing relabeling for samples already seen, decisions are
-cached. The Prometheus server exposes metrics for this cache:
+cached per receiver. The Prometheus server exposes metrics for these caches,
+labeled with `receiver="remote_write"` or `receiver="otlp"`:
 `prometheus_api_receive_relabel_cache_entries` (current size),
 `prometheus_api_receive_relabel_cache_hits_total` (cache hits),
 `prometheus_api_receive_relabel_cache_misses_total` (cache misses), and

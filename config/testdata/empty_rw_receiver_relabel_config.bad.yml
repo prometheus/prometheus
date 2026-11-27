@@ -1,0 +1,3 @@
+remote_write_receiver:
+  metric_relabel_configs:
+    -

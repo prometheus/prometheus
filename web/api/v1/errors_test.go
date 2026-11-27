@@ -161,6 +161,7 @@ func createPrometheusAPI(t *testing.T, q storage.SampleAndChunkQueryable, overri
 		q,
 		nil,
 		nil,
+		nil,
 		func(context.Context) ScrapePoolsRetriever { return &DummyScrapePoolsRetriever{} },
 		func(context.Context) TargetRetriever { return &DummyTargetRetriever{} },
 		func(context.Context) AlertmanagerRetriever { return &DummyAlertmanagerRetriever{} },

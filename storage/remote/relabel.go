@@ -59,8 +59,8 @@ const (
 	relabelCacheLowWatermark = 90_000
 )
 
-// RelabelCache memoizes receive-path relabeling decisions. Safe for
-// concurrent use and for sharing between a v1 and v2 relabeling appendable.
+// RelabelCache memoizes receive-path relabeling decisions for one rule set.
+// Safe for concurrent use.
 type RelabelCache struct {
 	mu sync.RWMutex
 
@@ -217,15 +217,17 @@ func (c *RelabelCache) sweep() int {
 	return deleted
 }
 
-// NewRelabelingAppendableV2 applies Config.ReceiveRelabelConfigs to samples
-// before they reach next.
-func NewRelabelingAppendableV2(next storage.AppendableV2, configFunc func() config.Config, cache *RelabelCache) storage.AppendableV2 {
-	return &relabelingAppendableV2{next: next, configFunc: configFunc, cache: cache}
+// NewRelabelingAppendableV2 applies the relabel rules that rules selects from
+// the current configuration to samples before they reach next. Each receiver
+// needs its own cache, since a cache holds the decisions of a single rule set.
+func NewRelabelingAppendableV2(next storage.AppendableV2, configFunc func() config.Config, rules func(*config.Config) []*relabel.Config, cache *RelabelCache) storage.AppendableV2 {
+	return &relabelingAppendableV2{next: next, configFunc: configFunc, rules: rules, cache: cache}
 }
 
 type relabelingAppendableV2 struct {
 	next       storage.AppendableV2
 	configFunc func() config.Config
+	rules      func(*config.Config) []*relabel.Config
 	cache      *RelabelCache
 }
 
@@ -233,7 +235,7 @@ func (a *relabelingAppendableV2) AppenderV2(ctx context.Context) storage.Appende
 	cfg := a.configFunc()
 	return &relabelingAppenderV2{
 		AppenderV2:       a.next.AppenderV2(ctx),
-		configs:          cfg.ReceiveRelabelConfigs,
+		configs:          a.rules(&cfg),
 		validationScheme: cfg.GlobalConfig.MetricNameValidationScheme,
 		cache:            a.cache,
 	}

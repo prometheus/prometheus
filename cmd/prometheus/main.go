@@ -1808,8 +1808,15 @@ func reloadConfig(filename string, enableExemplarStorage, enableReceiveRelabelCo
 	if err != nil {
 		return fmt.Errorf("couldn't load configuration (--config.file=%q): %w", filename, err)
 	}
-	if len(conf.ReceiveRelabelConfigs) > 0 && !enableReceiveRelabelConfigs {
-		return fmt.Errorf("invalid configuration (--config.file=%q): receive_relabel_configs requires --enable-feature=receive-relabel-configs", filename)
+	if !enableReceiveRelabelConfigs {
+		for field, rules := range map[string][]*relabel.Config{
+			"remote_write_receiver.metric_relabel_configs": conf.RemoteWriteReceiverConfig.MetricRelabelConfigs,
+			"otlp.metric_relabel_configs":                  conf.OTLPConfig.MetricRelabelConfigs,
+		} {
+			if len(rules) > 0 {
+				return fmt.Errorf("invalid configuration (--config.file=%q): %s requires --enable-feature=receive-relabel-configs", filename, field)
+			}
+		}
 	}
 
 	if enableExemplarStorage {

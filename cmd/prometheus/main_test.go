@@ -1578,18 +1578,30 @@ func TestFeatureFlagsDocumented(t *testing.T) {
 }
 
 func TestReloadConfigReceiveRelabelConfigs(t *testing.T) {
-	configFile := filepath.Join(t.TempDir(), "prometheus.yml")
-	require.NoError(t, os.WriteFile(configFile, []byte(`receive_relabel_configs:
-  - action: drop
-    source_labels: [__name__]
-    regex: foo
-`), 0o600))
-
+	rule := `
+    - action: drop
+      source_labels: [__name__]
+      regex: foo
+`
 	level := promslog.NewLevel()
 	logger := promslog.NewNopLogger()
 	interval := &safePromQLNoStepSubqueryInterval{}
 
-	err := reloadConfig(configFile, false, false, logger, interval, level, func(bool) {})
-	require.ErrorContains(t, err, "requires --enable-feature=receive-relabel-configs")
-	require.NoError(t, reloadConfig(configFile, false, true, logger, interval, level, func(bool) {}))
+	for _, tc := range []struct {
+		name   string
+		config string
+		field  string
+	}{
+		{name: "remote write receiver", config: "remote_write_receiver:\n  metric_relabel_configs:" + rule, field: "remote_write_receiver.metric_relabel_configs"},
+		{name: "otlp", config: "otlp:\n  metric_relabel_configs:" + rule, field: "otlp.metric_relabel_configs"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			configFile := filepath.Join(t.TempDir(), "prometheus.yml")
+			require.NoError(t, os.WriteFile(configFile, []byte(tc.config), 0o600))
+
+			err := reloadConfig(configFile, false, false, logger, interval, level, func(bool) {})
+			require.ErrorContains(t, err, tc.field+" requires --enable-feature=receive-relabel-configs")
+			require.NoError(t, reloadConfig(configFile, false, true, logger, interval, level, func(bool) {}))
+		})
+	}
 }

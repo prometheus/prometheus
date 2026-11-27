@@ -35,6 +35,7 @@ func newTestAPI(t *testing.T, cfg testhelpers.APIConfig) *testhelpers.APIWrapper
 		params.QueryEngine,
 		params.Queryable,
 		nil, // appendable
+		nil, // OTLP appendable
 		params.ExemplarQueryable,
 		func(ctx context.Context) ScrapePoolsRetriever {
 			return adaptScrapePoolsRetriever(params.ScrapePoolsRetriever(ctx))
