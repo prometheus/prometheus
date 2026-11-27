@@ -756,17 +756,17 @@ func (h *FloatHistogram) kahanCompact(maxEmptyBuckets int, c *FloatHistogram,
 // Special behavior in case the Schema or the ZeroThreshold are not the same in
 // both histograms:
 //
-//   - A decrease of the ZeroThreshold or an increase of the Schema (i.e. an
-//     increase of resolution) can only happen together with a reset. Thus, the
-//     method returns true in either case.
+//   - An increase of the Schema (i.e. an increase of resolution) can only
+//     happen together with a reset. Thus, the method returns true in this case.
 //
-//   - Upon an increase of the ZeroThreshold, the buckets in the previous
-//     histogram that fall within the new ZeroThreshold are added to the ZeroCount
-//     of the previous histogram (without mutating the provided previous
-//     histogram). The scenario that a populated bucket of the previous histogram
-//     is partially within, partially outside of the new ZeroThreshold, can only
-//     happen together with a counter reset and therefore shortcuts to returning
-//     true.
+//   - Upon a change of the ZeroThreshold, both histograms are compared using
+//     the larger ZeroThreshold. The buckets of the histogram with the smaller
+//     ZeroThreshold that fall within the larger ZeroThreshold are added to its
+//     ZeroCount (without mutating the provided histograms). The ZeroThreshold
+//     can decrease without a reset, e.g. when the source of the histogram
+//     changes its default ZeroThreshold. The scenario that a populated bucket
+//     is partially within, partially outside of the larger ZeroThreshold
+//     cannot be compared and therefore shortcuts to returning true.
 //
 //   - Upon a decrease of the Schema, the buckets of the previous histogram are
 //     merged so that they match the new, lower-resolution schema (again without
@@ -806,26 +806,25 @@ func (h *FloatHistogram) DetectReset(previous *FloatHistogram) bool {
 	if h.Schema > previous.Schema {
 		return true
 	}
-	if h.ZeroThreshold < previous.ZeroThreshold {
-		// ZeroThreshold decreased.
+	// Compare both histograms with the larger of the two zero thresholds.
+	threshold := max(h.ZeroThreshold, previous.ZeroThreshold)
+	currentZeroCount, currentThreshold, _ := h.zeroCountForLargerThreshold(threshold, nil)
+	previousZeroCount, previousThreshold, _ := previous.zeroCountForLargerThreshold(threshold, nil)
+	if currentThreshold != threshold || previousThreshold != threshold {
+		// The larger ZeroThreshold is within a populated bucket of
+		// one of the histograms.
 		return true
 	}
-	previousZeroCount, newThreshold, _ := previous.zeroCountForLargerThreshold(h.ZeroThreshold, nil)
-	if newThreshold != h.ZeroThreshold {
-		// ZeroThreshold is within a populated bucket in previous
-		// histogram.
+	if currentZeroCount < previousZeroCount {
 		return true
 	}
-	if h.ZeroCount < previousZeroCount {
-		return true
-	}
-	currIt := h.floatBucketIterator(true, h.ZeroThreshold, h.Schema)
-	prevIt := previous.floatBucketIterator(true, h.ZeroThreshold, h.Schema)
+	currIt := h.floatBucketIterator(true, threshold, h.Schema)
+	prevIt := previous.floatBucketIterator(true, threshold, h.Schema)
 	if detectReset(&currIt, &prevIt) {
 		return true
 	}
-	currIt = h.floatBucketIterator(false, h.ZeroThreshold, h.Schema)
-	prevIt = previous.floatBucketIterator(false, h.ZeroThreshold, h.Schema)
+	currIt = h.floatBucketIterator(false, threshold, h.Schema)
+	prevIt = previous.floatBucketIterator(false, threshold, h.Schema)
 	return detectReset(&currIt, &prevIt)
 }
 

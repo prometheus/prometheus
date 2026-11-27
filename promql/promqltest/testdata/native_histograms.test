@@ -1073,6 +1073,17 @@ eval instant at 10m histogram_sum(increase(reset_in_bucket[15m]))
 
 clear
 
+# A decrease of the zero threshold is not a counter reset if the buckets can
+# still be compared using the larger zero threshold.
+load 5m
+     zero_threshold_decrease {{schema:0 z_bucket_w:1e-128 count:100 sum:100 buckets:[100]}} {{schema:0 z_bucket_w:1e-128 count:110 sum:110 buckets:[110]}} {{schema:0 count:120 sum:120 buckets:[120]}}
+
+eval instant at 10m increase(zero_threshold_decrease[15m])
+     expect no_warn
+     {} {{schema:0 z_bucket_w:1e-128 count:30 sum:30 buckets:[30]}}
+
+clear
+
 # Test native histograms with custom buckets.
 load 5m
     custom_buckets_histogram {{schema:-53 sum:5 count:4 custom_values:[5 10] buckets:[1 2 1]}}x10
