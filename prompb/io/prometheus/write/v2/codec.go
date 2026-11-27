@@ -31,6 +31,32 @@ func (m TimeSeries) ToLabels(b *labels.ScratchBuilder, symbols []string) (labels
 	return desymbolizeLabels(b, m.GetLabelsRefs(), symbols)
 }
 
+// ToLabelsWithLimits return model labels.Labels from timeseries' remote labels,
+// rejecting the series when a label name length exceeds nameLimit or a label
+// value length exceeds valueLimit. A limit of 0 means no limit. Checking before
+// the labels are materialized keeps oversized values away from label storage
+// allocations.
+func (m TimeSeries) ToLabelsWithLimits(b *labels.ScratchBuilder, symbols []string, nameLimit, valueLimit int) (labels.Labels, error) {
+	labelRefs := m.GetLabelsRefs()
+	if len(labelRefs)%2 != 0 {
+		return labels.EmptyLabels(), fmt.Errorf("invalid labelRefs length %d", len(labelRefs))
+	}
+	for i := 0; i < len(labelRefs); i += 2 {
+		nameRef, valueRef := labelRefs[i], labelRefs[i+1]
+		if int(nameRef) >= len(symbols) || int(valueRef) >= len(symbols) {
+			return labels.EmptyLabels(), fmt.Errorf("labelRefs %d (name) = %d (value) outside of symbols table (size %d)", nameRef, valueRef, len(symbols))
+		}
+		name, value := symbols[nameRef], symbols[valueRef]
+		if nameLimit > 0 && len(name) > nameLimit {
+			return labels.EmptyLabels(), fmt.Errorf("label name length %d exceeds limit %d (label name: %.50s)", len(name), nameLimit, name)
+		}
+		if valueLimit > 0 && len(value) > valueLimit {
+			return labels.EmptyLabels(), fmt.Errorf("label value length %d exceeds limit %d for label %q (value: %.50q)", len(value), valueLimit, name, value)
+		}
+	}
+	return desymbolizeLabels(b, labelRefs, symbols)
+}
+
 // ToMetadata returns model metadata from timeseries' remote metadata.
 func (m TimeSeries) ToMetadata(symbols []string) (metadata.Metadata, error) {
 	typ := model.MetricTypeUnknown
