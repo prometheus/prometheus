@@ -32,7 +32,7 @@ const matchingCriteriaList = (
         </List.Item>
       )}
       {matchers
-        .filter((m) => !(m.name === "__name__"))
+        .filter((m) => !(m.name === "__name__" && m.type === matchType.equal))
         .map((m) => {
           switch (m.type) {
             case matchType.equal:
@@ -128,14 +128,21 @@ const matchingCriteriaList = (
 };
 
 const SelectorExplainView: FC<SelectorExplainViewProps> = ({ node }) => {
-  const baseMetricName = node.name.replace(/(_count|_sum|_bucket|_total)$/, "");
+  // The metric name can also be set inside the braces, e.g. {"my.metric"}.
+  const metricName =
+    node.name ||
+    node.matchers.find(
+      (m) => m.name === "__name__" && m.type === matchType.equal
+    )?.value ||
+    "";
+  const baseMetricName = metricName.replace(/(_count|_sum|_bucket|_total)$/, "");
   const { lookbackDelta } = useSettings();
 
   // Try to get metadata for the full unchanged metric name first.
   const { data: fullMetricMeta } = useSuspenseAPIQuery<MetadataResult>({
     path: `/metadata`,
     params: {
-      metric: node.name,
+      metric: metricName,
     },
   });
 
@@ -150,7 +157,7 @@ const SelectorExplainView: FC<SelectorExplainViewProps> = ({ node }) => {
 
   // Determine which metadata to use.
   const metricMeta =
-    fullMetricMeta.data[node.name] ?? baseMetricMeta.data[baseMetricName];
+    fullMetricMeta.data[metricName] ?? baseMetricMeta.data[baseMetricName];
 
   return (
     <Card withBorder>
@@ -271,7 +278,7 @@ const SelectorExplainView: FC<SelectorExplainViewProps> = ({ node }) => {
         )}{" "}
         for any series that match all of the following criteria:
       </Text>
-      {matchingCriteriaList(node.name, node.matchers)}
+      {matchingCriteriaList(metricName, node.matchers)}
       <Text fz="sm">
         If a series has no values in that window
         {(node.offsetExpr || node.offset > 0) && (
