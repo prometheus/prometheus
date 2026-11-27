@@ -611,3 +611,90 @@ func createChunk(t *testing.T, idx int, hrw *ChunkDiskMapper) (seriesRef HeadSer
 	<-awaitCb
 	return seriesRef, chunkRef, mint, maxt, chunk, isOOO
 }
+
+func TestChunkDiskMapper_Reset(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	hrw := createChunkDiskMapper(t, dir)
+
+	// Write a chunk into file 1, cut to file 2, and enqueue additional chunks without
+	// waiting so Reset exercises both finalized and active unflushed / queued files.
+	createChunk(t, 0, hrw)
+	hrw.CutNewFile()
+
+	var (
+		cbMu    sync.Mutex
+		cbCount int
+		cbErrs  []error
+	)
+	const queuedWrites = 8
+	for i := range queuedWrites {
+		chk := randomChunk(t)
+		hrw.WriteChunk(HeadSeriesRef(100+i), int64((i+1)*100), int64((i+1)*100+50), chk, i%2 == 0, func(err error) {
+			cbMu.Lock()
+			cbCount++
+			if err != nil {
+				cbErrs = append(cbErrs, err)
+			}
+			cbMu.Unlock()
+		})
+	}
+
+	require.NoError(t, hrw.Reset())
+
+	// All previously queued writes must have drained before Reset returned.
+	cbMu.Lock()
+	require.Equal(t, queuedWrites, cbCount)
+	require.Empty(t, cbErrs)
+	cbMu.Unlock()
+
+	require.Nil(t, hrw.curFile)
+	require.Equal(t, 0, hrw.curFileSequence)
+	require.Equal(t, uint64(0), hrw.curFileOffset.Load())
+	require.False(t, hrw.fileMaxtSet)
+	require.Empty(t, hrw.mmappedChunkFiles)
+	require.Empty(t, hrw.closers)
+	require.True(t, hrw.IsQueueEmpty())
+
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	require.Empty(t, entries)
+
+	// Iterating immediately after Reset must succeed with zero chunks.
+	iterCount := 0
+	require.NoError(t, hrw.IterateAllChunks(func(HeadSeriesRef, ChunkDiskMapperRef, int64, int64, uint16, chunkenc.Encoding, bool) error {
+		iterCount++
+		return nil
+	}))
+	require.Equal(t, 0, iterCount)
+
+	// Subsequent writes must cut a fresh sequence 1 file and remain readable across reopen.
+	postSeriesRef, postRef, postMint, postMaxt, postChunk, postOOO := createChunk(t, 10, hrw)
+	seq, _ := postRef.Unpack()
+	require.Equal(t, 1, seq)
+
+	gotChunk, err := hrw.Chunk(postRef)
+	require.NoError(t, err)
+	require.Equal(t, postChunk.Bytes(), gotChunk.Bytes())
+
+	require.NoError(t, hrw.Close())
+
+	// Reset on a closed mapper must return ErrChunkDiskMapperClosed.
+	require.ErrorIs(t, hrw.Reset(), ErrChunkDiskMapperClosed)
+
+	// Reopen and verify only the post-reset chunk exists on disk.
+	reopened, err := NewChunkDiskMapper(nil, dir, chunkenc.NewPool(), DefaultWriteBufferSize, writeQueueSize)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, reopened.Close()) }()
+
+	var seenRefs []ChunkDiskMapperRef
+	require.NoError(t, reopened.IterateAllChunks(func(sRef HeadSeriesRef, cRef ChunkDiskMapperRef, mint, maxt int64, _ uint16, _ chunkenc.Encoding, isOOO bool) error {
+		require.Equal(t, postSeriesRef, sRef)
+		require.Equal(t, postMint, mint)
+		require.Equal(t, postMaxt, maxt)
+		require.Equal(t, postOOO, isOOO)
+		seenRefs = append(seenRefs, cRef)
+		return nil
+	}))
+	require.Equal(t, []ChunkDiskMapperRef{postRef}, seenRefs)
+}

@@ -238,6 +238,35 @@ func (c *chunkWriteQueue) stop() {
 	c.workerWg.Wait()
 }
 
+// drain waits for all pending jobs to finish processing and restarts the worker
+// with a fresh queue while preserving existing metrics.
+// Callers must ensure no concurrent addJob calls occur while drain runs.
+func (c *chunkWriteQueue) drain() {
+	c.isRunningMtx.Lock()
+	defer c.isRunningMtx.Unlock()
+
+	if !c.isRunning {
+		return
+	}
+
+	c.isRunning = false
+	c.jobs.close()
+	c.workerWg.Wait()
+
+	c.jobs = newWriteJobQueue(c.jobs.maxSize, c.jobs.segmentSize)
+	c.workerWg.Go(func() {
+		for {
+			job, ok := c.jobs.pop()
+			if !ok {
+				return
+			}
+
+			c.processJob(job)
+		}
+	})
+	c.isRunning = true
+}
+
 func (c *chunkWriteQueue) queueIsEmpty() bool {
 	return c.queueSize() == 0
 }

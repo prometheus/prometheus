@@ -41,6 +41,7 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/oklog/ulid/v2"
+	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
@@ -4183,6 +4184,398 @@ func TestDBOpen_MinValidTime(t *testing.T) {
 			}
 		})
 	}
+}
+
+type failingPreCreationCallback struct {
+	noopSeriesLifecycleCallback
+	err error
+}
+
+func (c failingPreCreationCallback) PreCreation(labels.Labels) error {
+	return c.err
+}
+
+// TestDBOpen_CorruptedCheckpoint verifies that checkpoint corruption does not trigger
+// main WAL repair against unrelated WAL segment numbers, and instead cleanly resets Head
+// while preserving persisted blocks, while non-corruption checkpoint errors do not delete
+// the WAL and genuine main WAL corruption still repairs normally.
+// https://github.com/prometheus/prometheus/issues/7530
+func TestDBOpen_CorruptedCheckpoint(t *testing.T) {
+	const (
+		walSegmentSize = 32 * 1024
+		oooWindow      = int64(1000)
+	)
+
+	// setupDir prepares a DB directory containing:
+	// - one persisted block covering [0, 500],
+	// - a checkpoint covering WAL segments 0..1 (with segments 0..1 truncated),
+	// - intact post-checkpoint WAL segments 2..last,
+	// - on-disk mmapped head chunks in chunks_head, and
+	// - out-of-order samples in wbl.
+	setupDir := func(t *testing.T) (dir, cpDir string, persistedBlockID ulid.ULID) {
+		t.Helper()
+		dir = t.TempDir()
+
+		blockDir := createBlock(t, dir, genSeries(1, 1, 0, 500))
+		meta, _, err := readMetaFile(blockDir)
+		require.NoError(t, err)
+		persistedBlockID = meta.ULID
+
+		opts := DefaultOptions()
+		opts.WALSegmentSize = walSegmentSize
+		opts.OutOfOrderTimeWindow = oooWindow
+		opts.MinBlockDuration = 10000
+		opts.MaxBlockDuration = 10000
+
+		db, err := Open(dir, nil, nil, opts, nil)
+		require.NoError(t, err)
+		db.DisableCompactions()
+
+		ctx := context.Background()
+		// Append enough samples to span multiple WAL segments and trigger an mmapped chunk.
+		ts := int64(1000)
+		for i := range 250 {
+			app := db.AppenderV2(ctx)
+			_, err := app.Append(0, labels.FromStrings("__name__", "checkpoint_series", "instance", "a"), 0, ts, float64(i), nil, nil, storage.AOptions{})
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+			ts += 10
+		}
+		db.Head().mmapHeadChunks()
+
+		// Take a chunk snapshot at segment 0 (<= checkpoint index 1) so tests with
+		// EnableMemorySnapshotOnShutdown verify stale snapshots are also cleaned up.
+		_, err = db.Head().ChunkSnapshot()
+		require.NoError(t, err)
+
+		// Append an out-of-order sample so the WBL is populated.
+		app := db.AppenderV2(ctx)
+		_, err = app.Append(0, labels.FromStrings("__name__", "checkpoint_series", "instance", "a"), 0, ts-500, 999, nil, nil, storage.AOptions{})
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+
+		// Ensure at least segments 0 and 1 exist before checkpointing.
+		for {
+			_, last, err := wlog.Segments(db.Head().wal.Dir())
+			require.NoError(t, err)
+			if last >= 2 {
+				break
+			}
+			_, err = db.Head().wal.NextSegmentSync()
+			require.NoError(t, err)
+		}
+
+		_, err = wlog.Checkpoint(promslog.NewNopLogger(), db.Head().wal, 0, 1, func(chunks.HeadSeriesRef) bool { return true }, 0, false)
+		require.NoError(t, err)
+		require.NoError(t, db.Head().wal.Truncate(2))
+
+		// Append post-checkpoint samples into segments 2 and 3.
+		for seg := range 2 {
+			for j := range 5 {
+				app := db.AppenderV2(ctx)
+				_, err := app.Append(0, labels.FromStrings("__name__", "post_checkpoint_series", "seg", strconv.Itoa(seg)), 0, ts, float64(j), nil, nil, storage.AOptions{})
+				require.NoError(t, err)
+				require.NoError(t, app.Commit())
+				ts += 10
+			}
+			if seg == 0 {
+				_, err = db.Head().wal.NextSegmentSync()
+				require.NoError(t, err)
+			}
+		}
+
+		require.NoError(t, db.Close())
+
+		walDir := filepath.Join(dir, "wal")
+		cpDir, cpIdx, err := wlog.LastCheckpoint(walDir)
+		require.NoError(t, err)
+		require.Equal(t, 1, cpIdx)
+
+		first, last, err := wlog.Segments(walDir)
+		require.NoError(t, err)
+		require.Equal(t, 2, first)
+		require.GreaterOrEqual(t, last, 3)
+
+		return dir, cpDir, persistedBlockID
+	}
+
+	t.Run("reader corruption resets head and recovers", func(t *testing.T) {
+		dir, cpDir, persistedBlockID := setupDir(t)
+
+		// Corrupt the checkpoint segment after the MinValidTime record so ReadMinValidTime
+		// succeeds while Head.Init fails during checkpoint replay.
+		cpSeg := wlog.SegmentName(cpDir, 0)
+		f, err := os.OpenFile(cpSeg, os.O_RDWR, 0o666)
+		require.NoError(t, err)
+		r := wlog.NewReader(bufio.NewReader(f))
+		require.True(t, r.Next(), "expected MinValidTime record in checkpoint")
+		_, err = f.WriteAt([]byte{99}, r.Offset())
+		require.NoError(t, err)
+		require.NoError(t, f.Close())
+
+		opts := DefaultOptions()
+		opts.WALSegmentSize = walSegmentSize
+		opts.OutOfOrderTimeWindow = oooWindow
+		opts.MinBlockDuration = 10000
+		opts.MaxBlockDuration = 10000
+		opts.EnableMemorySnapshotOnShutdown = true
+
+		reg := prometheus.NewRegistry()
+		db, err := Open(dir, nil, reg, opts, nil)
+		require.NoError(t, err)
+		db.DisableCompactions()
+
+		require.Equal(t, 1.0, prom_testutil.ToFloat64(db.head.metrics.walCorruptionsTotal))
+		require.Equal(t, uint64(0), db.Head().NumSeries())
+		require.Equal(t, 0.0, prom_testutil.ToFloat64(db.head.metrics.chunks))
+
+		// Corrupted checkpoint, chunk snapshots, WAL, WBL, and chunks_head must be cleanly reset.
+		walDir := filepath.Join(dir, "wal")
+		_, _, err = wlog.LastCheckpoint(walDir)
+		require.ErrorIs(t, err, record.ErrNotFound)
+
+		_, _, _, err = LastChunkSnapshot(dir)
+		require.ErrorIs(t, err, record.ErrNotFound)
+
+		first, last, err := wlog.Segments(walDir)
+		require.NoError(t, err)
+		require.Equal(t, 0, first)
+		require.Equal(t, 0, last)
+
+		wblFirst, wblLast, err := wlog.Segments(filepath.Join(dir, wlog.WblDirName))
+		require.NoError(t, err)
+		require.Equal(t, 0, wblFirst)
+		require.Equal(t, 0, wblLast)
+
+		headChunkEntries, err := os.ReadDir(filepath.Join(dir, "chunks_head"))
+		require.NoError(t, err)
+		require.Empty(t, headChunkEntries)
+
+		// Persisted on-disk block must remain intact.
+		require.Len(t, db.Blocks(), 1)
+		require.Equal(t, persistedBlockID, db.Blocks()[0].Meta().ULID)
+
+		// Verify DB accepts new writes (in-order and OOO), serves queries, compacts, and restarts cleanly.
+		ctx := context.Background()
+		app := db.AppenderV2(ctx)
+		_, err = app.Append(0, labels.FromStrings("__name__", "after_recovery"), 0, 20000, 42, nil, nil, storage.AOptions{})
+		require.NoError(t, err)
+		_, err = app.Append(0, labels.FromStrings("__name__", "after_recovery"), 0, 20010, 43, nil, nil, storage.AOptions{})
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+
+		// Out-of-order append after recovery.
+		app = db.AppenderV2(ctx)
+		_, err = app.Append(0, labels.FromStrings("__name__", "after_recovery"), 0, 19500, 41, nil, nil, storage.AOptions{})
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+
+		q, err := db.Querier(19000, 21000)
+		require.NoError(t, err)
+		seriesSet := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "__name__", "after_recovery"))
+		require.Equal(t, []chunks.Sample{
+			sample{t: 19500, f: 41},
+			sample{t: 20000, f: 42},
+			sample{t: 20010, f: 43},
+		}, seriesSet[`{__name__="after_recovery"}`])
+
+		require.NoError(t, db.Compact(ctx))
+		require.NoError(t, db.Close())
+
+		// Reopening after recovery must succeed with zero corruptions and preserve the new data.
+		reopened, err := Open(dir, nil, nil, opts, nil)
+		require.NoError(t, err)
+		defer func() { require.NoError(t, reopened.Close()) }()
+
+		require.Equal(t, 0.0, prom_testutil.ToFloat64(reopened.head.metrics.walCorruptionsTotal))
+		q, err = reopened.Querier(19000, 21000)
+		require.NoError(t, err)
+		seriesSet = query(t, q, labels.MustNewMatcher(labels.MatchEqual, "__name__", "after_recovery"))
+		require.Equal(t, []chunks.Sample{
+			sample{t: 19500, f: 41},
+			sample{t: 20000, f: 42},
+			sample{t: 20010, f: 43},
+		}, seriesSet[`{__name__="after_recovery"}`])
+	})
+
+	for _, writeQueueSize := range []int{0, 1000} {
+		t.Run(fmt.Sprintf("mid-checkpoint corruption after mmapping chunk (writeQueueSize=%d)", writeQueueSize), func(t *testing.T) {
+			dir, cpDir, persistedBlockID := setupDir(t)
+
+			// Remove pre-existing chunks_head files so checkpoint replay must materialize
+			// and mmap head chunks during loadWAL before encountering corruption.
+			require.NoError(t, os.RemoveAll(filepath.Join(dir, "chunks_head")))
+
+			// Corrupt the checkpoint after 150 sample records (> 120 samples per chunk),
+			// guaranteeing at least one chunk is mmapped during checkpoint replay before failing.
+			cpSeg := wlog.SegmentName(cpDir, 0)
+			f, err := os.OpenFile(cpSeg, os.O_RDWR, 0o666)
+			require.NoError(t, err)
+			r := wlog.NewReader(bufio.NewReader(f))
+			for range 155 {
+				require.True(t, r.Next(), "expected enough checkpoint records before corruption point")
+			}
+			_, err = f.WriteAt([]byte{99}, r.Offset())
+			require.NoError(t, err)
+			require.NoError(t, f.Close())
+
+			opts := DefaultOptions()
+			opts.WALSegmentSize = walSegmentSize
+			opts.OutOfOrderTimeWindow = oooWindow
+			opts.MinBlockDuration = 10000
+			opts.MaxBlockDuration = 10000
+			opts.HeadChunksWriteQueueSize = writeQueueSize
+
+			reg := prometheus.NewRegistry()
+			db, err := Open(dir, nil, reg, opts, nil)
+			require.NoError(t, err)
+			db.DisableCompactions()
+
+			require.Equal(t, 1.0, prom_testutil.ToFloat64(db.head.metrics.walCorruptionsTotal))
+			require.Equal(t, 0.0, prom_testutil.ToFloat64(db.head.metrics.mmapChunkCorruptionTotal))
+			require.Equal(t, uint64(0), db.Head().NumSeries())
+			require.Equal(t, 0.0, prom_testutil.ToFloat64(db.head.metrics.chunks))
+			require.Len(t, db.Blocks(), 1)
+			require.Equal(t, persistedBlockID, db.Blocks()[0].Meta().ULID)
+
+			headChunkEntries, err := os.ReadDir(filepath.Join(dir, "chunks_head"))
+			require.NoError(t, err)
+			require.Empty(t, headChunkEntries)
+
+			// Append enough samples after recovery to cut and mmap a fresh head chunk,
+			// then reopen to verify chunks_head works cleanly after reset.
+			ctx := context.Background()
+			for i := range 130 {
+				app := db.AppenderV2(ctx)
+				_, err := app.Append(0, labels.FromStrings("__name__", "fresh_after_mid_cp"), 0, int64(20000+i*10), float64(i), nil, nil, storage.AOptions{})
+				require.NoError(t, err)
+				require.NoError(t, app.Commit())
+			}
+			db.Head().mmapHeadChunks()
+			require.NoError(t, db.Close())
+
+			reopened, err := Open(dir, nil, nil, opts, nil)
+			require.NoError(t, err)
+			defer func() { require.NoError(t, reopened.Close()) }()
+
+			require.Equal(t, 0.0, prom_testutil.ToFloat64(reopened.head.metrics.walCorruptionsTotal))
+			require.Equal(t, 0.0, prom_testutil.ToFloat64(reopened.head.metrics.mmapChunkCorruptionTotal))
+			q, err := reopened.Querier(20000, 22000)
+			require.NoError(t, err)
+			seriesSet := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "__name__", "fresh_after_mid_cp"))
+			require.Len(t, seriesSet[`{__name__="fresh_after_mid_cp"}`], 130)
+		})
+	}
+
+	t.Run("record decoding corruption resets head and recovers", func(t *testing.T) {
+		dir, cpDir, persistedBlockID := setupDir(t)
+
+		// Replace checkpoint segment 0 with a valid-CRC WAL segment containing a truncated series record.
+		require.NoError(t, os.RemoveAll(cpDir))
+		cpWL, err := wlog.NewSize(nil, nil, cpDir, walSegmentSize, compression.None)
+		require.NoError(t, err)
+		var enc record.Encoder
+		validSeries := enc.Series([]record.RefSeries{{Ref: 1, Labels: labels.FromStrings("__name__", "s1")}}, nil)
+		require.NoError(t, cpWL.Log(validSeries[:3]))
+		require.NoError(t, cpWL.Close())
+
+		// Verify Head.Init surfaces a CorruptionErr pointing at the checkpoint dir.
+		walDir := filepath.Join(dir, "wal")
+		w, err := wlog.NewSize(nil, nil, walDir, walSegmentSize, compression.None)
+		require.NoError(t, err)
+		headOpts := DefaultHeadOptions()
+		headOpts.ChunkDirRoot = dir
+		h, err := NewHead(nil, nil, w, nil, headOpts, nil)
+		require.NoError(t, err)
+		initErr := h.Init(math.MinInt64)
+		var cpErr *errLoadCheckpoint
+		require.ErrorAs(t, initErr, &cpErr)
+		var cerr *wlog.CorruptionErr
+		require.ErrorAs(t, initErr, &cerr)
+		require.Equal(t, cpDir, cerr.Dir)
+		require.NoError(t, h.Close())
+
+		// Reopening the DB must cleanly reset Head and recover.
+		opts := DefaultOptions()
+		opts.WALSegmentSize = walSegmentSize
+		opts.OutOfOrderTimeWindow = oooWindow
+		db, err := Open(dir, nil, nil, opts, nil)
+		require.NoError(t, err)
+		defer func() { require.NoError(t, db.Close()) }()
+
+		require.Equal(t, 1.0, prom_testutil.ToFloat64(db.head.metrics.walCorruptionsTotal))
+		require.Equal(t, uint64(0), db.Head().NumSeries())
+		require.Len(t, db.Blocks(), 1)
+		require.Equal(t, persistedBlockID, db.Blocks()[0].Meta().ULID)
+		_, _, err = wlog.LastCheckpoint(walDir)
+		require.ErrorIs(t, err, record.ErrNotFound)
+	})
+
+	t.Run("non-corruption checkpoint error fails open without deleting WAL", func(t *testing.T) {
+		dir, _, _ := setupDir(t)
+		sentinelErr := errors.New("series creation rejected")
+
+		opts := DefaultOptions()
+		opts.WALSegmentSize = walSegmentSize
+		opts.OutOfOrderTimeWindow = oooWindow
+		opts.SeriesLifecycleCallback = failingPreCreationCallback{err: sentinelErr}
+
+		_, err := Open(dir, nil, nil, opts, nil)
+		require.ErrorIs(t, err, sentinelErr)
+
+		// Checkpoint and main WAL segments must remain intact on disk.
+		walDir := filepath.Join(dir, "wal")
+		_, cpIdx, err := wlog.LastCheckpoint(walDir)
+		require.NoError(t, err)
+		require.Equal(t, 1, cpIdx)
+
+		first, last, err := wlog.Segments(walDir)
+		require.NoError(t, err)
+		require.Equal(t, 2, first)
+		require.GreaterOrEqual(t, last, 3)
+
+		// Opening again without the failing callback must succeed and recover all data.
+		opts.SeriesLifecycleCallback = nil
+		db, err := Open(dir, nil, nil, opts, nil)
+		require.NoError(t, err)
+		defer func() { require.NoError(t, db.Close()) }()
+
+		require.Equal(t, 0.0, prom_testutil.ToFloat64(db.head.metrics.walCorruptionsTotal))
+		require.Positive(t, db.Head().NumSeries())
+	})
+
+	t.Run("main WAL corruption after valid checkpoint still repairs main WAL", func(t *testing.T) {
+		dir, _, _ := setupDir(t)
+		walDir := filepath.Join(dir, "wal")
+
+		_, last, err := wlog.Segments(walDir)
+		require.NoError(t, err)
+
+		// Corrupt the last main WAL segment while keeping the checkpoint and segment 2 intact.
+		f, err := os.OpenFile(wlog.SegmentName(walDir, last), os.O_RDWR, 0o666)
+		require.NoError(t, err)
+		_, err = f.WriteAt([]byte{99}, 0)
+		require.NoError(t, err)
+		require.NoError(t, f.Close())
+
+		opts := DefaultOptions()
+		opts.WALSegmentSize = walSegmentSize
+		opts.OutOfOrderTimeWindow = oooWindow
+		db, err := Open(dir, nil, nil, opts, nil)
+		require.NoError(t, err)
+		defer func() { require.NoError(t, db.Close()) }()
+
+		require.Equal(t, 1.0, prom_testutil.ToFloat64(db.head.metrics.walCorruptionsTotal))
+		// Checkpoint and pre-corruption series must be preserved.
+		_, cpIdx, err := wlog.LastCheckpoint(walDir)
+		require.NoError(t, err)
+		require.Equal(t, 1, cpIdx)
+
+		q, err := db.Querier(1000, 10000)
+		require.NoError(t, err)
+		seriesSet := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "__name__", "checkpoint_series"))
+		require.NotEmpty(t, seriesSet[`{__name__="checkpoint_series", instance="a"}`])
+	})
 }
 
 // TestCompactSelectedSeries_LateAppendDuringCompactionSurvivesRestart

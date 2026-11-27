@@ -22,6 +22,7 @@ import (
 	"hash/crc32"
 	"io"
 	"log/slog"
+	"math"
 	"os"
 	"path/filepath"
 	"slices"
@@ -410,8 +411,11 @@ func (w *WL) Repair(origErr error) error {
 	if cerr.Segment < 0 {
 		return errors.New("corruption error does not specify position")
 	}
+	if cerr.Dir != "" && filepath.Clean(cerr.Dir) != filepath.Clean(w.Dir()) {
+		return fmt.Errorf("corruption error directory %q does not match WAL directory %q: %w", cerr.Dir, w.Dir(), origErr)
+	}
 	w.logger.Warn("Starting corruption repair",
-		"segment", cerr.Segment, "offset", cerr.Offset)
+		"dir", cerr.Dir, "segment", cerr.Segment, "offset", cerr.Offset)
 
 	// All segments behind the corruption can no longer be used.
 	segs, err := listSegments(w.Dir())
@@ -502,6 +506,76 @@ func (w *WL) Repair(origErr error) error {
 		return err
 	}
 	return w.setSegment(s)
+}
+
+// Reset deletes all segments and checkpoints from the write log and initializes
+// a fresh empty segment at index 0.
+// It must not be called concurrently with writes.
+func (w *WL) Reset() error {
+	w.mtx.Lock()
+	defer w.mtx.Unlock()
+
+	if w.closed {
+		return errors.New("wlog is closed")
+	}
+	if w.segment == nil {
+		return errors.New("wlog has no active segment")
+	}
+
+	// Wait for any pending async segment sync/close operations to complete
+	// before deleting segment files.
+	if w.actorc != nil {
+		donec := make(chan struct{})
+		w.actorc <- func() { close(donec) }
+		<-donec
+	}
+
+	if w.page != nil {
+		w.page.reset()
+	}
+
+	segs, err := listSegments(w.Dir())
+	if err != nil {
+		return fmt.Errorf("list segments: %w", err)
+	}
+
+	// Remove segments newest-first, closing the active segment before deleting it
+	// so removal succeeds on Windows. Keep w.segment non-nil until replaced by
+	// setSegment so a subsequent Close still stops the background actor goroutine.
+	activeClosed := false
+	for _, s := range slices.Backward(segs) {
+		if w.segment != nil && w.segment.Index() == s.index {
+			if err := w.segment.Close(); err != nil {
+				return fmt.Errorf("close active segment: %w", err)
+			}
+			activeClosed = true
+		}
+		if err := os.Remove(filepath.Join(w.Dir(), s.name)); err != nil {
+			return fmt.Errorf("delete segment %d: %w", s.index, err)
+		}
+	}
+	if w.segment != nil && !activeClosed {
+		if err := w.segment.Close(); err != nil {
+			return fmt.Errorf("close active segment: %w", err)
+		}
+	}
+
+	if err := DeleteCheckpoints(w.Dir(), math.MaxInt); err != nil {
+		return fmt.Errorf("delete checkpoints: %w", err)
+	}
+	if err := DeleteTempCheckpoints(w.logger, w.Dir()); err != nil {
+		return fmt.Errorf("delete temp checkpoints: %w", err)
+	}
+
+	s, err := CreateSegment(w.Dir(), 0)
+	if err != nil {
+		return fmt.Errorf("create segment: %w", err)
+	}
+	if err := w.setSegment(s); err != nil {
+		_ = s.Close()
+		return fmt.Errorf("set segment: %w", err)
+	}
+	return nil
 }
 
 // SegmentName builds a segment name for the directory.

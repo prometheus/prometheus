@@ -1219,6 +1219,22 @@ func (e errLoadWbl) Unwrap() error {
 	return e.err
 }
 
+type errLoadCheckpoint struct {
+	err error
+}
+
+func (e errLoadCheckpoint) Error() string {
+	return fmt.Sprintf("backfill checkpoint: %s", e.err.Error())
+}
+
+func (e errLoadCheckpoint) Cause() error {
+	return e.err
+}
+
+func (e errLoadCheckpoint) Unwrap() error {
+	return e.err
+}
+
 type wblSubsetProcessor struct {
 	input            chan wblSubsetProcessorInputItem
 	output           chan []record.RefSample

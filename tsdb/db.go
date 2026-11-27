@@ -1064,19 +1064,25 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 			return
 		}
 
-		// If head was never initialized, WAL/WBL goroutines need explicit
-		// cleanup since db.Close() -> head.Close() won't reach them.
-		if db.head == nil {
-			if wal != nil {
-				returnedErr = errors.Join(returnedErr, wal.Close())
-			}
-			if wbl != nil {
-				returnedErr = errors.Join(returnedErr, wbl.Close())
-			}
+		if db.compactCancel != nil {
+			db.compactCancel()
+		}
+		for _, b := range db.blocks {
+			returnedErr = errors.Join(returnedErr, b.Close())
 		}
 
 		// db.Close() short-circuits once db.donec is closed below, so release
-		// the lockfile here to ensure it is always released on error.
+		// startup-owned resources directly without running Head.Close (which
+		// could persist a snapshot or clean-shutdown state from an unreplayed head).
+		if db.head != nil && db.head.chunkDiskMapper != nil {
+			returnedErr = errors.Join(returnedErr, db.head.chunkDiskMapper.Close())
+		}
+		if wal != nil {
+			returnedErr = errors.Join(returnedErr, wal.Close())
+		}
+		if wbl != nil {
+			returnedErr = errors.Join(returnedErr, wbl.Close())
+		}
 		if db.locker != nil {
 			returnedErr = errors.Join(returnedErr, db.locker.Release())
 		}
@@ -1247,6 +1253,18 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 				return nil, fmt.Errorf("repair corrupted WBL: %w", err)
 			}
 			db.logger.Info("Successfully repaired WBL")
+		} else if e, ok := errors.AsType[*errLoadCheckpoint](initErr); ok {
+			if _, ok := errors.AsType[*wlog.CorruptionErr](e.err); !ok {
+				return nil, fmt.Errorf("replay checkpoint: %w", initErr)
+			}
+			db.logger.Warn("Encountered checkpoint corruption, resetting head", "err", initErr)
+			if err := db.head.reset(); err != nil {
+				return nil, fmt.Errorf("reset head after checkpoint corruption: %w", err)
+			}
+			if err := db.head.Init(minValidTime); err != nil {
+				return nil, fmt.Errorf("re-initialize head after checkpoint corruption: %w", err)
+			}
+			db.logger.Info("Successfully reset head after checkpoint corruption")
 		} else {
 			db.logger.Warn("Encountered WAL read error, attempting repair", "err", initErr)
 			if err := wal.Repair(initErr); err != nil {
