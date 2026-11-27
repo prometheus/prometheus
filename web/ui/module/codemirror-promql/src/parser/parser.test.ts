@@ -1207,6 +1207,47 @@ describe('promql operations', () => {
       ],
     },
     {
+      expr: 'sum(foo, bar)',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [
+        {
+          from: 0,
+          to: 13,
+          message: 'wrong number of arguments for aggregate expression provided, expected 1, got 2',
+          severity: 'error',
+        },
+      ],
+    },
+    {
+      expr: 'topk(foo)',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [
+        {
+          from: 0,
+          to: 9,
+          message: 'wrong number of arguments for aggregate expression provided, expected 2, got 1',
+          severity: 'error',
+        },
+      ],
+    },
+    {
+      expr: 'topk(5, foo, bar)',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [
+        {
+          from: 0,
+          to: 17,
+          message: 'wrong number of arguments for aggregate expression provided, expected 2, got 3',
+          severity: 'error',
+        },
+      ],
+    },
+    {
+      expr: 'count_values("value", foo)',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [],
+    },
+    {
       expr: '{"__name__"="foo", __name__="bar"}',
       expectedValueType: ValueType.vector,
       expectedDiag: [
