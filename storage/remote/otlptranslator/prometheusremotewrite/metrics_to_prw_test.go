@@ -1235,11 +1235,15 @@ func TestTemporality(t *testing.T) {
 			},
 		},
 		{
-			name: "empty metric type errors",
+			name: "empty metric type is dropped",
 			inputSeries: []pmetric.Metric{
+				createOtelSum("test_metric_1", pmetric.AggregationTemporalityCumulative, ts),
 				createOtelEmptyType("test_empty"),
 			},
-			expectedError: `could not get aggregation temporality for test_empty as it has unsupported metric type Empty`,
+			expectedSamples: []sample{
+				createPromFloatSeries("test_metric_1", ts, model.MetricTypeCounter),
+			},
+			expectedWarnings: []string{"empty data points. test_empty is dropped"},
 		},
 	}
 

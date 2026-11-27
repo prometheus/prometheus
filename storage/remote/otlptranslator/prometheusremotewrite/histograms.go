@@ -48,6 +48,14 @@ func (c *PrometheusConverter) addExponentialHistogramDataPoints(
 		}
 
 		pt := dataPoints.At(x)
+		if pt.Scale() < histogram.ExponentialSchemaMin {
+			// Drop only this data point. Returning an error would roll back
+			// the other metrics in the request as well.
+			annots.Add(newCategorizedWarningf(WarningCategoryHistogramScaleTooLow,
+				"exponential histogram scale %d is below the minimum of %d. A data point of %s is dropped",
+				pt.Scale(), histogram.ExponentialSchemaMin, appOpts.MetricFamilyName))
+			continue
+		}
 
 		hp, ws, err := exponentialToNativeHistogram(pt, temporality)
 		annots.Merge(ws)

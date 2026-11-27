@@ -334,6 +334,35 @@ func TestOTLPWriteHandler(t *testing.T) {
 			require.NoError(t, ex.ConsumeMetrics(t.Context(), request.Metrics()))
 			require.Equal(t, 1.0, testutil.ToFloat64(ex.translationWarnings.WithLabelValues("invalid_temporality")))
 		})
+
+		t.Run("no metric type", func(t *testing.T) {
+			request := pmetricotlp.NewExportRequest()
+			m := request.Metrics().ResourceMetrics().AppendEmpty().ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
+			m.SetName("test_untyped")
+
+			ex := newExporter()
+			require.Equal(t, 0.0, testutil.ToFloat64(ex.translationWarnings.WithLabelValues("empty_data_points")))
+			require.NoError(t, ex.ConsumeMetrics(t.Context(), request.Metrics()))
+			require.Equal(t, 1.0, testutil.ToFloat64(ex.translationWarnings.WithLabelValues("empty_data_points")))
+		})
+
+		t.Run("histogram scale too low", func(t *testing.T) {
+			request := pmetricotlp.NewExportRequest()
+			m := request.Metrics().ResourceMetrics().AppendEmpty().ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
+			m.SetName("test_exponential_histogram")
+			m.SetEmptyExponentialHistogram().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+			h := m.ExponentialHistogram().DataPoints().AppendEmpty()
+			h.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
+			h.SetScale(-5)
+			h.SetCount(1)
+			h.SetSum(1)
+			h.Positive().BucketCounts().FromRaw([]uint64{1})
+
+			ex := newExporter()
+			require.Equal(t, 0.0, testutil.ToFloat64(ex.translationWarnings.WithLabelValues("histogram_scale_too_low")))
+			require.NoError(t, ex.ConsumeMetrics(t.Context(), request.Metrics()))
+			require.Equal(t, 1.0, testutil.ToFloat64(ex.translationWarnings.WithLabelValues("histogram_scale_too_low")))
+		})
 	})
 
 	t.Run("dropped metric does not reject healthy metrics", func(t *testing.T) {
@@ -358,6 +387,25 @@ func TestOTLPWriteHandler(t *testing.T) {
 					dp := sum.DataPoints().AppendEmpty()
 					dp.SetTimestamp(pcommon.NewTimestampFromTime(ts))
 					dp.SetIntValue(1)
+				},
+			},
+			{
+				name:         "no metric type",
+				buildDropped: func(pmetric.Metric) {},
+			},
+			{
+				// Prometheus native histograms support schemas down to -4,
+				// OTLP exponential histograms scales down to -10.
+				name: "exponential histogram scale below -4",
+				buildDropped: func(m pmetric.Metric) {
+					eh := m.SetEmptyExponentialHistogram()
+					eh.SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+					dp := eh.DataPoints().AppendEmpty()
+					dp.SetTimestamp(pcommon.NewTimestampFromTime(ts))
+					dp.SetScale(-5)
+					dp.SetCount(1)
+					dp.SetSum(1)
+					dp.Positive().BucketCounts().FromRaw([]uint64{1})
 				},
 			},
 		} {

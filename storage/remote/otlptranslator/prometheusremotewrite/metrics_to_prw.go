@@ -285,6 +285,12 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 				}
 
 				metric := metricSlice.At(k)
+				if metric.Type() == pmetric.MetricTypeEmpty {
+					// A metric without a type has no data points either. Drop
+					// only this metric, as for the empty data points below.
+					annots.Add(newCategorizedWarningf(WarningCategoryEmptyDataPoints, "empty data points. %s is dropped", metric.Name()))
+					continue
+				}
 				earliestTimestamp, latestTimestamp = findMinAndMaxTimestamps(metric, earliestTimestamp, latestTimestamp)
 				temporality, hasTemporality, err := aggregationTemporality(metric)
 				if err != nil {
