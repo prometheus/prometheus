@@ -557,3 +557,16 @@ groups:
 		})
 	}
 }
+
+func TestParseFileNegativeLimit(t *testing.T) {
+	input := []byte(`groups:
+- name: example
+  limit: -1
+  rules:
+  - record: job:up:sum
+    expr: sum(up)
+`)
+	_, errs := Parse(input, false, model.UTF8Validation, testParser, testLogger)
+	require.Len(t, errs, 1, "a negative group limit should be rejected")
+	require.Contains(t, errs[0].Error(), "limit must not be negative")
+}

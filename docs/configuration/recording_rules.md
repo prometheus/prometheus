@@ -79,7 +79,7 @@ name: <string>
 [ interval: <duration> | default = global.evaluation_interval ]
 
 # Limit the number of alerts an alerting rule and series a recording
-# rule can produce. 0 is no limit.
+# rule can produce. 0 is no limit, negative values are rejected.
 [ limit: <int> | default = 0 ]
 
 # Offset the rule evaluation timestamp of this particular group by the specified duration into the past.
