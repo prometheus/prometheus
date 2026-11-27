@@ -10916,6 +10916,75 @@ func TestScrapeLoopStalenessSliceEdgeCases(t *testing.T) {
 		teststorage.RequireEqual(t, want, appTest.ResultSamples())
 	})
 
+	t.Run("same_scrape_change_to_explicit_timestamp", func(t *testing.T) {
+		appTest := teststorage.NewAppendable()
+		target := NewTarget(
+			labels.FromStrings("instance", "localhost:9090", "job", "test"),
+			&config.ScrapeConfig{},
+			nil,
+			nil,
+		)
+		rc := []*relabel.Config{
+			{
+				SourceLabels:         model.LabelNames{"__type__"},
+				Separator:            ";",
+				Regex:                relabel.MustNewRegexp("(.*)"),
+				TargetLabel:          "kind",
+				Replacement:          "$1",
+				Action:               relabel.Replace,
+				NameValidationScheme: model.UTF8Validation,
+			},
+		}
+		sl, _ := newTestScrapeLoop(t, withAppendable(appTest, true), func(sl *scrapeLoop) {
+			sl.enableTypeAndUnitLabels = true
+			sl.honorTimestamps = true
+			sl.mrc = rc
+			sl.sampleMutator = func(l labels.Labels) labels.Labels {
+				return mutateSampleLabels(l, target, false, rc)
+			}
+		})
+
+		ts := time.Unix(1700000000, 0)
+		scrapeAt := func(step int, body string) {
+			app := sl.appender()
+			_, _, _, err := app.append([]byte(body), "text/plain", ts.Add(time.Duration(step)*time.Minute))
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+		}
+
+		// Scrape 0: metric_a is a counter without timestamp.
+		scrapeAt(0, "# TYPE metric_a counter\nmetric_a 1\n")
+		// Scrape 1: the counter is followed by a gauge with an explicit timestamp under the
+		// same raw metric, replacing the tracked cache entry with an untracked one.
+		scrapeAt(1, "# TYPE metric_a counter\nmetric_a 2\n# TYPE metric_a gauge\nmetric_a 3 1700000061000\n")
+		// Scrape 2: only the counter must be marked stale, not the gauge with explicit timestamps.
+		scrapeAt(2, "")
+		// Scrape 3: metric_a is a counter again.
+		scrapeAt(3, "# TYPE metric_a counter\nmetric_a 4\n")
+		// Scrape 4: a gauge without timestamp replaces the counter, then a counter with an
+		// explicit timestamp replaces the gauge. The counter must be marked stale in this scrape.
+		scrapeAt(4, "# TYPE metric_a gauge\nmetric_a 5\n# TYPE metric_a counter\nmetric_a 6 1700000241000\n")
+		// Scrape 5: only the gauge must be marked stale.
+		scrapeAt(5, "")
+
+		counterA := labels.FromStrings(model.MetricNameLabel, "metric_a", "__type__", "counter", "instance", "localhost:9090", "job", "test", "kind", "counter")
+		gaugeA := labels.FromStrings(model.MetricNameLabel, "metric_a", "__type__", "gauge", "instance", "localhost:9090", "job", "test", "kind", "gauge")
+		counterMeta := metadata.Metadata{Type: model.MetricTypeCounter}
+		gaugeMeta := metadata.Metadata{Type: model.MetricTypeGauge}
+		want := []sample{
+			{MF: "metric_a", L: counterA, M: counterMeta, T: timestamp.FromTime(ts), V: 1},
+			{MF: "metric_a", L: counterA, M: counterMeta, T: timestamp.FromTime(ts.Add(time.Minute)), V: 2},
+			{MF: "metric_a", L: gaugeA, M: gaugeMeta, T: 1700000061000, V: 3},
+			{L: counterA, T: timestamp.FromTime(ts.Add(2 * time.Minute)), V: math.Float64frombits(value.StaleNaN)},
+			{MF: "metric_a", L: counterA, M: counterMeta, T: timestamp.FromTime(ts.Add(3 * time.Minute)), V: 4},
+			{MF: "metric_a", L: gaugeA, M: gaugeMeta, T: timestamp.FromTime(ts.Add(4 * time.Minute)), V: 5},
+			{MF: "metric_a", L: counterA, M: counterMeta, T: 1700000241000, V: 6},
+			{L: counterA, T: timestamp.FromTime(ts.Add(4 * time.Minute)), V: math.Float64frombits(value.StaleNaN)},
+			{L: gaugeA, T: timestamp.FromTime(ts.Add(5 * time.Minute)), V: math.Float64frombits(value.StaleNaN)},
+		}
+		teststorage.RequireEqual(t, want, appTest.ResultSamples())
+	})
+
 	t.Run("partial_survival_with_duplicate_live_ref", func(t *testing.T) {
 		foreachAppendable(t, func(t *testing.T, appV2 bool) {
 			appTest := teststorage.NewAppendable()

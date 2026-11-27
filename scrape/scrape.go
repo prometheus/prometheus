@@ -1085,6 +1085,12 @@ type scrapeCache struct {
 	// checking seriesCur membership stays amortized O(1) instead of O(N).
 	seriesCurSet     map[uint64]struct{}
 	seriesCurIndexed int
+	// Lazily populated when deleteSeries moves an entry already tracked in
+	// seriesCur to extraCur. Until trackStaleness records the hash again, its
+	// occurrences in seriesCur refer to the extraCur entry, not to the newer
+	// untracked entry stored under the same hash in c.series, so
+	// dropShadowedCur removes them before staleness detection.
+	shadowedCur map[uint64]struct{}
 	// Lazily populated only when updateRef changes a non-zero SeriesRef, recording
 	// oldRef -> (newRef, lset) so stale aliases sharing the same label set follow
 	// the rotated reference in forEachStale (cleared in iterDone).
@@ -1218,6 +1224,7 @@ func (c *scrapeCache) iterDone(flushCache bool) {
 		c.metaMtx.Unlock()
 	}
 
+	c.dropShadowedCur()
 	// Swap current and previous series slices, reusing backing arrays.
 	// Elements are uint64 hashes (pointer-free), so no clear() is needed.
 	c.seriesPrev, c.seriesCur = c.seriesCur, c.seriesPrev[:0]
@@ -1290,20 +1297,37 @@ func (c *scrapeCache) deleteSeries(metHash uint64, alreadyScraped bool) {
 		if ce.ref != 0 {
 			old := staleSeries{ref: ce.ref, lset: ce.lset}
 			if alreadyScraped && c.inSeriesCur(metHash) {
-				c.extraCur = append(c.extraCur, old)
+				// When shadowed, the entry replaced a tracked one in this scrape
+				// but was never tracked itself, so there is nothing to keep.
+				if _, shadowed := c.shadowedCur[metHash]; !shadowed {
+					c.extraCur = append(c.extraCur, old)
+					if c.shadowedCur == nil {
+						c.shadowedCur = make(map[uint64]struct{})
+					}
+					c.shadowedCur[metHash] = struct{}{}
+					// The entry may also be the previous scrape's entry for
+					// metHash, which must not resolve to its replacement.
+					c.setReplacedPrev(metHash, old)
+				}
 			} else {
-				if c.replacedPrev == nil {
-					c.replacedPrev = make(map[uint64]staleSeries)
-				}
-				if _, exists := c.replacedPrev[metHash]; !exists {
-					c.replacedPrev[metHash] = old
-				}
+				c.setReplacedPrev(metHash, old)
 			}
 		}
 		delete(c.series, metHash)
 	}
 	if c.seriesMeta != nil {
 		delete(c.seriesMeta, metHash)
+	}
+}
+
+// setReplacedPrev records old as the previous-scrape entry for metHash unless
+// an earlier deletion in this scrape already recorded one.
+func (c *scrapeCache) setReplacedPrev(metHash uint64, old staleSeries) {
+	if c.replacedPrev == nil {
+		c.replacedPrev = make(map[uint64]staleSeries)
+	}
+	if _, exists := c.replacedPrev[metHash]; !exists {
+		c.replacedPrev[metHash] = old
 	}
 }
 
@@ -1394,10 +1418,30 @@ func (c *scrapeCache) remapRef(ref storage.SeriesRef, lset labels.Labels) storag
 // Only adjacent duplicates are skipped on the hot path; non-adjacent duplicates
 // (possible only with explicit timestamps) are deduplicated by SeriesRef in forEachStale.
 func (c *scrapeCache) trackStaleness(metHash uint64) {
+	if c.shadowedCur != nil {
+		delete(c.shadowedCur, metHash)
+	}
 	if n := len(c.seriesCur); n > 0 && c.seriesCur[n-1] == metHash {
 		return
 	}
 	c.seriesCur = append(c.seriesCur, metHash)
+}
+
+// dropShadowedCur removes from seriesCur the hashes whose tracked entry was
+// moved to extraCur and whose current entry in c.series was not tracked since.
+// Keeping them would resolve to the untracked entry in forEachStale and in the
+// next scrape. It is idempotent, so forEachStale retries stay safe.
+func (c *scrapeCache) dropShadowedCur() {
+	if len(c.shadowedCur) == 0 {
+		return
+	}
+	c.seriesCur = slices.DeleteFunc(c.seriesCur, func(h uint64) bool {
+		_, shadowed := c.shadowedCur[h]
+		return shadowed
+	})
+	c.shadowedCur = nil
+	c.seriesCurSet = nil
+	c.seriesCurIndexed = 0
 }
 
 func cmpStaleSeriesByRef(a, b staleSeries) int {
@@ -1563,6 +1607,7 @@ func (c *scrapeCache) prevSeries(h uint64) (storage.SeriesRef, labels.Labels, bo
 }
 
 func (c *scrapeCache) forEachStale(f func(storage.SeriesRef, labels.Labels) bool) {
+	c.dropShadowedCur()
 	if len(c.seriesPrev) == 0 && len(c.extraPrev) == 0 {
 		return
 	}
