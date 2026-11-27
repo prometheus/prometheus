@@ -282,65 +282,113 @@ func BenchmarkSampledReadEndpointWithoutExternalLabels(b *testing.B) {
 }
 
 func BenchmarkStreamReadEndpoint(b *testing.B) {
-	store := promqltest.LoadedStorage(b, `
-	load 1m
-		test_metric1{foo="bar1",baz="qux"} 0+100x119
-		test_metric1{foo="bar2",baz="qux"} 0+100x120
-		test_metric1{foo="bar3",baz="qux"} 0+100x240
-	`)
-
-	b.Cleanup(func() { store.Close() })
-
-	api := NewReadHandler(nil, nil, store, func() config.Config {
-		return config.Config{}
-	},
-		0, 1, 0,
+	const (
+		labelCount = 11
+		// Series 1 and 2 are longer than this to span 2 and 3 chunks.
+		samplesPerChunk = 120
+		maxSamples      = 2*samplesPerChunk + 1
 	)
 
-	matcher, err := labels.NewMatcher(labels.MatchEqual, "__name__", "test_metric1")
-	require.NoError(b, err)
+	externalLabels := labels.FromStrings(
+		"bar", "foo",
+		"cluster", "prod-af-north-0",
+		"env", "prod",
+		"foo", "bar",
+		"monitor", "codelab",
+		"prometheus", "some-namespace/prometheus",
+		"region", "europe",
+		"replica", "1",
+		"zone", "ie",
+	)
+	for _, seriesCount := range []int{10, 1000} {
+		for _, withExternalLabels := range []bool{false, true} {
+			b.Run(fmt.Sprintf("series_%d_external_labels_%t", seriesCount, withExternalLabels), func(b *testing.B) {
+				store := teststorage.New(b)
+				app := store.AppenderV2(b.Context())
+				for i := range seriesCount {
+					lset := labels.FromStrings(
+						"__name__", "test_metric",
+						"instance", fmt.Sprintf("10.0.%d.%d:8080", i/256, i%256),
+						"job", "test-namespace/test-service",
+						"app", "app-server",
+						"code", "200",
+						"container", "server",
+						"endpoint", "metrics",
+						"handler", "/api/v1/query",
+						"method", "GET",
+						"namespace", "test-namespace",
+						"service", "test-service",
+					)
+					sampleCount := samplesPerChunk
+					switch i {
+					case 1:
+						sampleCount = samplesPerChunk + 1
+					case 2:
+						sampleCount = maxSamples
+					}
+					for j := range sampleCount {
+						_, err := app.Append(0, lset, 0, int64(j)*60000, float64(j), nil, nil, storage.AOptions{})
+						require.NoError(b, err)
+					}
+				}
+				require.NoError(b, app.Commit())
 
-	query, err := ToQuery(0, 14400001, []*labels.Matcher{matcher}, &storage.SelectHints{
-		Step:  1,
-		Func:  "sum",
-		Start: 0,
-		End:   14400001,
-	})
-	require.NoError(b, err)
+				cfg := config.Config{}
+				expectedLabels := labelCount
+				if withExternalLabels {
+					cfg.GlobalConfig.ExternalLabels = externalLabels
+					expectedLabels += externalLabels.Len()
+				}
+				api := NewReadHandler(nil, nil, store, func() config.Config { return cfg }, 0, 1, 1048576)
 
-	req := &prompb.ReadRequest{
-		Queries:               []*prompb.Query{query},
-		AcceptedResponseTypes: []prompb.ReadRequest_ResponseType{prompb.ReadRequest_STREAMED_XOR_CHUNKS},
-	}
-	data, err := proto.Marshal(req)
-	require.NoError(b, err)
+				matcher, err := labels.NewMatcher(labels.MatchEqual, "__name__", "test_metric")
+				require.NoError(b, err)
+				query, err := ToQuery(0, maxSamples*60000, []*labels.Matcher{matcher}, nil)
+				require.NoError(b, err)
+				data, err := proto.Marshal(&prompb.ReadRequest{
+					Queries:               []*prompb.Query{query},
+					AcceptedResponseTypes: []prompb.ReadRequest_ResponseType{prompb.ReadRequest_STREAMED_XOR_CHUNKS},
+				})
+				require.NoError(b, err)
+				compressed := snappy.Encode(nil, data)
+				request := httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(compressed))
 
-	b.ReportAllocs()
+				serve := func() *httptest.ResponseRecorder {
+					request.Body = io.NopCloser(bytes.NewReader(compressed))
+					recorder := httptest.NewRecorder()
+					api.ServeHTTP(recorder, request)
+					return recorder
+				}
 
-	for b.Loop() {
-		compressed := snappy.Encode(nil, data)
-		request, err := http.NewRequest(http.MethodPost, "", bytes.NewBuffer(compressed))
-		require.NoError(b, err)
+				recorder := serve()
+				require.Equal(b, http.StatusOK, recorder.Code)
+				stream := NewChunkedReader(recorder.Body, config.DefaultChunkedReadLimit, nil)
+				frames, chunkCount := 0, 0
+				for {
+					res := &prompb.ChunkedReadResponse{}
+					err := stream.NextProto(res)
+					if errors.Is(err, io.EOF) {
+						break
+					}
+					require.NoError(b, err)
+					require.Len(b, res.ChunkedSeries, 1)
+					require.Len(b, res.ChunkedSeries[0].Labels, expectedLabels)
+					frames++
+					chunkCount += len(res.ChunkedSeries[0].Chunks)
+				}
+				require.Equal(b, seriesCount, frames)
+				// One chunk per series, plus one extra for series 1 and two for series 2.
+				require.Equal(b, seriesCount+3, chunkCount)
 
-		recorder := httptest.NewRecorder()
-		api.ServeHTTP(recorder, request)
-
-		require.Equal(b, 2, recorder.Code/100)
-
-		var results []*prompb.ChunkedReadResponse
-		stream := NewChunkedReader(recorder.Result().Body, config.DefaultChunkedReadLimit, nil)
-
-		for {
-			res := &prompb.ChunkedReadResponse{}
-			err := stream.NextProto(res)
-			if errors.Is(err, io.EOF) {
-				break
-			}
-			require.NoError(b, err)
-			results = append(results, res)
+				b.ReportAllocs()
+				for b.Loop() {
+					recorder := serve()
+					if recorder.Code != http.StatusOK {
+						require.Equal(b, http.StatusOK, recorder.Code)
+					}
+				}
+			})
 		}
-
-		require.Len(b, results, 6, "Expected 6 results.")
 	}
 }
 

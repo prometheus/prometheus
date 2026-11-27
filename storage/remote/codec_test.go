@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"strings"
 	"sync"
@@ -716,6 +717,7 @@ func TestNegotiateResponseType(t *testing.T) {
 }
 
 func TestMergeLabels(t *testing.T) {
+	var dst []prompb.Label
 	for _, tc := range []struct {
 		primary, secondary, expected []prompb.Label
 	}{
@@ -729,8 +731,45 @@ func TestMergeLabels(t *testing.T) {
 			secondary: []prompb.Label{{Name: "aaa", Value: "foo"}, {Name: "bbb", Value: "foo"}, {Name: "ddd", Value: "foo"}},
 			expected:  []prompb.Label{{Name: "aaa", Value: "foo"}, {Name: "bbb", Value: "bar"}, {Name: "ccc", Value: "bar"}, {Name: "ddd", Value: "foo"}},
 		},
+		{
+			primary:   []prompb.Label{{Name: "zzz", Value: "foo"}},
+			secondary: nil,
+			expected:  []prompb.Label{{Name: "zzz", Value: "foo"}},
+		},
+		{
+			primary:   nil,
+			secondary: nil,
+			expected:  []prompb.Label{},
+		},
+		{
+			primary:   nil,
+			secondary: []prompb.Label{{Name: "aaa", Value: "bar"}, {Name: "bbb", Value: "bar"}},
+			expected:  []prompb.Label{{Name: "aaa", Value: "bar"}, {Name: "bbb", Value: "bar"}},
+		},
+		{
+			primary:   []prompb.Label{{Name: "aaa", Value: "foo"}, {Name: "ccc", Value: "foo"}, {Name: "eee", Value: "foo"}},
+			secondary: []prompb.Label{{Name: "bbb", Value: "bar"}, {Name: "ccc", Value: "bar"}, {Name: "ddd", Value: "bar"}, {Name: "fff", Value: "bar"}},
+			expected: []prompb.Label{
+				{Name: "aaa", Value: "foo"},
+				{Name: "bbb", Value: "bar"},
+				{Name: "ccc", Value: "foo"},
+				{Name: "ddd", Value: "bar"},
+				{Name: "eee", Value: "foo"},
+				{Name: "fff", Value: "bar"},
+			},
+		},
 	} {
 		require.Equal(t, tc.expected, MergeLabels(tc.primary, tc.secondary))
+
+		prev := dst
+		dst = mergedLabelsInto(dst, tc.primary, tc.secondary)
+		require.Len(t, dst, len(tc.expected))
+		if len(tc.expected) > 0 {
+			require.Equal(t, tc.expected, dst)
+		}
+		if cap(prev) >= len(tc.expected) && cap(prev) > 0 {
+			require.Same(t, &prev[:1][0], &dst[:1][0], "expected the backing array to be reused")
+		}
 	}
 }
 
@@ -795,47 +834,99 @@ func TestDecodeWriteV2Request(t *testing.T) {
 }
 
 func TestStreamResponse(t *testing.T) {
-	lbs1 := prompb.FromLabels(labels.FromStrings("instance", "localhost1", "job", "demo1"), nil)
-	lbs2 := prompb.FromLabels(labels.FromStrings("instance", "localhost2", "job", "demo2"), nil)
 	chunk := prompb.Chunk{
 		Type: prompb.Chunk_XOR,
 		Data: make([]byte, 100),
 	}
-	lbSize, chunkSize := 0, chunk.Size()
-	for _, lb := range lbs1 {
-		lbSize += lb.Size()
+
+	for _, tc := range []struct {
+		name           string
+		externalLabels []prompb.Label
+		series         []labels.Labels
+		// Labels expected on the streamed frames, one elem per series.
+		expected []labels.Labels
+	}{
+		{
+			name: "no external labels",
+			series: []labels.Labels{
+				labels.FromStrings("instance", "localhost1", "job", "demo1"),
+				labels.FromStrings("instance", "localhost2", "job", "demo2"),
+			},
+			expected: []labels.Labels{
+				labels.FromStrings("instance", "localhost1", "job", "demo1"),
+				labels.FromStrings("instance", "localhost2", "job", "demo2"),
+			},
+		},
+		{
+			name: "external labels with varying series label counts",
+
+			externalLabels: []prompb.Label{
+				{Name: "region", Value: "eu"},
+				{Name: "zone", Value: "a"},
+			},
+			series: []labels.Labels{
+				labels.FromStrings("__name__", "up", "instance", "a", "job", "x"),
+				labels.FromStrings("__name__", "up"),
+				// The series label wins over the external label of the same name.
+				labels.FromStrings("__name__", "up", "instance", "b", "job", "y", "zone", "override"),
+				labels.FromStrings("__name__", "up", "instance", "c", "job", "z", "pod", "p", "zone", "b"),
+				labels.FromStrings("job", "w"),
+			},
+			expected: []labels.Labels{
+				labels.FromStrings("__name__", "up", "instance", "a", "job", "x", "region", "eu", "zone", "a"),
+				labels.FromStrings("__name__", "up", "region", "eu", "zone", "a"),
+				labels.FromStrings("__name__", "up", "instance", "b", "job", "y", "region", "eu", "zone", "override"),
+				labels.FromStrings("__name__", "up", "instance", "c", "job", "z", "pod", "p", "region", "eu", "zone", "b"),
+				labels.FromStrings("job", "w", "region", "eu", "zone", "a"),
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var (
+				testData   []*prompb.ChunkedSeries
+				expectData []*prompb.ChunkedSeries
+				fourChunks = []prompb.Chunk{chunk, chunk, chunk, chunk}
+				twoChunks  = []prompb.Chunk{chunk, chunk}
+
+				minLabelsSize = math.MaxInt
+				maxLabelsSize = 0
+			)
+			for i, lset := range tc.series {
+				testData = append(testData, &prompb.ChunkedSeries{
+					Labels: prompb.FromLabels(lset, nil),
+					Chunks: fourChunks,
+				})
+
+				expLbls := prompb.FromLabels(tc.expected[i], nil)
+				size := 0
+				for _, lb := range expLbls {
+					size += lb.Size()
+				}
+				minLabelsSize = min(minLabelsSize, size)
+				maxLabelsSize = max(maxLabelsSize, size)
+
+				// Each series is split into two frames of two chunks.
+				expectData = append(expectData,
+					&prompb.ChunkedSeries{Labels: expLbls, Chunks: twoChunks},
+					&prompb.ChunkedSeries{Labels: expLbls, Chunks: twoChunks},
+				)
+			}
+
+			chunkSize := chunk.Size()
+			require.Less(t, maxLabelsSize-minLabelsSize, chunkSize, "label size spread must be smaller than a chunk")
+			maxBytesInFrame := maxLabelsSize + chunkSize + 1
+
+			writer := mockWriter{}
+			warning, err := StreamChunkedReadResponses(&writer, 0,
+				newMockChunkSeriesSet(testData),
+				tc.externalLabels,
+				maxBytesInFrame,
+				&sync.Pool{})
+			require.Nil(t, warning)
+			require.NoError(t, err)
+			require.Equal(t, expectData, writer.actual)
+		})
 	}
-	maxBytesInFrame := lbSize + chunkSize*2
-	testData := []*prompb.ChunkedSeries{{
-		Labels: lbs1,
-		Chunks: []prompb.Chunk{chunk, chunk, chunk, chunk},
-	}, {
-		Labels: lbs2,
-		Chunks: []prompb.Chunk{chunk, chunk, chunk, chunk},
-	}}
-	css := newMockChunkSeriesSet(testData)
-	writer := mockWriter{}
-	warning, err := StreamChunkedReadResponses(&writer, 0,
-		css,
-		nil,
-		maxBytesInFrame,
-		&sync.Pool{})
-	require.Nil(t, warning)
-	require.NoError(t, err)
-	expectData := []*prompb.ChunkedSeries{{
-		Labels: lbs1,
-		Chunks: []prompb.Chunk{chunk, chunk},
-	}, {
-		Labels: lbs1,
-		Chunks: []prompb.Chunk{chunk, chunk},
-	}, {
-		Labels: lbs2,
-		Chunks: []prompb.Chunk{chunk, chunk},
-	}, {
-		Labels: lbs2,
-		Chunks: []prompb.Chunk{chunk, chunk},
-	}}
-	require.Equal(t, expectData, writer.actual)
 }
 
 type mockWriter struct {
