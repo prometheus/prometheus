@@ -44,6 +44,7 @@ type writeHandler struct {
 	appendableV2 storage.AppendableV2
 
 	samplesWithInvalidLabelsTotal  prometheus.Counter
+	samplesWithUnsortedLabelsTotal prometheus.Counter
 	samplesAppendedWithoutMetadata prometheus.Counter
 
 	enableTypeAndUnitLabels bool
@@ -67,6 +68,12 @@ func NewWriteHandler(logger *slog.Logger, reg prometheus.Registerer, appendableV
 			Subsystem: "api",
 			Name:      "remote_write_invalid_labels_samples_total",
 			Help:      "The total number of received remote write samples and histogram samples which were rejected due to invalid labels.",
+		}),
+		samplesWithUnsortedLabelsTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Namespace: "prometheus",
+			Subsystem: "api",
+			Name:      "remote_write_unsorted_labels_samples_total",
+			Help:      "The total number of received remote write v1 samples (and histogram samples) which were ingested with unsorted labels.",
 		}),
 		samplesAppendedWithoutMetadata: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Namespace: "prometheus",
@@ -152,6 +159,7 @@ func (h *writeHandler) Store(r *http.Request, msgType remoteapi.WriteMessageType
 func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err error) {
 	outOfOrderExemplarErrs := 0
 	samplesWithInvalidLabels := 0
+	samplesWithUnsortedLabels := 0
 	samplesAppended := 0
 
 	appV2 := h.appendableV2.AppenderV2(ctx)
@@ -163,6 +171,10 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 		err = appV2.Commit()
 		if err != nil {
 			h.samplesAppendedWithoutMetadata.Add(float64(samplesAppended))
+			return
+		}
+		if samplesWithUnsortedLabels > 0 {
+			h.samplesWithUnsortedLabelsTotal.Add(float64(samplesWithUnsortedLabels))
 		}
 	}()
 
@@ -187,6 +199,9 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 			h.logger.Warn("Invalid labels for series.", "labels", ls.String(), "duplicated_label", duplicateLabel)
 			samplesWithInvalidLabels++
 			continue
+		}
+		if !areLabelsSorted(ts.Labels) {
+			samplesWithUnsortedLabels += len(ts.Samples) + len(ts.Histograms)
 		}
 
 		ref, err := h.appendV1Samples(app, ts.Samples, ls)
@@ -358,10 +373,6 @@ func (h *writeHandler) appendV2(app *timeLimitExemplarAppenderV2, req *writev2.R
 		// specific limits and follow https://prometheus.io/docs/specs/remote_write_spec_2_0/#invalid-samples case.
 		if !ls.Has(labels.MetricName) || !ls.IsValid(model.UTF8Validation) {
 			badRequestErrs = append(badRequestErrs, fmt.Errorf("invalid metric name or labels, got %v", ls.String()))
-			samplesWithInvalidLabels += len(ts.Samples) + len(ts.Histograms)
-			continue
-		} else if duplicateLabel, hasDuplicate := ls.HasDuplicateLabelNames(); hasDuplicate {
-			badRequestErrs = append(badRequestErrs, fmt.Errorf("invalid labels for series, labels %v, duplicated label %s", ls.String(), duplicateLabel))
 			samplesWithInvalidLabels += len(ts.Samples) + len(ts.Histograms)
 			continue
 		}
@@ -591,4 +602,13 @@ func (app *timeLimitExemplarAppenderV2) AppendExemplars(ref storage.SeriesRef, l
 		return ref, err
 	}
 	return ref, partialErr.ToError()
+}
+
+func areLabelsSorted(ls []prompb.Label) bool {
+	for i := 1; i < len(ls); i++ {
+		if ls[i].Name < ls[i-1].Name {
+			return false
+		}
+	}
+	return true
 }

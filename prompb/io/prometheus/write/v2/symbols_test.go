@@ -20,6 +20,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestSymbolsTable(t *testing.T) {
@@ -89,5 +90,86 @@ func BenchmarkSymbolsTable(b *testing.B) {
 			_ = st.Symbolize("")
 		}
 		st.Reset()
+	}
+}
+
+func TestDesymbolizeLabels(t *testing.T) {
+	symbols := []string{"", "__name__", "test_metric", "foo", "bar", "f", "g", "b", "c"}
+	b := labels.NewScratchBuilder(0)
+
+	t.Run("valid sorted labels", func(t *testing.T) {
+		// __name__="test_metric", b="c", foo="bar" (sorted by name)
+		refs := []uint32{1, 2, 7, 8, 3, 4}
+		lbls, err := desymbolizeLabels(&b, refs, symbols)
+		require.NoError(t, err)
+		testutil.RequireEqual(t, labels.FromStrings("__name__", "test_metric", "b", "c", "foo", "bar"), lbls)
+	})
+
+	t.Run("sorted strings with decreasing symbol refs", func(t *testing.T) {
+		// Symbols: 1: "__name__", 7: "b", 5: "f". String order: __name__ < b < f. Refs: 1, 7, 5 (decreasing from 7 to 5).
+		refs := []uint32{1, 2, 7, 8, 5, 6}
+		lbls, err := desymbolizeLabels(&b, refs, symbols)
+		require.NoError(t, err)
+		testutil.RequireEqual(t, labels.FromStrings("__name__", "test_metric", "b", "c", "f", "g"), lbls)
+	})
+
+	t.Run("unsorted labels", func(t *testing.T) {
+		// __name__="test_metric", foo="bar", b="c" (unsorted: foo comes before b)
+		refs := []uint32{1, 2, 3, 4, 7, 8}
+		_, err := desymbolizeLabels(&b, refs, symbols)
+		require.EqualError(t, err, "labels are not sorted lexicographically: b is not after foo")
+	})
+
+	t.Run("duplicate label names", func(t *testing.T) {
+		// __name__="test_metric", foo="bar", foo="g"
+		refs := []uint32{1, 2, 3, 4, 3, 6}
+		_, err := desymbolizeLabels(&b, refs, symbols)
+		require.EqualError(t, err, "duplicate label with name: foo")
+	})
+
+	t.Run("odd number of label refs", func(t *testing.T) {
+		refs := []uint32{1, 2, 3}
+		_, err := desymbolizeLabels(&b, refs, symbols)
+		require.EqualError(t, err, "invalid labelRefs length 3")
+	})
+
+	t.Run("symbol ref out of bounds", func(t *testing.T) {
+		refs := []uint32{1, 2, 99, 2}
+		_, err := desymbolizeLabels(&b, refs, symbols)
+		require.EqualError(t, err, "labelRefs 99 (name) = 2 (value) outside of symbols table (size 9)")
+	})
+
+	t.Run("32-bit overflow symbol ref", func(t *testing.T) {
+		refs := []uint32{1, 2, 0x80000001, 2}
+		_, err := desymbolizeLabels(&b, refs, symbols)
+		require.EqualError(t, err, "labelRefs 2147483649 (name) = 2 (value) outside of symbols table (size 9)")
+	})
+
+	t.Run("empty label refs", func(t *testing.T) {
+		refs := []uint32{}
+		lbls, err := desymbolizeLabels(&b, refs, symbols)
+		require.NoError(t, err)
+		require.True(t, lbls.IsEmpty())
+	})
+}
+
+func BenchmarkTimeSeries_ToLabels(b *testing.B) {
+	symbols := []string{"", "__name__", "http_requests_total", "method", "POST", "handler", "/api/v1/query", "status", "200", "instance", "localhost:9090", "job", "prometheus"}
+	ts := TimeSeries{
+		// Sorted: __name__, handler, instance, job, method, status
+		LabelsRefs: []uint32{1, 2, 5, 6, 9, 10, 11, 12, 3, 4, 7, 8},
+	}
+	builder := labels.NewScratchBuilder(0)
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for b.Loop() {
+		lbls, err := ts.ToLabels(&builder, symbols)
+		if err != nil {
+			b.Fatal(err)
+		}
+		if lbls.Len() != 6 {
+			b.Fatalf("unexpected labels length %d", lbls.Len())
+		}
 	}
 }
