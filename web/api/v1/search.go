@@ -675,13 +675,15 @@ func streamSearchResults[T any](ctx context.Context, api *API, w http.ResponseWr
 
 	// Re-snapshot warnings after iteration: a Searcher may emit new warnings
 	// while the merge tree is drained (e.g. a secondary querier whose error
-	// becomes a warning at exhaustion). Dedup against the first batch so we
-	// don't echo warnings the client has already received. Sort to match
-	// firstWarnings' canonical order.
+	// becomes a warning at exhaustion). The trailer carries only the delta, so
+	// drop what the first batch already delivered instead of echoing it, and
+	// sort to match firstWarnings' canonical order.
 	trailerWarnings := searchWarnings(rs)
 	slices.Sort(trailerWarnings)
-	if slices.Equal(trailerWarnings, firstWarnings) {
-		trailerWarnings = nil
+	if len(firstWarnings) > 0 {
+		trailerWarnings = slices.DeleteFunc(trailerWarnings, func(w string) bool {
+			return slices.Contains(firstWarnings, w)
+		})
 	}
 	_ = nw.writeLine(searchTrailer{Status: "success", HasMore: streamer.hasMore, Returned: streamer.emitted, Warnings: trailerWarnings})
 }
