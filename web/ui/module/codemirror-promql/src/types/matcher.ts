@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { EqlSingle, Neq } from '@prometheus-io/lezer-promql';
+import { EqlRegex, EqlSingle, Neq, NeqRegex } from '@prometheus-io/lezer-promql';
 
 export class Matcher {
   type: number;
@@ -30,8 +30,25 @@ export class Matcher {
         return this.value === '';
       case Neq:
         return this.value !== '';
+      case EqlRegex:
+        return regexMatchesEmpty(this.value) === true;
+      case NeqRegex:
+        return regexMatchesEmpty(this.value) === false;
       default:
         return false;
     }
+  }
+}
+
+// regexMatchesEmpty tells whether the regular expression written in a double-quoted string
+// (with its escape sequences) fully matches the empty string, like the matchers of Prometheus.
+// It returns undefined when the expression can't be evaluated here: escape sequences that
+// JSON doesn't support, or a syntax that JavaScript regular expressions don't support.
+function regexMatchesEmpty(value: string): boolean | undefined {
+  try {
+    const re = new RegExp(`^(?:${JSON.parse(`"${value}"`)})$`);
+    return re.test('');
+  } catch {
+    return undefined;
   }
 }

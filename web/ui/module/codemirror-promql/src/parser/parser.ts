@@ -424,10 +424,27 @@ export class Parser {
 
     // A Vector selector must contain at least one non-empty matcher to prevent
     // implicit selection of all metrics (e.g. by a typo).
+    // Like Prometheus, the data label selector of the info function is exempt: its matchers may
+    // all match the empty string, e.g. {data=~".*"}.
     const empty = labelMatchers.every((lm) => lm.matchesEmpty());
-    if (empty) {
+    if (empty && !(labelMatchers.length > 0 && this.isInfoDataLabelSelector(node))) {
       this.addDiagnostic(node, 'vector selector must contain at least one non-empty matcher');
     }
+  }
+
+  // isInfoDataLabelSelector tells whether the vector selector is the second argument of the info function.
+  private isInfoDataLabelSelector(node: SyntaxNode): boolean {
+    const body = node.parent;
+    const call = body?.parent;
+    if (body?.type.id !== FunctionCallBody || call?.type.id !== FunctionCall) {
+      return false;
+    }
+    const funcID = call.firstChild?.firstChild;
+    if (!funcID || getFunction(funcID.type.id)?.name !== 'info') {
+      return false;
+    }
+    const args = body.getChildren('Expr');
+    return args.length > 1 && args[1].from === node.from && args[1].to === node.to;
   }
 
   private expectType(node: SyntaxNode, want: ValueType, context: string): void {
