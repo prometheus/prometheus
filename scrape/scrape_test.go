@@ -26,6 +26,8 @@ import (
 	"log/slog"
 	"maps"
 	"math"
+	"math/bits"
+	"math/rand/v2"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -34,6 +36,7 @@ import (
 	"path/filepath"
 	"runtime"
 	runtimemetrics "runtime/metrics"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -1826,7 +1829,7 @@ bar 1
 	require.Equal(t, 7, added)
 	require.Equal(t, 7, seriesAdded)
 	require.Equal(t, 8, mutatorCalls)
-	require.Len(t, sl.cache.series, 7)
+	require.Len(t, sl.cache.entries, 7)
 	require.Len(t, sl.cache.seriesMeta, 7)
 	require.Len(t, sl.cache.droppedSeries, 1)
 
@@ -1915,7 +1918,7 @@ bar 2
 	require.Equal(t, 2, added)
 	require.Equal(t, 0, seriesAdded)
 	require.Equal(t, 9, mutatorCalls)
-	require.Len(t, sl.cache.series, 2)
+	require.Len(t, sl.cache.entries, 2)
 	require.Len(t, sl.cache.seriesMeta, 2)
 	require.Len(t, sl.cache.droppedSeries, 1)
 
@@ -1964,7 +1967,7 @@ bar 3
 	}
 	require.True(t, sawNewBar, "expected new bar series with __type__ label to be appended")
 	require.True(t, sawStaleOldBar, "expected old bar series without __type__ label to be marked stale")
-	require.Len(t, sl.cache.series, 1)
+	require.Len(t, sl.cache.entries, 1)
 	require.Len(t, sl.cache.seriesMeta, 1)
 	require.Empty(t, sl.cache.droppedSeries)
 
@@ -1981,7 +1984,7 @@ bar 4
 	require.Equal(t, 0, added)
 	require.Equal(t, 0, seriesAdded)
 	require.Equal(t, 11, mutatorCalls)
-	require.Empty(t, sl.cache.series)
+	require.Empty(t, sl.cache.entries)
 	require.Empty(t, sl.cache.seriesMeta)
 	require.Len(t, sl.cache.droppedSeries, 1)
 
@@ -3357,8 +3360,9 @@ test_metric 15
 	_, _, _, err = app.append(scrapeA, "application/openmetrics-text", ts.Add(time.Minute))
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
-	require.Zero(t, slWithGetRef.cache.series[xxhash.Sum64([]byte("test_metric"))].ref)
-	require.Empty(t, slWithGetRef.cache.seriesPrev)
+	ce0, _ := slWithGetRef.cache.lookupEntry(xxhash.Sum64([]byte("test_metric")))
+	require.Zero(t, ce0.ref)
+	require.Equal(t, 0, countBits(slWithGetRef.cache.prevBits))
 }
 
 func TestScrapeLoopAppend_StartTimeSynthesis_OOO_StateMutation(t *testing.T) {
@@ -5129,7 +5133,7 @@ func testScrapeLoopSeriesRefChange(t *testing.T, appV2 bool) {
 
 			teststorage.RequireEqual(t, tc.expectedSamples, app.ResultSamples())
 
-			ce, ok := sl.cache.series[xxhash.Sum64([]byte("metric_a"))]
+			ce, ok := sl.cache.lookupEntry(xxhash.Sum64([]byte("metric_a")))
 			require.True(t, ok)
 			require.Equal(t, tc.expectedRef, ce.ref)
 		})
@@ -5242,7 +5246,7 @@ func TestScrapeLoopAppendLabelsFromStorage(t *testing.T) {
 								if tc.failedScrape {
 									scraper.scrapeFunc = func(context.Context, io.Writer) error { return errors.New("scrape failed") }
 									sl.scrapeAndReport(time.Time{}, ts, nil)
-									require.NotEmpty(t, sl.cache.series)
+									require.NotEmpty(t, sl.cache.entries)
 								}
 								if tc.warmCache {
 									scrapeApp := sl.appender()
@@ -5267,7 +5271,7 @@ func TestScrapeLoopAppendLabelsFromStorage(t *testing.T) {
 								require.NoError(t, err)
 								require.NoError(t, scrapeApp.Commit())
 
-								ce, ok := sl.cache.series[xxhash.Sum64([]byte(exposedMetricA))]
+								ce, ok := sl.cache.lookupEntry(xxhash.Sum64([]byte(exposedMetricA)))
 								require.True(t, ok)
 								checkApp := tsdbStorage.AppenderV2(t.Context())
 								t.Cleanup(func() { _ = checkApp.Rollback() })
@@ -5312,14 +5316,14 @@ func testScrapeLoopCache(t *testing.T, appV2 bool) {
 	scraper.scrapeFunc = func(_ context.Context, w io.Writer) error {
 		switch numScrapes {
 		case 1, 2:
-			_, ok := sl.cache.series[xxhash.Sum64([]byte("metric_a"))]
+			_, ok := sl.cache.lookupEntry(xxhash.Sum64([]byte("metric_a")))
 			require.True(t, ok, "metric_a missing from cache after scrape %d", numScrapes)
-			_, ok = sl.cache.series[xxhash.Sum64([]byte("metric_b"))]
+			_, ok = sl.cache.lookupEntry(xxhash.Sum64([]byte("metric_b")))
 			require.True(t, ok, "metric_b missing from cache after scrape %d", numScrapes)
 		case 3:
-			_, ok := sl.cache.series[xxhash.Sum64([]byte("metric_a"))]
+			_, ok := sl.cache.lookupEntry(xxhash.Sum64([]byte("metric_a")))
 			require.True(t, ok, "metric_a missing from cache after scrape %d", numScrapes)
-			_, ok = sl.cache.series[xxhash.Sum64([]byte("metric_b"))]
+			_, ok = sl.cache.lookupEntry(xxhash.Sum64([]byte("metric_b")))
 			require.False(t, ok, "metric_b present in cache after scrape %d", numScrapes)
 		}
 
@@ -5395,7 +5399,7 @@ func testScrapeLoopCacheMemoryExhaustionProtection(t *testing.T, appV2 bool) {
 		require.FailNow(t, "Scrape wasn't stopped.")
 	}
 
-	require.LessOrEqual(t, len(sl.cache.series), 2000, "More than 2000 series cached.")
+	require.LessOrEqual(t, len(sl.cache.entries), 2000, "More than 2000 series cached.")
 }
 
 func TestScrapeLoopAppend_HonorLabels(t *testing.T) {
@@ -7966,9 +7970,8 @@ func testScrapeAddFast(t *testing.T, appV2 bool) {
 
 	// Poison the cache. There is just one entry, and one series in the
 	// storage. Changing the ref will create a 'not found' error.
-	for k, v := range sl.getCache().series {
-		v.ref++
-		sl.getCache().series[k] = v
+	for i := range sl.getCache().entries {
+		sl.getCache().entries[i].ref++
 	}
 
 	app = sl.appender()
@@ -10916,6 +10919,75 @@ func TestScrapeLoopStalenessSliceEdgeCases(t *testing.T) {
 		teststorage.RequireEqual(t, want, appTest.ResultSamples())
 	})
 
+	t.Run("same_scrape_change_to_explicit_timestamp", func(t *testing.T) {
+		appTest := teststorage.NewAppendable()
+		target := NewTarget(
+			labels.FromStrings("instance", "localhost:9090", "job", "test"),
+			&config.ScrapeConfig{},
+			nil,
+			nil,
+		)
+		rc := []*relabel.Config{
+			{
+				SourceLabels:         model.LabelNames{"__type__"},
+				Separator:            ";",
+				Regex:                relabel.MustNewRegexp("(.*)"),
+				TargetLabel:          "kind",
+				Replacement:          "$1",
+				Action:               relabel.Replace,
+				NameValidationScheme: model.UTF8Validation,
+			},
+		}
+		sl, _ := newTestScrapeLoop(t, withAppendable(appTest, true), func(sl *scrapeLoop) {
+			sl.enableTypeAndUnitLabels = true
+			sl.honorTimestamps = true
+			sl.mrc = rc
+			sl.sampleMutator = func(l labels.Labels) labels.Labels {
+				return mutateSampleLabels(l, target, false, rc)
+			}
+		})
+
+		ts := time.Unix(1700000000, 0)
+		scrapeAt := func(step int, body string) {
+			app := sl.appender()
+			_, _, _, err := app.append([]byte(body), "text/plain", ts.Add(time.Duration(step)*time.Minute))
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+		}
+
+		// Scrape 0: metric_a is a counter without timestamp.
+		scrapeAt(0, "# TYPE metric_a counter\nmetric_a 1\n")
+		// Scrape 1: the counter is followed by a gauge with an explicit timestamp under the
+		// same raw metric, replacing the tracked cache entry with an untracked one.
+		scrapeAt(1, "# TYPE metric_a counter\nmetric_a 2\n# TYPE metric_a gauge\nmetric_a 3 1700000061000\n")
+		// Scrape 2: only the counter must be marked stale, not the gauge with explicit timestamps.
+		scrapeAt(2, "")
+		// Scrape 3: metric_a is a counter again.
+		scrapeAt(3, "# TYPE metric_a counter\nmetric_a 4\n")
+		// Scrape 4: a gauge without timestamp replaces the counter, then a counter with an
+		// explicit timestamp replaces the gauge. The counter must be marked stale in this scrape.
+		scrapeAt(4, "# TYPE metric_a gauge\nmetric_a 5\n# TYPE metric_a counter\nmetric_a 6 1700000241000\n")
+		// Scrape 5: only the gauge must be marked stale.
+		scrapeAt(5, "")
+
+		counterA := labels.FromStrings(model.MetricNameLabel, "metric_a", "__type__", "counter", "instance", "localhost:9090", "job", "test", "kind", "counter")
+		gaugeA := labels.FromStrings(model.MetricNameLabel, "metric_a", "__type__", "gauge", "instance", "localhost:9090", "job", "test", "kind", "gauge")
+		counterMeta := metadata.Metadata{Type: model.MetricTypeCounter}
+		gaugeMeta := metadata.Metadata{Type: model.MetricTypeGauge}
+		want := []sample{
+			{MF: "metric_a", L: counterA, M: counterMeta, T: timestamp.FromTime(ts), V: 1},
+			{MF: "metric_a", L: counterA, M: counterMeta, T: timestamp.FromTime(ts.Add(time.Minute)), V: 2},
+			{MF: "metric_a", L: gaugeA, M: gaugeMeta, T: 1700000061000, V: 3},
+			{L: counterA, T: timestamp.FromTime(ts.Add(2 * time.Minute)), V: math.Float64frombits(value.StaleNaN)},
+			{MF: "metric_a", L: counterA, M: counterMeta, T: timestamp.FromTime(ts.Add(3 * time.Minute)), V: 4},
+			{MF: "metric_a", L: gaugeA, M: gaugeMeta, T: timestamp.FromTime(ts.Add(4 * time.Minute)), V: 5},
+			{MF: "metric_a", L: counterA, M: counterMeta, T: 1700000241000, V: 6},
+			{L: counterA, T: timestamp.FromTime(ts.Add(4 * time.Minute)), V: math.Float64frombits(value.StaleNaN)},
+			{L: gaugeA, T: timestamp.FromTime(ts.Add(5 * time.Minute)), V: math.Float64frombits(value.StaleNaN)},
+		}
+		teststorage.RequireEqual(t, want, appTest.ResultSamples())
+	})
+
 	t.Run("partial_survival_with_duplicate_live_ref", func(t *testing.T) {
 		foreachAppendable(t, func(t *testing.T, appV2 bool) {
 			appTest := teststorage.NewAppendable()
@@ -11006,8 +11078,8 @@ func TestScrapeLoopStalenessSliceEdgeCases(t *testing.T) {
 		lMerged := labels.FromStrings(model.MetricNameLabel, "metric_merged")
 		hX := xxhash.Sum64String("metric_x")
 		hY := xxhash.Sum64String("metric_y")
-		ceX := c.addRef(hX, 10, lMerged, nil)
-		ceY := c.addRef(hY, 10, lMerged, nil)
+		_, ceX := c.addRef(hX, 10, lMerged, nil)
+		_, ceY := c.addRef(hY, 10, lMerged, nil)
 
 		// Scrape 0: both aliases share ref 10.
 		c.trackStaleness(hX)
@@ -11060,7 +11132,7 @@ func TestScrapeCacheStalenessSliceLifecycle(t *testing.T) {
 		met := []byte("m{i=\"" + id + "\"}")
 		h := xxhash.Sum64(met)
 		lset := labels.FromStrings(model.MetricNameLabel, "m", "i", id)
-		ce := c.addRef(h, storage.SeriesRef(i+1), lset, nil)
+		_, ce := c.addRef(h, storage.SeriesRef(i+1), lset, nil)
 		entries[i] = entry{met: met, hash: h, ce: ce}
 	}
 
@@ -11076,26 +11148,26 @@ func TestScrapeCacheStalenessSliceLifecycle(t *testing.T) {
 		return got
 	}
 
-	// Run two spike scrapes so both seriesCur and seriesPrev allocate >= spikeSize backing arrays,
-	// and verify adjacent duplicate trackStaleness calls in the same iteration are ignored.
+	// Run two spike scrapes so entries and buckets allocate >= spikeSize backing arrays,
+	// and verify duplicate trackStaleness calls in the same iteration are idempotent.
 	for range 2 {
 		for i := range spikeSize {
 			c.get(entries[i].met)
 			c.trackStaleness(entries[i].hash)
 		}
 		c.trackStaleness(entries[spikeSize-1].hash)
-		require.Len(t, c.seriesCur, spikeSize)
+		require.Equal(t, spikeSize, countBits(c.curBits))
 		c.iterDone(true)
 	}
-	require.GreaterOrEqual(t, cap(c.seriesPrev), spikeSize)
+	require.GreaterOrEqual(t, cap(c.entries), spikeSize)
 
-	// Pure tail additions (len(seriesPrev) < len(seriesCur) with matching prefix) must emit 0 stale.
+	// Pure tail additions must emit 0 stale.
 	for i := range spikeSize {
 		c.get(entries[i].met)
 		c.trackStaleness(entries[i].hash)
 	}
 	for i := spikeSize; i < spikeSize+tailExtra; i++ {
-		entries[i].ce = c.addRef(entries[i].hash, entries[i].ce.ref, entries[i].ce.lset, nil)
+		_, entries[i].ce = c.addRef(entries[i].hash, entries[i].ce.ref, entries[i].ce.lset, nil)
 		c.trackStaleness(entries[i].hash)
 	}
 	require.Empty(t, collectStale(c))
@@ -11115,7 +11187,7 @@ func TestScrapeCacheStalenessSliceLifecycle(t *testing.T) {
 
 	// Reversed scrape with churn, tail growth, and a deleted series exercises curSet mid-loop
 	// switch, post-switch inserts, tail append into curSet, replacedPrev, and !found swaps.
-	c.deleteSeries(entries[5].hash, false)
+	c.deleteSeries(entries[5].hash)
 	for i := spikeSize - 1; i >= 0; i-- {
 		if i == 5 || i == 7 {
 			continue // 5 deleted via deleteSeries, 7 absent.
@@ -11133,7 +11205,7 @@ func TestScrapeCacheStalenessSliceLifecycle(t *testing.T) {
 	}, collectStale(c))
 	c.iterDone(false)
 	// Restore entry 5 and return to [0..spikeSize-1] for subsequent steps.
-	entries[5].ce = c.addRef(entries[5].hash, entries[5].ce.ref, entries[5].ce.lset, nil)
+	_, entries[5].ce = c.addRef(entries[5].hash, entries[5].ce.ref, entries[5].ce.lset, nil)
 	for i := range spikeSize {
 		c.get(entries[i].met)
 		c.trackStaleness(entries[i].hash)
@@ -11168,16 +11240,18 @@ func TestScrapeCacheStalenessSliceLifecycle(t *testing.T) {
 	}
 	require.Equal(t, wantOdd, collectStale(c))
 	c.iterDone(false)
-	require.GreaterOrEqual(t, cap(c.seriesCur), spikeSize)
+	require.GreaterOrEqual(t, cap(c.entries), spikeSize)
 
-	// Two small successful scrapes with iterDone(true) should release both oversized backing arrays.
+	// Two small successful scrapes with iterDone(true) should release oversized backing arrays.
 	for range 2 {
 		c.get(entries[1].met)
 		c.trackStaleness(entries[1].hash)
 		c.iterDone(true)
 	}
-	require.LessOrEqual(t, cap(c.seriesCur), 1024)
-	require.LessOrEqual(t, cap(c.seriesPrev), 1024)
+	require.LessOrEqual(t, cap(c.entries), 1024)
+	require.LessOrEqual(t, len(c.buckets), 2048)
+	require.LessOrEqual(t, cap(c.prevBits), 16)
+	require.LessOrEqual(t, cap(c.curBits), 16)
 }
 
 func TestScrapeCacheForEachStaleBranches(t *testing.T) {
@@ -11209,8 +11283,8 @@ func TestScrapeCacheForEachStaleBranches(t *testing.T) {
 
 		// Reorder index 0/1 so index 0 is found in unmatchedCur, mark index 2 replaced via deleteSeries
 		// (plus missing-entry deleteSeries no-op), and drop index 4 so both <=16 swap paths run.
-		c.deleteSeries(hashes[2], false)
-		c.deleteSeries(hashes[2], false) // Missing-entry deletion is a safe no-op.
+		c.deleteSeries(hashes[2])
+		c.deleteSeries(hashes[2]) // Missing-entry deletion is a safe no-op.
 		c.addRef(hashes[2], 200, labels.FromStrings(model.MetricNameLabel, "small_new", "i", "2"), nil)
 		c.trackStaleness(hashes[1])
 		c.trackStaleness(hashes[0])
@@ -11244,7 +11318,7 @@ func TestScrapeCacheForEachStaleBranches(t *testing.T) {
 		c.iterDone(false)
 
 		// Delete entry 10 and reverse order so len(unmatchedPrev) == 32 (17..2048 merge branch).
-		c.deleteSeries(hashes[10], false)
+		c.deleteSeries(hashes[10])
 		c.addRef(hashes[10], 500, labels.FromStrings(model.MetricNameLabel, "med_new", "i", "10"), nil)
 		for i := n - 1; i >= 0; i-- {
 			if i == 20 {
@@ -11305,21 +11379,20 @@ func TestScrapeCacheForEachStaleBranches(t *testing.T) {
 		c.trackStaleness(h2)
 		c.iterDone(false)
 
-		// Scrape 1: track h1 (single extraCur entry), then deleteSeries(h1, true) so ref 101 lives only in extraCur.
-		// Only h1 is in staleHashes (len == 1) and extraCur keeps it alive.
+		// Scrape 1: track h1, then deleteSeries(h1) so ref 101 lives only in orphans.
 		c.trackStaleness(h1)
-		c.deleteSeries(h1, true)
+		c.deleteSeries(h1)
 		c.trackStaleness(h2)
 		require.Empty(t, collectStale(t, c))
 		c.iterDone(false)
 
-		// Scrape 2: h1 is in extraPrev (ref 101) and h2 is in seriesPrev (ref 102); re-add both, track, then
-		// delete both with alreadyScraped=true so both refs live only in extraCur (len(stale) > 1 path).
+		// Scrape 2: h1 is in orphans (ref 101) and h2 is in entries (ref 102); re-add both, track, then
+		// delete both so both refs live only in orphans (len(stale) > 1 path).
 		c.addRef(h1, 101, l1, nil)
 		c.trackStaleness(h1)
-		c.deleteSeries(h1, true)
+		c.deleteSeries(h1)
 		c.trackStaleness(h2)
-		c.deleteSeries(h2, true)
+		c.deleteSeries(h2)
 		require.Empty(t, collectStale(t, c))
 		c.iterDone(false)
 
@@ -11336,11 +11409,11 @@ func TestScrapeCacheUpdateRefStaleness(t *testing.T) {
 
 	hA := xxhash.Sum64String("metric_a")
 	lsetA := labels.FromStrings(model.MetricNameLabel, "metric_a")
-	ceA := c.addRef(hA, 10, lsetA, nil)
+	_, ceA := c.addRef(hA, 10, lsetA, nil)
 
 	hB := xxhash.Sum64String("metric_b")
 	lsetB := labels.FromStrings(model.MetricNameLabel, "metric_b")
-	ceB := c.addRef(hB, 10, lsetB, nil) // Deliberately shares ref 10 to verify ref reuse isolation.
+	_, ceB := c.addRef(hB, 10, lsetB, nil) // Deliberately shares ref 10 to verify ref reuse isolation.
 
 	// Scrape 0: only metric_b is tracked for staleness; metric_a is not (e.g. explicit timestamp).
 	c.trackStaleness(hB)
@@ -11367,6 +11440,593 @@ func TestScrapeCacheUpdateRefStaleness(t *testing.T) {
 	require.Equal(t, []storage.SeriesRef{30}, staleRefs)
 }
 
+func countBits(bs []uint64) int {
+	n := 0
+	for _, w := range bs {
+		n += bits.OnesCount64(w)
+	}
+	return n
+}
+
+func (c *scrapeCache) lookupEntry(h uint64) (cacheEntry, bool) {
+	if idx, ok := c.lookupIndex(h); ok {
+		return c.entries[idx], true
+	}
+	return cacheEntry{}, false
+}
+
+func TestScrapeCacheCompactIndexAndEviction(t *testing.T) {
+	t.Run("wrap_around_cluster_deletion_and_tag_collisions", func(t *testing.T) {
+		c := newScrapeCache(newTestScrapeMetrics(t))
+
+		// Craft hashes landing at bucket 14, 15, 0, 1 in a 16-bucket table with
+		// identical top-8-bit tags to exercise tag collisions and cyclic
+		// backward-shift deletion across the bucket array boundary.
+		const tag = uint64(0xAB) << 56
+		hashes := []uint64{
+			tag | 14,
+			tag | 14 | (1 << 8),
+			tag | 15,
+			tag | 15 | (1 << 8),
+			tag, // Bucket 0.
+			tag | 1,
+			tag | 14 | (2 << 8),
+		}
+		for i, h := range hashes {
+			lset := labels.FromStrings(model.MetricNameLabel, "wrap", "i", strconv.Itoa(i))
+			c.addRef(h, storage.SeriesRef(i+1), lset, nil)
+			c.trackStaleness(h)
+		}
+		require.Len(t, c.buckets, 16)
+		c.iterDone(false)
+
+		// Delete entries from the front and middle of the wrapped probe cluster
+		// and verify all remaining entries remain reachable and stale state stays exact.
+		c.deleteSeries(hashes[0])
+		c.deleteSeries(hashes[2])
+		c.deleteSeries(hashes[4])
+
+		for _, idx := range []int{1, 3, 5, 6} {
+			ce, ok := c.lookupEntry(hashes[idx])
+			require.True(t, ok, "hash index %d missing after wrap-around deletion", idx)
+			require.Equal(t, storage.SeriesRef(idx+1), ce.ref)
+			c.trackStaleness(hashes[idx])
+		}
+		for _, idx := range []int{0, 2, 4} {
+			_, ok := c.lookupEntry(hashes[idx])
+			require.False(t, ok, "deleted hash index %d still reachable", idx)
+		}
+
+		var staleRefs []storage.SeriesRef
+		c.forEachStale(func(ref storage.SeriesRef, _ labels.Labels) bool {
+			staleRefs = append(staleRefs, ref)
+			return true
+		})
+		slices.Sort(staleRefs)
+		require.Equal(t, []storage.SeriesRef{1, 3, 5}, staleRefs)
+	})
+
+	t.Run("compaction_tail_masking_and_full_eviction", func(t *testing.T) {
+		c := newScrapeCache(newTestScrapeMetrics(t))
+
+		// Use 150 entries (>2 bitset words, non-multiple of 64) and evict >25%
+		// on flush so order-preserving compaction runs and masks tail prevBits.
+		const n = 150
+		mets := make([][]byte, n)
+		hashes := make([]uint64, n)
+		for i := range n {
+			id := strconv.Itoa(i)
+			mets[i] = []byte("compact{i=\"" + id + "\"}")
+			hashes[i] = xxhash.Sum64(mets[i])
+			c.addRef(hashes[i], storage.SeriesRef(i+1), labels.FromStrings(model.MetricNameLabel, "compact", "i", id), nil)
+			c.trackStaleness(hashes[i])
+		}
+		c.iterDone(true)
+
+		// Keep only 70 entries (>1 word, non-multiple of 64), evicting 80 (>25%).
+		for i := range 70 {
+			c.get(mets[i])
+			c.trackStaleness(hashes[i])
+		}
+		c.iterDone(true)
+		require.Len(t, c.entries, 70)
+		require.Equal(t, 70, countBits(c.prevBits))
+
+		// Empty scrape must emit exactly the 70 surviving refs and no phantom tail bits.
+		var staleRefs []storage.SeriesRef
+		c.forEachStale(func(ref storage.SeriesRef, _ labels.Labels) bool {
+			staleRefs = append(staleRefs, ref)
+			return true
+		})
+		require.Len(t, staleRefs, 70)
+		slices.Sort(staleRefs)
+		for i := range 70 {
+			require.Equal(t, storage.SeriesRef(i+1), staleRefs[i])
+		}
+
+		// Full eviction (seenSeries == 0) must release entries, buckets, and bitsets.
+		c.iterDone(true)
+		require.Empty(t, c.entries)
+		require.Nil(t, c.buckets)
+		require.Nil(t, c.prevBits)
+		require.Nil(t, c.curBits)
+		require.Nil(t, c.seenBits)
+	})
+
+	t.Run("small_churn_evicts_full_partial_tail_word", func(t *testing.T) {
+		c := newScrapeCache(newTestScrapeMetrics(t))
+
+		// Use 130 entries (2 full words + 2 entries in word 2). Evict both tail
+		// entries (128, 129) so len(seenBits) shrinks from 3 to 2, plus entry 100
+		// in word 1 at bit >= 2 (<=25% total churn -> backward swap-remove path).
+		const n = 130
+		mets := make([][]byte, n)
+		for i := range n {
+			id := strconv.Itoa(i)
+			mets[i] = []byte("tail{i=\"" + id + "\"}")
+			slot, _ := c.addRef(xxhash.Sum64(mets[i]), storage.SeriesRef(i+1), labels.FromStrings(model.MetricNameLabel, "tail", "i", id), nil)
+			c.trackSlot(slot)
+		}
+		c.iterDone(true)
+
+		for i := range n {
+			if i == 100 || i == 128 || i == 129 {
+				continue
+			}
+			_, slot, _, ok, _ := c.get(mets[i])
+			require.True(t, ok)
+			c.trackSlot(slot)
+		}
+		c.iterDone(true)
+		require.Len(t, c.entries, n-3)
+		for _, dropped := range []int{100, 128, 129} {
+			_, ok := c.lookupEntry(xxhash.Sum64(mets[dropped]))
+			require.False(t, ok, "dropped entry %d should have been evicted", dropped)
+		}
+	})
+
+	t.Run("overflow_index_fallback", func(t *testing.T) {
+		orig := scrapeCacheMaxCompactSlots
+		scrapeCacheMaxCompactSlots = 8
+		t.Cleanup(func() { scrapeCacheMaxCompactSlots = orig })
+
+		c := newScrapeCache(newTestScrapeMetrics(t))
+		const n = 16
+		mets := make([][]byte, n)
+		hashes := make([]uint64, n)
+		for i := range n {
+			id := strconv.Itoa(i)
+			mets[i] = []byte("ovf{i=\"" + id + "\"}")
+			hashes[i] = xxhash.Sum64(mets[i])
+			c.addRef(hashes[i], storage.SeriesRef(i+1), labels.FromStrings(model.MetricNameLabel, "ovf", "i", id), nil)
+			c.trackStaleness(hashes[i])
+		}
+		require.Nil(t, c.buckets)
+		require.Len(t, c.overflowIndex, n)
+		c.iterDone(true)
+
+		// Delete one entry while in overflowIndex mode and verify lookup and staleness.
+		c.deleteSeries(hashes[3])
+		for i := range n {
+			if i == 3 {
+				continue
+			}
+			_, slot, ce, ok, _ := c.get(mets[i])
+			require.True(t, ok)
+			require.Equal(t, storage.SeriesRef(i+1), ce.ref)
+			c.trackSlot(slot)
+		}
+		var staleRefs []storage.SeriesRef
+		c.forEachStale(func(ref storage.SeriesRef, _ labels.Labels) bool {
+			staleRefs = append(staleRefs, ref)
+			return true
+		})
+		require.Equal(t, []storage.SeriesRef{4}, staleRefs)
+		c.iterDone(true)
+
+		// Dropping below the compact threshold on compaction returns to buckets.
+		for i := range 4 {
+			if i == 3 {
+				continue
+			}
+			_, slot, _, ok, _ := c.get(mets[i])
+			require.True(t, ok)
+			c.trackSlot(slot)
+		}
+		c.iterDone(true)
+		require.Nil(t, c.overflowIndex)
+		require.NotEmpty(t, c.buckets)
+		require.Len(t, c.entries, 3)
+	})
+}
+
+func TestScrapeCacheScrapeOrderCursor(t *testing.T) {
+	c := newScrapeCache(newTestScrapeMetrics(t))
+
+	mets := [][]byte{
+		[]byte(`m{i="0"}`),
+		[]byte(`m{i="1"}`),
+		[]byte(`m{i="2"}`),
+		[]byte(`m{i="3"}`),
+	}
+	for i, met := range mets {
+		c.addRef(xxhash.Sum64(met), storage.SeriesRef(i+1), labels.FromStrings(model.MetricNameLabel, "m", "i", strconv.Itoa(i)), nil)
+		c.trackStaleness(xxhash.Sum64(met))
+	}
+	c.iterDone(true)
+	require.Equal(t, uint32(0), c.nextIdx)
+
+	// Simulate defer sl.report() adding report metrics after iterDone.
+	reports := [][]byte{[]byte("up\xff"), []byte("scrape_duration_seconds\xff")}
+	for i, rep := range reports {
+		c.addRef(xxhash.Sum64(rep), storage.SeriesRef(100+i), labels.FromStrings(model.MetricNameLabel, string(rep[:len(rep)-1])), nil)
+	}
+	require.Equal(t, uint32(0), c.nextIdx)
+
+	// Steady-state scrape advances nextIdx sequentially through scraped entries.
+	for i, met := range mets {
+		_, slot, _, ok, already := c.get(met)
+		require.True(t, ok)
+		require.False(t, already)
+		require.Equal(t, uint32(i), slot)
+		require.Equal(t, uint32(i+1), c.nextIdx)
+		c.trackSlot(slot)
+	}
+	c.iterDone(true)
+	require.Equal(t, uint32(0), c.nextIdx)
+	require.Len(t, c.entries, len(mets)+len(reports))
+
+	// Post-iterDone getReport keeps report metrics seen without disturbing nextIdx.
+	for i, rep := range reports {
+		_, ce, ok := c.getReport(rep)
+		require.True(t, ok)
+		require.Equal(t, storage.SeriesRef(100+i), ce.ref)
+		require.Equal(t, uint32(0), c.nextIdx)
+	}
+
+	// Out-of-order lookup resyncs nextIdx to slot+1; miss leaves nextIdx unchanged.
+	_, slot, _, ok, _ := c.get(mets[2])
+	require.True(t, ok)
+	require.Equal(t, uint32(2), slot)
+	require.Equal(t, uint32(3), c.nextIdx)
+
+	_, _, _, ok, _ = c.get([]byte(`m{i="missing"}`))
+	require.False(t, ok)
+	require.Equal(t, uint32(3), c.nextIdx)
+
+	_, slot, _, ok, _ = c.get(mets[3])
+	require.True(t, ok)
+	require.Equal(t, uint32(3), slot)
+	require.Equal(t, uint32(4), c.nextIdx)
+
+	// Finish seeing remaining scraped metrics and verify report metrics survived flush.
+	c.get(mets[0])
+	c.get(mets[1])
+	c.iterDone(true)
+	require.Len(t, c.entries, len(mets)+len(reports))
+}
+
+// staleOracleEntry is one cached metric string, or one orphan, in staleOracle.
+type staleOracleEntry struct {
+	ref             storage.SeriesRef
+	lset            labels.Labels
+	seen, prev, cur bool
+}
+
+// staleOracleMove records that a SeriesRef rotated to ref for lset.
+type staleOracleMove struct {
+	ref  storage.SeriesRef
+	lset labels.Labels
+}
+
+// staleOracle is a brute-force model of scrapeCache staleness tracking, keyed
+// by metric string. It has no slots, bitsets, or ref uniqueness filtering, so
+// scrapeCache can be compared against it whatever its internal layout.
+type staleOracle struct {
+	entries map[string]*staleOracleEntry
+	orphans []staleOracleEntry
+	moved   map[storage.SeriesRef][]staleOracleMove
+}
+
+func newStaleOracle() *staleOracle {
+	return &staleOracle{entries: map[string]*staleOracleEntry{}}
+}
+
+func (o *staleOracle) get(key string) (*staleOracleEntry, bool) {
+	e, ok := o.entries[key]
+	if ok {
+		e.seen = true
+	}
+	return e, ok
+}
+
+// forget removes key and keeps its staleness state as an orphan, like
+// deleteSeries or addRef over an existing metric string.
+func (o *staleOracle) forget(key string) {
+	e, ok := o.entries[key]
+	if !ok {
+		return
+	}
+	if e.ref != 0 && (e.prev || e.cur) {
+		o.orphans = append(o.orphans, staleOracleEntry{ref: e.ref, lset: e.lset, prev: e.prev, cur: e.cur})
+	}
+	delete(o.entries, key)
+}
+
+func (o *staleOracle) addRef(key string, ref storage.SeriesRef, lset labels.Labels) {
+	o.forget(key)
+	o.entries[key] = &staleOracleEntry{ref: ref, lset: lset, seen: true}
+}
+
+func (o *staleOracle) updateRef(key string, ref storage.SeriesRef) {
+	e := o.entries[key]
+	if e.ref == ref {
+		return
+	}
+	if e.ref != 0 {
+		if o.moved == nil {
+			o.moved = map[storage.SeriesRef][]staleOracleMove{}
+		}
+		o.moved[e.ref] = append(o.moved[e.ref], staleOracleMove{ref: ref, lset: e.lset})
+	}
+	e.ref = ref
+}
+
+// remap follows the SeriesRef rotations of this scrape for lset, using the
+// latest rotation recorded for each ref.
+func (o *staleOracle) remap(ref storage.SeriesRef, lset labels.Labels) storage.SeriesRef {
+	for range len(o.moved) {
+		moves, ok := o.moved[ref]
+		if !ok {
+			return ref
+		}
+		var next storage.SeriesRef
+		for _, m := range slices.Backward(moves) {
+			if labels.Equal(m.lset, lset) {
+				next = m.ref
+				break
+			}
+		}
+		if next == 0 || next == ref {
+			return ref
+		}
+		ref = next
+	}
+	return ref
+}
+
+// stale returns the expected stale refs, each with the label sets of the
+// candidates that map to it. A candidate was tracked in the previous scrape and
+// not in this one; it is not stale when an entry or orphan tracked in this
+// scrape holds the same remapped ref.
+func (o *staleOracle) stale() map[storage.SeriesRef][]labels.Labels {
+	all := make([]*staleOracleEntry, 0, len(o.entries)+len(o.orphans))
+	for _, e := range o.entries {
+		all = append(all, e)
+	}
+	for i := range o.orphans {
+		all = append(all, &o.orphans[i])
+	}
+	live := map[storage.SeriesRef]struct{}{}
+	for _, e := range all {
+		if e.cur {
+			live[o.remap(e.ref, e.lset)] = struct{}{}
+		}
+	}
+	out := map[storage.SeriesRef][]labels.Labels{}
+	for _, e := range all {
+		if !e.prev || e.cur {
+			continue
+		}
+		ref := o.remap(e.ref, e.lset)
+		if _, ok := live[ref]; ok {
+			continue
+		}
+		out[ref] = append(out[ref], e.lset)
+	}
+	return out
+}
+
+func (o *staleOracle) iterDone(flush bool) {
+	for k, e := range o.entries {
+		e.prev, e.cur = e.cur, false
+		if flush && !e.seen {
+			delete(o.entries, k)
+		}
+		e.seen = false
+	}
+	kept := o.orphans[:0]
+	for _, e := range o.orphans {
+		if e.cur {
+			e.prev, e.cur = true, false
+			kept = append(kept, e)
+		}
+	}
+	o.orphans = kept
+	o.moved = nil
+}
+
+// TestScrapeCacheStalenessDifferential drives scrapeCache and staleOracle with
+// the same random scrapes and requires forEachStale to emit exactly the
+// oracle's stale refs. Scenarios include metric strings aliasing one label set
+// and ref, head GC rotating refs, refs added as 0 and set later, deleteSeries
+// orphans, addRef over an existing metric string, series missing for some
+// scrapes and coming back with their old ref, WAL-replay-like random refs,
+// flushing and non-flushing iterations, and a retry of forEachStale.
+func TestScrapeCacheStalenessDifferential(t *testing.T) {
+	const (
+		seeds = 300
+		iters = 40
+	)
+	for seed := range uint64(seeds) {
+		t.Run(strconv.FormatUint(seed, 10), func(t *testing.T) {
+			rng := rand.New(rand.NewPCG(seed, 0))
+			c := newScrapeCache(newTestScrapeMetrics(t))
+			o := newStaleOracle()
+
+			nL := 1 + rng.IntN(120)
+			lsets := make([]labels.Labels, nL)
+			for l := range nL {
+				lsets[l] = labels.FromStrings(model.MetricNameLabel, "m", "l", strconv.Itoa(l))
+			}
+			type metric struct {
+				key string
+				l   int
+			}
+			var mets []metric
+			maxAliases := 1 + rng.IntN(3)
+			for l := range nL {
+				for a := range 1 + rng.IntN(maxAliases) {
+					mets = append(mets, metric{key: fmt.Sprintf("m{l=%q,a=%q}", strconv.Itoa(l), strconv.Itoa(a)), l: l})
+				}
+			}
+
+			// The head hands out unique refs, either monotonically or in random
+			// order as after a WAL replay.
+			head := make([]storage.SeriesRef, nL)
+			used := map[storage.SeriesRef]struct{}{}
+			next := storage.SeriesRef(1 + rng.IntN(1000))
+			randomRefs := rng.IntN(2) == 0
+			headRef := func(l int) storage.SeriesRef {
+				if head[l] != 0 {
+					return head[l]
+				}
+				for {
+					var ref storage.SeriesRef
+					if randomRefs {
+						ref = storage.SeriesRef(1 + rng.IntN(100000))
+					} else {
+						next += storage.SeriesRef(1 + rng.IntN(3))
+						ref = next
+					}
+					if _, ok := used[ref]; !ok {
+						used[ref] = struct{}{}
+						head[l] = ref
+						return ref
+					}
+				}
+			}
+
+			var (
+				presence, gcRate, deleteRate, reAddRate, untrackRate float64
+				quiet, sorted                                        bool
+				absent                                               = map[string]bool{}
+			)
+			for it := range iters {
+				// Change the scrape profile every few scrapes. Churn phases mix
+				// every event. Quiet phases only delete a few series, which stay
+				// absent for one scrape, so suspect ref state can heal while
+				// orphans exist; they may start with a head GC burst rotating
+				// many refs at once.
+				if it%8 == 0 {
+					quiet = rng.IntN(2) == 0
+					sorted = rng.IntN(2) == 0
+					if quiet {
+						presence, gcRate, deleteRate, reAddRate, untrackRate = 1, 0, 0.005, 0, 0
+						if rng.IntN(2) == 0 {
+							gcRate = 0.5
+						}
+					} else {
+						presence = []float64{1, 0.97, 0.5 + rng.Float64()/2}[rng.IntN(3)]
+						gcRate = []float64{0, 0.01, 0.05}[rng.IntN(3)]
+						deleteRate = []float64{0, 0.01, 0.05}[rng.IntN(3)]
+						reAddRate, untrackRate = 1.0/60, 1.0/30
+					}
+				} else if quiet {
+					gcRate = 0
+				}
+				for l := range head {
+					if head[l] != 0 && rng.Float64() < gcRate {
+						head[l] = 0
+					}
+				}
+				order := rng.Perm(len(mets))
+				if sorted {
+					slices.Sort(order)
+				}
+				nextAbsent := map[string]bool{}
+				for _, i := range order {
+					m := mets[i]
+					if absent[m.key] || rng.Float64() >= presence {
+						continue
+					}
+					met := []byte(m.key)
+					h, slot, ce, ok, _ := c.get(met)
+					oe, ook := o.get(m.key)
+					if ok != ook {
+						t.Fatalf("seed %d iter %d: cache presence of %s is %t, want %t", seed, it, m.key, ok, ook)
+					}
+					ref := headRef(m.l)
+					switch {
+					case !ok && rng.IntN(15) == 0:
+						// Added without a ref, e.g. a start time anchor, and
+						// either set right away or left at 0 until a later scrape.
+						slot, ce = c.addRef(h, 0, lsets[m.l], nil)
+						o.addRef(m.key, 0, lsets[m.l])
+						if rng.IntN(2) == 0 {
+							c.updateSlotRef(slot, &ce, ref)
+							o.updateRef(m.key, ref)
+						}
+					case !ok || rng.Float64() < reAddRate:
+						// New metric string, or addRef over an existing one.
+						slot, ce = c.addRef(h, ref, lsets[m.l], nil)
+						o.addRef(m.key, ref, lsets[m.l])
+					default:
+						if ce.ref != oe.ref {
+							t.Fatalf("seed %d iter %d: ref of %s is %d, want %d", seed, it, m.key, ce.ref, oe.ref)
+						}
+						if ce.ref != ref {
+							c.updateSlotRef(slot, &ce, ref)
+							o.updateRef(m.key, ref)
+						}
+					}
+					if ce.ref != 0 && rng.Float64() >= untrackRate {
+						c.trackSlot(slot)
+						o.entries[m.key].cur = true
+					}
+					if rng.Float64() < deleteRate {
+						c.deleteSeries(h)
+						o.forget(m.key)
+						if quiet || rng.IntN(2) == 0 {
+							nextAbsent[m.key] = true
+						}
+					}
+				}
+				absent = nextAbsent
+
+				want := o.stale()
+				var first []storage.SeriesRef
+				for try := range 2 {
+					got := map[storage.SeriesRef]struct{}{}
+					var refs []storage.SeriesRef
+					c.forEachStale(func(ref storage.SeriesRef, lset labels.Labels) bool {
+						_, dup := got[ref]
+						require.False(t, dup, "seed %d iter %d try %d: ref %d emitted twice", seed, it, try, ref)
+						got[ref] = struct{}{}
+						refs = append(refs, ref)
+						cands, ok := want[ref]
+						require.True(t, ok, "seed %d iter %d try %d: unexpected stale ref %d %s", seed, it, try, ref, lset)
+						require.True(t, slices.ContainsFunc(cands, func(l labels.Labels) bool { return labels.Equal(l, lset) }),
+							"seed %d iter %d try %d: ref %d emitted with labels %s, want one of %v", seed, it, try, ref, lset, cands)
+						return true
+					})
+					require.Len(t, got, len(want), "seed %d iter %d try %d: got %v, want %v", seed, it, try, refs, slices.Sorted(maps.Keys(want)))
+					slices.Sort(refs)
+					if try == 0 {
+						first = refs
+					} else {
+						require.Equal(t, first, refs, "seed %d iter %d: retry differs", seed, it)
+					}
+				}
+
+				flush := rng.IntN(3) != 0
+				c.iterDone(flush)
+				o.iterDone(flush)
+			}
+		})
+	}
+}
+
 // BenchmarkScrapeCacheStaleness benchmarks scrapeCache staleness tracking across
 // steady-state scrapes, shuffled scrape order, and series churn, reporting
 // retained staleness bytes per series.
@@ -11391,6 +12051,7 @@ func BenchmarkScrapeCacheStaleness(b *testing.B) {
 
 	type benchSeries struct {
 		hash uint64
+		slot uint32
 		ce   cacheEntry
 	}
 
@@ -11412,16 +12073,16 @@ func BenchmarkScrapeCacheStaleness(b *testing.B) {
 		b.Run(fmt.Sprintf("series=%d/churn=none", numSeries), func(b *testing.B) {
 			c := newScrapeCache(metrics)
 			for i := range entriesA {
-				entriesA[i].ce = c.addRef(entriesA[i].hash, entriesA[i].ce.ref, entriesA[i].ce.lset, nil)
+				entriesA[i].slot, entriesA[i].ce = c.addRef(entriesA[i].hash, entriesA[i].ce.ref, entriesA[i].ce.lset, nil)
 			}
 			// Record initial cache size so iterDone(false) in the benchmark loop does not trigger
 			// forced cache eviction (targetScrapeCacheFlushForced).
-			c.successfulCount = len(c.series)
+			c.successfulCount = len(c.entries)
 
 			memBefore := liveHeap()
 			for range 2 {
 				for i := range entriesA {
-					c.trackStaleness(entriesA[i].hash)
+					c.trackSlot(entriesA[i].slot)
 				}
 				staleCount := 0
 				c.forEachStale(func(storage.SeriesRef, labels.Labels) bool {
@@ -11444,7 +12105,7 @@ func BenchmarkScrapeCacheStaleness(b *testing.B) {
 			b.ResetTimer()
 			for b.Loop() {
 				for i := range entriesA {
-					c.trackStaleness(entriesA[i].hash)
+					c.trackSlot(entriesA[i].slot)
 				}
 				c.forEachStale(func(storage.SeriesRef, labels.Labels) bool {
 					totalStale++
@@ -11472,19 +12133,19 @@ func BenchmarkScrapeCacheStaleness(b *testing.B) {
 
 			c := newScrapeCache(metrics)
 			for i := range entriesA {
-				ce := c.addRef(entriesA[i].hash, entriesA[i].ce.ref, entriesA[i].ce.lset, nil)
-				entriesA[i].ce = ce
-				revA[numSeries-1-i].ce = ce
+				slot, ce := c.addRef(entriesA[i].hash, entriesA[i].ce.ref, entriesA[i].ce.lset, nil)
+				entriesA[i].slot, entriesA[i].ce = slot, ce
+				revA[numSeries-1-i].slot, revA[numSeries-1-i].ce = slot, ce
 			}
-			c.successfulCount = len(c.series)
+			c.successfulCount = len(c.entries)
 
 			memBefore := liveHeap()
 			for i := range entriesA {
-				c.trackStaleness(entriesA[i].hash)
+				c.trackSlot(entriesA[i].slot)
 			}
 			c.iterDone(false)
 			for i := range revA {
-				c.trackStaleness(revA[i].hash)
+				c.trackSlot(revA[i].slot)
 			}
 			staleCount := 0
 			c.forEachStale(func(storage.SeriesRef, labels.Labels) bool {
@@ -11512,7 +12173,7 @@ func BenchmarkScrapeCacheStaleness(b *testing.B) {
 				}
 				useFwd = !useFwd
 				for i := range scrapeSet {
-					c.trackStaleness(scrapeSet[i].hash)
+					c.trackSlot(scrapeSet[i].slot)
 				}
 				c.forEachStale(func(storage.SeriesRef, labels.Labels) bool {
 					totalStale++
@@ -11539,31 +12200,33 @@ func BenchmarkScrapeCacheStaleness(b *testing.B) {
 			scrapeSetB := make([]*benchSeries, numSeries)
 			c := newScrapeCache(metrics)
 			for i := range numSeries {
-				entriesA[i].ce = c.addRef(entriesA[i].hash, entriesA[i].ce.ref, entriesA[i].ce.lset, nil)
+				entriesA[i].slot, entriesA[i].ce = c.addRef(entriesA[i].hash, entriesA[i].ce.ref, entriesA[i].ce.lset, nil)
 				scrapeSetA[i] = &entriesA[i]
 				if i%100 == 0 {
 					idx := i / 100
 					id := strconv.Itoa(i)
 					h := xxhash.Sum64String("metric_b{id=\"" + id + "\"}")
 					lset := labels.FromStrings(model.MetricNameLabel, "metric_b", "id", id)
+					slot, ce := c.addRef(h, storage.SeriesRef(2*i+2), lset, nil)
 					churnEntries[idx] = benchSeries{
 						hash: h,
-						ce:   c.addRef(h, storage.SeriesRef(2*i+2), lset, nil),
+						slot: slot,
+						ce:   ce,
 					}
 					scrapeSetB[i] = &churnEntries[idx]
 				} else {
 					scrapeSetB[i] = &entriesA[i]
 				}
 			}
-			c.successfulCount = len(c.series)
+			c.successfulCount = len(c.entries)
 
 			memBefore := liveHeap()
 			for _, s := range scrapeSetA {
-				c.trackStaleness(s.hash)
+				c.trackSlot(s.slot)
 			}
 			c.iterDone(false)
 			for _, s := range scrapeSetB {
-				c.trackStaleness(s.hash)
+				c.trackSlot(s.slot)
 			}
 			staleCount := 0
 			c.forEachStale(func(storage.SeriesRef, labels.Labels) bool {
@@ -11591,7 +12254,7 @@ func BenchmarkScrapeCacheStaleness(b *testing.B) {
 				}
 				useA = !useA
 				for _, s := range scrapeSet {
-					c.trackStaleness(s.hash)
+					c.trackSlot(s.slot)
 				}
 				c.forEachStale(func(storage.SeriesRef, labels.Labels) bool {
 					totalStale++
