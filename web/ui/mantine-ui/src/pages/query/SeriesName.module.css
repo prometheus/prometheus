@@ -3,11 +3,11 @@
 
 .labelPair:hover {
   --bg-expand: 4px;
-  background-color: #add6ffa0;
+  background-color: light-dark(#add6ffa0, #1c3a5a80);
   border-radius: 3px;
   padding: var(--bg-expand);
   margin: calc(-1 * var(--bg-expand));
-  color: #495057;
+  color: light-dark(#495057, var(--mantine-color-gray-2));
   cursor: pointer;
 }
 
