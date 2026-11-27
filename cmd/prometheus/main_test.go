@@ -138,12 +138,23 @@ func TestMain(m *testing.M) {
 
 func TestComputeExternalURL(t *testing.T) {
 	tests := []struct {
-		input string
-		valid bool
+		input      string
+		listenAddr string
+		valid      bool
 	}{
 		{
 			input: "",
 			valid: true,
+		},
+		{
+			input:      "",
+			listenAddr: "unix:///run/prometheus/prometheus.sock",
+			valid:      false,
+		},
+		{
+			input:      "http://localhost/",
+			listenAddr: "unix:///run/prometheus/prometheus.sock",
+			valid:      true,
 		},
 		{
 			input: "http://proxy.com/prometheus",
@@ -176,11 +187,14 @@ func TestComputeExternalURL(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		_, err := computeExternalURL(test.input, "0.0.0.0:9090", "")
+		if test.listenAddr == "" {
+			test.listenAddr = "0.0.0.0:9090"
+		}
+		_, err := computeExternalURL(test.input, test.listenAddr, "")
 		if test.valid {
 			require.NoError(t, err)
 		} else {
-			require.Error(t, err, "input=%q", test.input)
+			require.Error(t, err, "input=%q listenAddr=%q", test.input, test.listenAddr)
 		}
 	}
 }

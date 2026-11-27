@@ -5061,6 +5061,28 @@ func TestGetGlobalURL(t *testing.T) {
 			mustParseURL(t, "http://[::1]:9091"),
 			false,
 		},
+		{
+			// Prometheus only listens on Unix domain sockets.
+			mustParseURL(t, "http://localhost:9090"),
+			GlobalURLOptions{
+				ListenAddress: "unix:///run/prometheus/prometheus.sock",
+				Host:          "prometheus.io",
+				Scheme:        "https",
+			},
+			mustParseURL(t, "http://prometheus.io:9090"),
+			false,
+		},
+		{
+			// Prometheus only listens on Unix domain sockets.
+			mustParseURL(t, "http://localhost"),
+			GlobalURLOptions{
+				ListenAddress: "unix:///run/prometheus/prometheus.sock",
+				Host:          "prometheus.io",
+				Scheme:        "https",
+			},
+			mustParseURL(t, "http://prometheus.io"),
+			false,
+		},
 	}
 
 	for i, tc := range testcases {

@@ -612,6 +612,139 @@ func TestHandleMultipleQuitRequests(t *testing.T) {
 	}
 }
 
+func TestListenOnUnixSocket(t *testing.T) {
+	// t.TempDir can produce paths exceeding the macOS 104-char socket
+	// path limit, so we create our own temp dir.
+	dir, err := os.MkdirTemp("", "prom-web")
+	require.NoError(t, err)
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	socketPath := filepath.Join(dir, "web.sock")
+	port := fmt.Sprintf(":%d", testutil.RandomUnprivilegedPort(t))
+
+	newHandler := func(listenAddresses ...string) *Handler {
+		h := New(nil, &Options{
+			ListenAddresses: listenAddresses,
+			MaxConnections:  512,
+			RoutePrefix:     "/",
+			ExternalURL:     &url.URL{Scheme: "http", Host: "localhost", Path: "/"},
+			Version:         &PrometheusVersion{},
+			Gatherer:        prometheus.DefaultGatherer,
+		})
+		h.config = &config.Config{}
+		h.notifier = &notifier.Manager{}
+		return h
+	}
+
+	t.Run("missing path", func(t *testing.T) {
+		_, err := newHandler(UnixSocketPrefix).Listeners()
+		require.ErrorContains(t, err, "missing Unix domain socket path")
+	})
+
+	// A socket file left behind by a process that did not close its listener
+	// is replaced. Anything else at the socket path makes listening fail and
+	// is left untouched.
+	for _, tc := range []struct {
+		name string
+		// setup creates a file at socketPath.
+		setup   func(t *testing.T)
+		wantErr bool
+	}{
+		{
+			name: "stale socket",
+			setup: func(t *testing.T) {
+				l, err := net.Listen("unix", socketPath)
+				require.NoError(t, err)
+				l.(*net.UnixListener).SetUnlinkOnClose(false)
+				require.NoError(t, l.Close())
+			},
+		},
+		{
+			name: "socket in use",
+			setup: func(t *testing.T) {
+				l, err := net.Listen("unix", socketPath)
+				require.NoError(t, err)
+				t.Cleanup(func() { l.Close() })
+			},
+			wantErr: true,
+		},
+		{
+			name: "regular file",
+			setup: func(t *testing.T) {
+				require.NoError(t, os.WriteFile(socketPath, []byte("data"), 0o600))
+			},
+			wantErr: true,
+		},
+	} {
+		t.Run("existing "+tc.name, func(t *testing.T) {
+			t.Cleanup(func() { os.Remove(socketPath) })
+			tc.setup(t)
+			before, err := os.Lstat(socketPath)
+			require.NoError(t, err)
+
+			l, err := newHandler(UnixSocketPrefix + socketPath).Listeners()
+			if !tc.wantErr {
+				require.NoError(t, err)
+				require.Len(t, l, 1)
+				require.NoError(t, l[0].Close())
+				return
+			}
+			require.Error(t, err)
+			after, err := os.Lstat(socketPath)
+			require.NoError(t, err)
+			require.True(t, os.SameFile(before, after), "existing file was replaced")
+		})
+	}
+
+	t.Run("serve on Unix socket and TCP", func(t *testing.T) {
+		webHandler := newHandler(UnixSocketPrefix+socketPath, port)
+		l, err := webHandler.Listeners()
+		require.NoError(t, err)
+		require.Len(t, l, 2)
+		require.Equal(t, "unix", l[0].Addr().Network())
+		require.Equal(t, "tcp", l[1].Addr().Network())
+
+		ctx, cancel := context.WithCancel(context.Background())
+		runErr := make(chan error, 1)
+		go func() {
+			runErr <- webHandler.Run(ctx, l, "")
+		}()
+
+		waitForServerReady(t, "http://localhost"+port, 5*time.Second)
+
+		client := &http.Client{Transport: &http.Transport{
+			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+				var d net.Dialer
+				return d.DialContext(ctx, "unix", socketPath)
+			},
+		}}
+		t.Cleanup(client.CloseIdleConnections)
+
+		for _, path := range []string{"/-/healthy", "/metrics"} {
+			resp, err := client.Get("http://localhost" + path)
+			require.NoError(t, err)
+			body, err := io.ReadAll(resp.Body)
+			require.NoError(t, err)
+			require.NoError(t, resp.Body.Close())
+			require.Equal(t, http.StatusOK, resp.StatusCode, path)
+			if path == "/metrics" {
+				require.Contains(t, string(body), "go_goroutines")
+			}
+		}
+
+		cancel()
+		select {
+		case err := <-runErr:
+			require.NoError(t, err)
+		case <-time.After(5 * time.Second):
+			require.FailNow(t, "Server still running after 5 seconds.")
+		}
+
+		// The socket file is removed when the listener is closed.
+		_, err = os.Stat(socketPath)
+		require.ErrorIs(t, err, os.ErrNotExist)
+	})
+}
+
 // Test for availability of API endpoints in Prometheus Agent mode.
 func TestAgentAPIEndPoints(t *testing.T) {
 	t.Parallel()
