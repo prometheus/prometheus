@@ -95,6 +95,12 @@ type SDConfig struct {
 	// ecs, msk specific
 	Clusters []string `yaml:"clusters,omitempty"`
 
+	// RequestConcurrency is the maximum number of concurrent AWS API requests
+	// for the ecs, elasticache, mq, msk and rds roles. It is a pointer so that
+	// an omitted value, which falls back to the role default, differs from an
+	// explicit 0, which is rejected like in the dedicated configs.
+	RequestConcurrency *int `yaml:"request_concurrency,omitempty"`
+
 	// Embedded sub-configs (internal use only, not serialized)
 	*EC2SDConfig         `yaml:"-"`
 	*ECSSDConfig         `yaml:"-"`
@@ -117,6 +123,10 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 		return err
 	}
 	*c = SDConfig(aux)
+
+	if c.RequestConcurrency != nil && *c.RequestConcurrency <= 0 {
+		return fmt.Errorf("aws_sd: request_concurrency must be positive, got %d", *c.RequestConcurrency)
+	}
 
 	switch c.Role {
 	case RoleEC2:
@@ -187,6 +197,9 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 		if c.Clusters != nil {
 			c.ECSSDConfig.Clusters = c.Clusters
 		}
+		if c.RequestConcurrency != nil {
+			c.ECSSDConfig.RequestConcurrency = *c.RequestConcurrency
+		}
 	case RoleElasticache:
 		if c.ElasticacheSDConfig == nil {
 			elasticacheConfig := DefaultElasticacheSDConfig
@@ -220,6 +233,9 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 		}
 		if c.Clusters != nil {
 			c.ElasticacheSDConfig.Clusters = c.Clusters
+		}
+		if c.RequestConcurrency != nil {
+			c.ElasticacheSDConfig.RequestConcurrency = *c.RequestConcurrency
 		}
 	case RoleLightsail:
 		if c.LightsailSDConfig == nil {
@@ -280,6 +296,9 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 		if c.RefreshInterval != 0 {
 			c.MQSDConfig.RefreshInterval = c.RefreshInterval
 		}
+		if c.RequestConcurrency != nil {
+			c.MQSDConfig.RequestConcurrency = *c.RequestConcurrency
+		}
 	case RoleMSK:
 		if c.MSKSDConfig == nil {
 			mskConfig := DefaultMSKSDConfig
@@ -313,6 +332,9 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 		}
 		if c.Clusters != nil {
 			c.MSKSDConfig.Clusters = c.Clusters
+		}
+		if c.RequestConcurrency != nil {
+			c.MSKSDConfig.RequestConcurrency = *c.RequestConcurrency
 		}
 	case RoleRDS:
 		if c.RDSSDConfig == nil {
@@ -350,6 +372,9 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(any) error) error {
 		}
 		if c.Clusters != nil {
 			c.RDSSDConfig.Clusters = c.Clusters
+		}
+		if c.RequestConcurrency != nil {
+			c.RDSSDConfig.RequestConcurrency = *c.RequestConcurrency
 		}
 	default:
 		return fmt.Errorf("unknown AWS SD role %q", c.Role)
