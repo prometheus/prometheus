@@ -166,6 +166,38 @@ func TestNHCBConvert(t *testing.T) {
 			},
 			expectedErr: errNaNBucket,
 		},
+		"NaN bucket count": {
+			setup: func() *TempHistogram {
+				h := NewTempHistogram()
+				h.SetBucketCount(0.5, math.NaN())
+				return &h
+			},
+			expectedErr: errNonFiniteBucketCount,
+		},
+		"+Inf bucket count": {
+			setup: func() *TempHistogram {
+				h := NewTempHistogram()
+				h.SetBucketCount(0.5, math.Inf(1))
+				return &h
+			},
+			expectedErr: errNonFiniteBucketCount,
+		},
+		"NaN observation count": {
+			setup: func() *TempHistogram {
+				h := NewTempHistogram()
+				h.SetCount(math.NaN())
+				return &h
+			},
+			expectedErr: errNonFiniteCount,
+		},
+		"+Inf observation count": {
+			setup: func() *TempHistogram {
+				h := NewTempHistogram()
+				h.SetCount(math.Inf(1))
+				return &h
+			},
+			expectedErr: errNonFiniteCount,
+		},
 		"mixed order": {
 			setup: func() *TempHistogram {
 				h := NewTempHistogram()
