@@ -4298,6 +4298,11 @@ func TestBlockBaseQuerierSearchLabelNames(t *testing.T) {
 		got := collectSearchResultSet(t, rs)
 		require.Len(t, got, 1)
 	})
+
+	t.Run("resume after skips earlier names", func(t *testing.T) {
+		rs := q.SearchLabelNames(ctx, &storage.SearchHints{ResumeAfter: "env", Limit: 1})
+		requireSearchValues(t, rs, []string{"job"})
+	})
 }
 
 func TestBlockBaseQuerierSearchLabelValues(t *testing.T) {
@@ -4500,6 +4505,107 @@ func TestSearchLabelValuesLimitAppliedAfterOrdering(t *testing.T) {
 			requireSearchValues(t, rs, []string{"z_metric", "m_metric"})
 		})
 	})
+
+	// The limit pushdown must count from ResumeAfter. If it counted from the
+	// first value, a ResumeAfter hint would then drop every value it kept.
+	t.Run("ResumeAfter no matchers", func(t *testing.T) {
+		forEachSearchBackend(t, unorderedInsertion, func(t *testing.T, q storage.Searcher) {
+			for _, filter := range []storage.Filter{nil, prefixFilter{""}} {
+				rs := q.SearchLabelValues(t.Context(), "__name__", &storage.SearchHints{
+					OrderBy:     storage.OrderByValueAsc,
+					Limit:       1,
+					Filter:      filter,
+					ResumeAfter: "a_metric",
+				})
+				requireSearchValues(t, rs, []string{"m_metric"}, "asc, filter: %T", filter)
+
+				rs = q.SearchLabelValues(t.Context(), "__name__", &storage.SearchHints{
+					OrderBy:     storage.OrderByValueDesc,
+					Limit:       1,
+					Filter:      filter,
+					ResumeAfter: "z_metric",
+				})
+				requireSearchValues(t, rs, []string{"m_metric"}, "desc, filter: %T", filter)
+			}
+		})
+	})
+
+	t.Run("ResumeAfter matcher on another label", func(t *testing.T) {
+		forEachSearchBackend(t, unorderedSeriesRefs, func(t *testing.T, q storage.Searcher) {
+			rs := q.SearchLabelValues(t.Context(), "pod", &storage.SearchHints{
+				OrderBy:     storage.OrderByValueAsc,
+				Limit:       1,
+				ResumeAfter: "a_pod",
+			}, jobAPI...)
+			requireSearchValues(t, rs, []string{"m_pod"})
+		})
+	})
+}
+
+// postingsRecordingIndexReader records the values of name that Postings is
+// asked for. With ignoreStartAfter, LabelValues ignores hints.StartAfter,
+// which a reader can do when the hints have no Limit.
+type postingsRecordingIndexReader struct {
+	IndexReader
+	name             string
+	ignoreStartAfter bool
+	values           []string
+}
+
+func (r *postingsRecordingIndexReader) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error) {
+	if r.ignoreStartAfter && hints != nil {
+		h := *hints
+		h.StartAfter = ""
+		hints = &h
+	}
+	return r.IndexReader.LabelValues(ctx, name, hints, matchers...)
+}
+
+func (r *postingsRecordingIndexReader) Postings(ctx context.Context, name string, values ...string) (index.Postings, error) {
+	if name == r.name {
+		r.values = append(r.values, values...)
+	}
+	return r.IndexReader.Postings(ctx, name, values...)
+}
+
+// TestLabelValuesWithMatchersStartAfter checks that values at or before
+// StartAfter get no postings lookup, which is the cost a cursor page saves,
+// and that Limit counts from StartAfter.
+func TestLabelValuesWithMatchersStartAfter(t *testing.T) {
+	head, _ := newTestHead(t, 1000, compression.None, false)
+	app := head.AppenderV2(t.Context())
+	// The series references follow this order, and the early stop collects
+	// values in series reference order, so a_metric comes first.
+	for _, name := range []string{"a_metric", "z_metric", "c_metric", "m_metric"} {
+		_, err := app.Append(0, labels.FromStrings("__name__", name, "job", "api"), 0, 2100, 1, nil, nil, storage.AOptions{})
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+	ir, err := head.Index()
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, ir.Close()) })
+
+	for _, tc := range []struct {
+		name         string
+		hints        storage.LabelHints
+		want         []string
+		wantPostings []string
+	}{
+		{"smallest limit", storage.LabelHints{StartAfter: "c_metric", Limit: 1, LimitSmallest: true}, []string{"m_metric"}, []string{"m_metric", "z_metric"}},
+		{"early stop", storage.LabelHints{StartAfter: "a_metric", Limit: 2}, []string{"c_metric", "z_metric"}, []string{"c_metric", "m_metric", "z_metric"}},
+	} {
+		for _, ignore := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/ignoreStartAfter=%v", tc.name, ignore), func(t *testing.T) {
+				r := &postingsRecordingIndexReader{IndexReader: ir, name: "__name__", ignoreStartAfter: ignore}
+				hints := tc.hints
+				got, err := labelValuesWithMatchers(t.Context(), r, "__name__", &hints, labels.MustNewMatcher(labels.MatchEqual, "job", "api"))
+				require.NoError(t, err)
+				require.ElementsMatch(t, tc.want, got)
+				slices.Sort(r.values)
+				require.Equal(t, tc.wantPostings, r.values)
+			})
+		}
+	}
 }
 
 // TestSearchLabelValuesLimitAcrossMergedQueriers checks the merged case. The
@@ -4522,9 +4628,10 @@ func TestSearchLabelValuesLimitAcrossMergedQueriers(t *testing.T) {
 	require.NoError(t, err)
 
 	// Appended in descending order so the head's value list is unordered.
+	// p_metric is in both queriers, so a resume point can be a shared value.
 	head, _ := newTestHead(t, 1000, compression.None, false)
 	app = head.AppenderV2(ctx)
-	for _, name := range []string{"z_metric", "m_metric", "a_metric"} {
+	for _, name := range []string{"z_metric", "p_metric", "m_metric", "a_metric"} {
 		_, err := app.Append(0, labels.FromStrings("__name__", name, "job", "api"), 0, 2100, 1, nil, nil, storage.AOptions{})
 		require.NoError(t, err)
 	}
@@ -4540,6 +4647,27 @@ func TestSearchLabelValuesLimitAcrossMergedQueriers(t *testing.T) {
 		Limit:   2,
 	})
 	requireSearchValues(t, rs, []string{"a_metric", "m_metric"})
+
+	rs = q.(storage.Searcher).SearchLabelValues(ctx, "__name__", &storage.SearchHints{
+		OrderBy:     storage.OrderByValueAsc,
+		Limit:       2,
+		ResumeAfter: "m_metric",
+	})
+	requireSearchValues(t, rs, []string{"n_metric", "p_metric"})
+
+	rs = q.(storage.Searcher).SearchLabelValues(ctx, "__name__", &storage.SearchHints{
+		OrderBy:     storage.OrderByValueAsc,
+		Limit:       2,
+		ResumeAfter: "p_metric",
+	})
+	requireSearchValues(t, rs, []string{"r_metric", "z_metric"}, "resume at a value in both queriers")
+
+	rs = q.(storage.Searcher).SearchLabelValues(ctx, "__name__", &storage.SearchHints{
+		OrderBy:     storage.OrderByValueDesc,
+		Limit:       2,
+		ResumeAfter: "p_metric",
+	})
+	requireSearchValues(t, rs, []string{"n_metric", "m_metric"}, "descending resume at a value in both queriers")
 }
 
 // countingPostingsIndexReader counts Postings lookups per label name.

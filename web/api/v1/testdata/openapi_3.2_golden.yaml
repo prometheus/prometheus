@@ -1757,6 +1757,13 @@ paths:
                   examples:
                     example:
                         value: true
+                - name: cursor
+                  in: query
+                  description: The next_cursor from the trailer of the previous page. It must be the only parameter, and it is only valid for the search that returned it.
+                  required: false
+                  explode: false
+                  schema:
+                    type: string
                 - name: include_metadata
                   in: query
                   description: Include metric metadata in each result.
@@ -2013,6 +2020,13 @@ paths:
                   examples:
                     example:
                         value: true
+                - name: cursor
+                  in: query
+                  description: The next_cursor from the trailer of the previous page. It must be the only parameter, and it is only valid for the search that returned it.
+                  required: false
+                  explode: false
+                  schema:
+                    type: string
                 - name: start
                   in: query
                   description: Start timestamp for label name search.
@@ -2162,8 +2176,8 @@ paths:
             parameters:
                 - name: label
                   in: query
-                  description: Label name whose values should be searched.
-                  required: true
+                  description: Label name whose values should be searched. Required unless cursor is set.
+                  required: false
                   explode: false
                   schema:
                     type: string
@@ -2270,6 +2284,13 @@ paths:
                   examples:
                     example:
                         value: true
+                - name: cursor
+                  in: query
+                  description: The next_cursor from the trailer of the previous page. It must be the only parameter, and it is only valid for the search that returned it.
+                  required: false
+                  explode: false
+                  schema:
+                    type: string
                 - name: start
                   in: query
                   description: Start timestamp for label value search.
@@ -5030,6 +5051,9 @@ components:
                     description: 'Form field: Preferred number of results per NDJSON batch. Clamped to 1000 and the effective result limit.'
                     default: 100
                     example: 20
+                cursor:
+                    type: string
+                    description: 'Form field: The next_cursor from the trailer of the previous page. It must be the only field, and it is only valid for the search that returned it.'
                 include_metadata:
                     type: boolean
                     description: 'Form field: Include metric metadata in each result.'
@@ -5110,6 +5134,9 @@ components:
                     description: 'Form field: Preferred number of results per NDJSON batch. Clamped to 1000 and the effective result limit.'
                     default: 100
                     example: 20
+                cursor:
+                    type: string
+                    description: 'Form field: The next_cursor from the trailer of the previous page. It must be the only field, and it is only valid for the search that returned it.'
             additionalProperties: false
             description: POST request body for label name search.
         SearchLabelValuesPostInputBody:
@@ -5117,7 +5144,7 @@ components:
             properties:
                 label:
                     type: string
-                    description: 'Form field: Label name whose values should be searched.'
+                    description: 'Form field: Label name whose values should be searched. Required unless cursor is set.'
                     example: instance
                 match[]:
                     type: array
@@ -5191,8 +5218,9 @@ components:
                     description: 'Form field: Preferred number of results per NDJSON batch. Clamped to 1000 and the effective result limit.'
                     default: 100
                     example: 20
-            required:
-                - label
+                cursor:
+                    type: string
+                    description: 'Form field: The next_cursor from the trailer of the previous page. It must be the only field, and it is only valid for the search that returned it.'
             additionalProperties: false
             description: POST request body for label value search.
         SeriesOutputBody:

@@ -115,11 +115,15 @@ func (q *blockBaseQuerier) SearchLabelValues(ctx context.Context, name string, h
 	// Limit pushdown is only correct when natural (ascending) index order
 	// is preserved all the way to the output and no filtering discards
 	// values ahead of the limit. LimitSmallest is also set to true to ensure
-	// we obtain the smallest N results not just N results.
+	// we obtain the smallest N results not just N results. StartAfter keeps
+	// the limit counting from the resume point.
 	labelHints := &storage.LabelHints{}
-	if hints.OrderBy == storage.OrderByValueAsc && hints.Filter == nil {
-		labelHints.Limit = hints.Limit
-		labelHints.LimitSmallest = true
+	if hints.OrderBy == storage.OrderByValueAsc {
+		labelHints.StartAfter = hints.ResumeAfter
+		if hints.Filter == nil {
+			labelHints.Limit = hints.Limit
+			labelHints.LimitSmallest = true
+		}
 	}
 	if hints.Filter != nil {
 		filter := hints.Filter
@@ -479,10 +483,29 @@ func inversePostingsForMatcher(ctx context.Context, ix IndexReader, m *labels.Ma
 }
 
 func labelValuesWithMatchers(ctx context.Context, r IndexReader, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error) {
-	// Limit is applied at the end, after filtering.
-	allValues, err := r.LabelValues(ctx, name, nil)
+	// Limit is applied at the end, after filtering. StartAfter is also passed
+	// to the reader, so that values before it need no postings lookup.
+	var (
+		readHints  *storage.LabelHints
+		startAfter string
+	)
+	if hints != nil && hints.StartAfter != "" {
+		startAfter = hints.StartAfter
+		readHints = &storage.LabelHints{StartAfter: startAfter}
+		// The values are past startAfter after the drop below, so the
+		// limit does not have to filter and copy them again.
+		limitHints := *hints
+		limitHints.StartAfter = ""
+		hints = &limitHints
+	}
+	allValues, err := r.LabelValues(ctx, name, readHints)
 	if err != nil {
 		return nil, fmt.Errorf("fetching values of label %s: %w", name, err)
+	}
+	if startAfter != "" {
+		// readHints has no Limit, so the reader can ignore StartAfter. The
+		// early stop below then needs the values before it gone.
+		allValues = slices.DeleteFunc(allValues, func(v string) bool { return v <= startAfter })
 	}
 
 	// If we have a matcher for the label name, we can filter out values that don't match

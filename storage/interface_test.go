@@ -76,6 +76,13 @@ func TestLabelHintsApplyLimit(t *testing.T) {
 		{"leading limit", &storage.LabelHints{Limit: 3}, []string{"d", "b", "e"}, false},
 		{"smallest limit", &storage.LabelHints{Limit: 3, LimitSmallest: true}, []string{"a", "b", "c"}, true},
 		{"smallest limit of one", &storage.LabelHints{Limit: 1, LimitSmallest: true}, []string{"a"}, true},
+		{"start after without limit", &storage.LabelHints{StartAfter: "b"}, []string{"d", "e", "c"}, true},
+		{"start after with leading limit", &storage.LabelHints{StartAfter: "b", Limit: 2}, []string{"d", "e"}, true},
+		{"start after with smallest limit", &storage.LabelHints{StartAfter: "b", Limit: 2, LimitSmallest: true}, []string{"c", "d"}, true},
+		{"start after with smallest limit above count", &storage.LabelHints{StartAfter: "b", Limit: 5, LimitSmallest: true}, []string{"c", "d", "e"}, true},
+		{"start after before every value", &storage.LabelHints{StartAfter: "0", Limit: 3, LimitSmallest: true}, []string{"a", "b", "c"}, true},
+		{"start after every value", &storage.LabelHints{StartAfter: "e"}, []string{}, true},
+		{"start after every value with smallest limit", &storage.LabelHints{StartAfter: "e", Limit: 2, LimitSmallest: true}, []string{}, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			values := slices.Clone(input)
@@ -84,7 +91,7 @@ func TestLabelHintsApplyLimit(t *testing.T) {
 			require.Equal(t, tc.wantAllocated, allocated)
 			require.Equal(t, input, values, "ApplyLimit must not modify its input")
 
-			if allocated {
+			if allocated && len(got) > 0 {
 				// The caller may keep and modify an allocated result.
 				got[0] = "zzz"
 				require.Equal(t, input, values, "an allocated result must not alias the input")
@@ -114,6 +121,12 @@ func TestLabelHintsApplyLimitSmallest(t *testing.T) {
 			got, allocated := hints.ApplyLimit(shuffled)
 			require.True(t, allocated)
 			require.Equal(t, values[:limit], got)
+
+			for _, after := range []int{0, 63, count - limit - 1, count - 2} {
+				hints.StartAfter = values[after]
+				got, _ = hints.ApplyLimit(shuffled)
+				require.Equal(t, values[after+1:min(after+1+limit, count)], got, "start after %s", hints.StartAfter)
+			}
 		})
 	}
 }

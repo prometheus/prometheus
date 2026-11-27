@@ -912,6 +912,7 @@ func (b *OpenAPIBuilder) commonSearchPostProps() []schemaProp {
 		{"end", stringSchemaWithDescriptionAndExample("Form field: The end time of the query.", "2026-01-02T13:37:00.000Z")},
 		{"limit", integerSchemaWithDescriptionDefaultAndExample("Form field: The maximum number of results to return.", b.searchDefaultLimit(), 20)},
 		{"batch_size", integerSchemaWithDescriptionDefaultAndExample("Form field: Preferred number of results per NDJSON batch. Clamped to 1000 and the effective result limit.", defaultSearchBatchSize, 20)},
+		{"cursor", stringSchemaWithDescription("Form field: The next_cursor from the trailer of the previous page. It must be the only field, and it is only valid for the search that returned it.")},
 	}
 }
 
@@ -948,7 +949,7 @@ func (b *OpenAPIBuilder) searchLabelNamesPostInputBodySchema() *base.SchemaProxy
 
 func (b *OpenAPIBuilder) searchLabelValuesPostInputBodySchema() *base.SchemaProxy {
 	props := append([]schemaProp{
-		{"label", stringSchemaWithDescriptionAndExample("Form field: Label name whose values should be searched.", "instance")},
+		{"label", stringSchemaWithDescriptionAndExample("Form field: Label name whose values should be searched. Required unless cursor is set.", "instance")},
 		{"match[]", stringArraySchemaWithDescriptionAndExample("Form field: Series selector argument used to scope label value discovery.", []string{"up"})},
 		{"search[]", stringArraySchemaWithDescriptionAndExample("Form field: One or more search terms matched against label values (OR logic).", []string{"909"})},
 		{"search_expr", stringSchemaWithDescriptionAndExample("Form field: Boolean search expression matched against label values. Supports AND, OR, NOT, parentheses and double-quoted terms. Mutually exclusive with search[].", "909 AND NOT 9091")},
@@ -958,7 +959,6 @@ func (b *OpenAPIBuilder) searchLabelValuesPostInputBodySchema() *base.SchemaProx
 		Type:                 []string{"object"},
 		Description:          "POST request body for label value search.",
 		AdditionalProperties: &base.DynamicValue[*base.SchemaProxy, bool]{N: 1, B: false},
-		Required:             []string{"label"},
 		Properties:           propsMap(props),
 	})
 }

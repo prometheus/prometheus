@@ -31,22 +31,31 @@ package v1
 //     failures or server shutdown) and MUST ignore unknown fields in the
 //     trailer for forward compatibility.
 //
-// Pagination scope: this version of the API has no cursor mechanism. The
-// "has_more" flag in the trailer is informational only; clients that need
-// more results should re-issue the request with a higher "limit"
-// (subject to --web.search.max-limit) or narrow the "match[]" series selectors.
-// A future version may introduce a cursor field in the trailer.
+// Pagination: when "has_more" is true for a value ordering (sort_by unset or
+// "alpha"), the trailer carries a "next_cursor". The client sends it back as
+// the only "cursor" parameter to get the next page. The cursor holds every
+// parameter of the search that produced it, so it is only valid for that
+// search. It is unsigned: the server parses every field again with the same
+// validation as a fresh request. sort_by=score has no cursor. The trailer
+// carries a warning instead of a cursor when the cursor would exceed
+// maxSearchCursorBytes, holds invalid UTF-8, or would resume after an empty
+// value.
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
 	"net/http"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	jsoniter "github.com/json-iterator/go"
 	"github.com/prometheus/common/model"
@@ -80,6 +89,24 @@ const maxSearchBatchSize = 1000
 // worst-case per-value evaluation stays bounded.
 const maxSearchTermsPerRequest = 32
 
+// searchCursorVersion is the version of the cursor payload. A server rejects
+// any other version, so a change to the payload must bump it.
+const searchCursorVersion = 1
+
+// maxSearchCursorBytes caps the encoded cursor, which bounds the work to
+// decode one. The cursor holds every match[] selector, search[] term and
+// search_expr of the request, so the server omits next_cursor for a request
+// whose cursor would be longer. The cap is far below the 1 MB default header
+// limit of net/http, so a GET request to the Prometheus server can carry the
+// cursor.
+const maxSearchCursorBytes = 16 << 10
+
+var (
+	errSearchCursorTooLarge   = fmt.Errorf("next_cursor omitted: the cursor for this search exceeds %d bytes; narrow match[], search[] or search_expr to paginate", maxSearchCursorBytes)
+	errSearchCursorNotUTF8    = errors.New("next_cursor omitted: a matcher, search term, search expression, label or result of this search is not valid UTF-8")
+	errSearchCursorEmptyValue = errors.New("next_cursor omitted: the last result of this page is an empty string")
+)
+
 // fuzzAlgorithms is the canonical list of supported fuzzy matching algorithms,
 // used by validation, feature registration, and API documentation. It is kept
 // unexported so it cannot be mutated by external packages; use FuzzAlgorithms()
@@ -105,8 +132,9 @@ type searchParams struct {
 	includeScore  bool   // Include relevance score in each result record.
 	start, end    time.Time
 	rangeWarning  error
-	limit         int // Default 100.
-	batchSize     int // Default 100.
+	limit         int    // Default 100.
+	batchSize     int    // Default 100.
+	resumeAfter   string // Set only from a cursor.
 }
 
 // searchMetricNameResult is a single result record for the metric_names endpoint.
@@ -142,8 +170,9 @@ type searchTrailer struct {
 	HasMore bool   `json:"has_more"`
 	// Returned is the number of records in the response, across all batches.
 	// It excludes the record read past the limit to set HasMore.
-	Returned int      `json:"returned"`
-	Warnings []string `json:"warnings,omitempty"`
+	Returned   int      `json:"returned"`
+	NextCursor string   `json:"next_cursor,omitempty"`
+	Warnings   []string `json:"warnings,omitempty"`
 }
 
 // searchErrorResponse is an NDJSON error line.
@@ -332,6 +361,139 @@ func searchHintsLimit(spLimit int) int {
 		return math.MaxInt
 	}
 	return spLimit + 1
+}
+
+// searchCursor is the JSON payload of the opaque cursor parameter. It holds
+// every parameter of the search that issued it, so that a cursor cannot
+// resume a different search. The ordering is always sort_by=alpha.
+type searchCursor struct {
+	Version         int      `json:"v"`
+	Endpoint        string   `json:"endpoint"`
+	Match           []string `json:"match,omitempty"`
+	Search          []string `json:"search,omitempty"`
+	SearchExpr      string   `json:"search_expr,omitempty"`
+	FuzzThreshold   int      `json:"fuzz_threshold"`
+	FuzzAlg         string   `json:"fuzz_alg"`
+	CaseSensitive   bool     `json:"case_sensitive"`
+	SortDir         string   `json:"sort_dir"`
+	IncludeScore    bool     `json:"include_score"`
+	IncludeMetadata bool     `json:"include_metadata,omitempty"`
+	Label           string   `json:"label,omitempty"`
+	// Start and End are pointers so that a cursor without them fails: the
+	// request parser does not see them, so a zero value would pass.
+	Start       *int64 `json:"start"`
+	End         *int64 `json:"end"`
+	Limit       int    `json:"limit"`
+	BatchSize   int    `json:"batch_size"`
+	ResumeAfter string `json:"resume_after"`
+}
+
+// decodeSearchCursor decodes the cursor parameter of form and checks the
+// fields that the request parser does not see. The cursor is unsigned, so the
+// caller must also parse formValues with the same validation as a fresh
+// request.
+func decodeSearchCursor(form url.Values, endpoint string) (*searchCursor, error) {
+	if len(form) != 1 {
+		return nil, errors.New("cursor and other search parameters are mutually exclusive")
+	}
+	values := form["cursor"]
+	if len(values) != 1 {
+		return nil, errors.New("invalid cursor: cursor must be given once")
+	}
+	raw := values[0]
+	if len(raw) > maxSearchCursorBytes {
+		return nil, fmt.Errorf("invalid cursor: length %d exceeds maximum of %d bytes", len(raw), maxSearchCursorBytes)
+	}
+	data, err := base64.RawURLEncoding.DecodeString(raw)
+	if err != nil {
+		return nil, fmt.Errorf("invalid cursor: %w", err)
+	}
+	var c searchCursor
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&c); err != nil {
+		return nil, fmt.Errorf("invalid cursor: %w", err)
+	}
+	if c.Start == nil || c.End == nil {
+		return nil, errors.New("invalid cursor: start and end must be set")
+	}
+	if c.Version != searchCursorVersion {
+		return nil, fmt.Errorf("invalid cursor: unsupported version %d", c.Version)
+	}
+	if c.Endpoint != endpoint {
+		return nil, fmt.Errorf("invalid cursor: issued by %q, not %q", c.Endpoint, endpoint)
+	}
+	if c.ResumeAfter == "" {
+		return nil, errors.New("invalid cursor: resume_after must not be empty")
+	}
+	return &c, nil
+}
+
+// formValues returns the request parameters that the cursor stands for,
+// except start and end, which the caller sets from the exact millisecond
+// values.
+func (c *searchCursor) formValues() url.Values {
+	v := url.Values{
+		"fuzz_threshold": {strconv.Itoa(c.FuzzThreshold)},
+		"fuzz_alg":       {c.FuzzAlg},
+		"case_sensitive": {strconv.FormatBool(c.CaseSensitive)},
+		"sort_by":        {"alpha"},
+		"sort_dir":       {c.SortDir},
+		"include_score":  {strconv.FormatBool(c.IncludeScore)},
+		"limit":          {strconv.Itoa(c.Limit)},
+		"batch_size":     {strconv.Itoa(c.BatchSize)},
+	}
+	if len(c.Match) > 0 {
+		v["match[]"] = c.Match
+	}
+	if len(c.Search) > 0 {
+		v["search[]"] = c.Search
+	}
+	if c.SearchExpr != "" {
+		v["search_expr"] = []string{c.SearchExpr}
+	}
+	if c.IncludeMetadata {
+		v["include_metadata"] = []string{"true"}
+	}
+	if c.Label != "" {
+		v["label"] = []string{c.Label}
+	}
+	return v
+}
+
+// encodeSearchCursor returns the next_cursor that resumes the search of c
+// after resumeAfter. The JSON encoder replaces invalid UTF-8, which would
+// change the search, so such a search gets no cursor. An empty resumeAfter
+// means "no resume point", so it gets no cursor either.
+func encodeSearchCursor(c searchCursor, resumeAfter string) (string, error) {
+	if resumeAfter == "" {
+		return "", errSearchCursorEmptyValue
+	}
+	c.ResumeAfter = resumeAfter
+	if !utf8.ValidString(c.ResumeAfter) || !utf8.ValidString(c.Label) || !utf8.ValidString(c.SearchExpr) || !allValidUTF8(c.Match) || !allValidUTF8(c.Search) {
+		return "", errSearchCursorNotUTF8
+	}
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	// HTML escaping writes each of <, > and & as six bytes.
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(c); err != nil {
+		return "", err
+	}
+	data := bytes.TrimSuffix(buf.Bytes(), []byte("\n"))
+	if base64.RawURLEncoding.EncodedLen(len(data)) > maxSearchCursorBytes {
+		return "", errSearchCursorTooLarge
+	}
+	return base64.RawURLEncoding.EncodeToString(data), nil
+}
+
+func allValidUTF8(ss []string) bool {
+	for _, s := range ss {
+		if !utf8.ValidString(s) {
+			return false
+		}
+	}
+	return true
 }
 
 func parseSearchBoolParam(r *http.Request, name string, defaultValue bool) (bool, *apiError) {
@@ -536,6 +698,7 @@ type searchResultStreamer[T any] struct {
 	batchSize int
 	emitted   int
 	hasMore   bool
+	lastValue string
 	toResult  func(storage.SearchResult) T
 }
 
@@ -559,12 +722,16 @@ func (s *searchResultStreamer[T]) nextBatch() ([]T, error) {
 			return batch, s.rs.Err()
 		}
 		s.emitted++
-		batch = append(batch, s.toResult(s.rs.At()))
+		r := s.rs.At()
+		s.lastValue = r.Value
+		batch = append(batch, s.toResult(r))
 	}
 	return batch, nil
 }
 
-func streamSearchResults[T any](ctx context.Context, api *API, w http.ResponseWriter, rs storage.SearchResultSet, sp searchParams, toResult func(storage.SearchResult) T) {
+// streamSearchResults streams rs to w. A non-nil cursor is the search to
+// resume in next_cursor when the limit truncates the results.
+func streamSearchResults[T any](ctx context.Context, api *API, w http.ResponseWriter, rs storage.SearchResultSet, sp searchParams, cursor *searchCursor, toResult func(storage.SearchResult) T) {
 	defer func() { _ = rs.Close() }()
 
 	streamer := &searchResultStreamer[T]{
@@ -662,7 +829,16 @@ func streamSearchResults[T any](ctx context.Context, api *API, w http.ResponseWr
 	if slices.Equal(trailerWarnings, firstWarnings) {
 		trailerWarnings = nil
 	}
-	_ = nw.writeLine(searchTrailer{Status: "success", HasMore: streamer.hasMore, Returned: streamer.emitted, Warnings: trailerWarnings})
+	trailer := searchTrailer{Status: "success", HasMore: streamer.hasMore, Returned: streamer.emitted, Warnings: trailerWarnings}
+	if streamer.hasMore && cursor != nil {
+		next, err := encodeSearchCursor(*cursor, streamer.lastValue)
+		if err != nil {
+			trailer.Warnings = append(trailer.Warnings, err.Error())
+		} else {
+			trailer.NextCursor = next
+		}
+	}
+	_ = nw.writeLine(trailer)
 }
 
 // searchLabelValues retrieves label values using the Searcher interface.
@@ -820,6 +996,9 @@ type searchRequest struct {
 	hints    *storage.SearchHints
 	searcher storage.Searcher
 	q        storage.Querier
+	// cursor is the search that next_cursor resumes, or nil when the
+	// ordering has no cursor. Handlers set the endpoint-specific fields.
+	cursor *searchCursor
 }
 
 // newSearchRequest handles the setup shared by all search endpoints: CORS headers,
@@ -845,10 +1024,37 @@ func (api *API) newSearchRequest(w http.ResponseWriter, r *http.Request, endpoin
 		return nil
 	}
 
+	var cursor *searchCursor
+	if _, ok := r.Form["cursor"]; ok {
+		c, err := decodeSearchCursor(r.Form, endpoint)
+		if err != nil {
+			api.respondError(w, &apiError{errorBadData, err}, nil)
+			return nil
+		}
+		// The handlers and parseSearchParams read r.Form, so replacing it
+		// gives the cursor the same validation as a fresh request.
+		r.Form = c.formValues()
+		cursor = c
+	}
+
 	sp, apiErr := api.parseSearchParams(r)
 	if apiErr != nil {
+		if cursor != nil {
+			apiErr = &apiError{errorBadData, fmt.Errorf("invalid cursor: %w", apiErr.err)}
+		}
 		api.respondError(w, apiErr, nil)
 		return nil
+	}
+	if cursor != nil {
+		sp.start, sp.end = timestamp.Time(*cursor.Start), timestamp.Time(*cursor.End)
+		// formValues omits start and end, so the parser reports a default
+		// range that this request does not use.
+		sp.rangeWarning = nil
+		if sp.end.Before(sp.start) {
+			api.respondError(w, &apiError{errorBadData, errors.New("invalid cursor: end timestamp must not be before start timestamp")}, nil)
+			return nil
+		}
+		sp.resumeAfter = cursor.ResumeAfter
 	}
 
 	if sp.sortBy != "" && sp.sortBy != "alpha" && sp.sortBy != "score" {
@@ -886,8 +1092,29 @@ func (api *API) newSearchRequest(w http.ResponseWriter, r *http.Request, endpoin
 		Limit:  searchHintsLimit(sp.limit), // Fetch one extra to detect has_more (with saturation guard).
 	}
 	hints.OrderBy = sortOrdering(sp.sortBy, sp.sortDir)
+	hints.ResumeAfter = sp.resumeAfter
 
-	return &searchRequest{sp: sp, hints: hints, searcher: searcher, q: q}
+	req := &searchRequest{sp: sp, hints: hints, searcher: searcher, q: q}
+	if hints.OrderBy != storage.OrderByScoreDesc {
+		start, end := timestamp.FromTime(sp.start), timestamp.FromTime(sp.end)
+		req.cursor = &searchCursor{
+			Version:       searchCursorVersion,
+			Endpoint:      endpoint,
+			Match:         r.Form["match[]"],
+			Search:        sp.searches,
+			SearchExpr:    r.FormValue("search_expr"),
+			FuzzThreshold: sp.fuzzThreshold,
+			FuzzAlg:       sp.fuzzAlg,
+			CaseSensitive: sp.caseSensitive,
+			SortDir:       sp.sortDir,
+			IncludeScore:  sp.includeScore,
+			Start:         &start,
+			End:           &end,
+			Limit:         sp.limit,
+			BatchSize:     sp.batchSize,
+		}
+	}
+	return req
 }
 
 // searchMetricNames handles GET/POST /api/v1/search/metric_names.
@@ -915,8 +1142,11 @@ func (api *API) searchMetricNames(w http.ResponseWriter, r *http.Request) {
 		metaMapDone bool
 	)
 
+	if req.cursor != nil {
+		req.cursor.IncludeMetadata = includeMetadata
+	}
 	searchResults := searchLabelValues(ctx, req.searcher, labels.MetricName, req.sp.matcherSets, req.hints)
-	streamSearchResults(ctx, api, w, searchResults, req.sp, func(sr storage.SearchResult) searchMetricNameResult {
+	streamSearchResults(ctx, api, w, searchResults, req.sp, req.cursor, func(sr storage.SearchResult) searchMetricNameResult {
 		result := searchMetricNameResult{Name: sr.Value}
 		if req.sp.includeScore {
 			score := sr.Score
@@ -947,7 +1177,7 @@ func (api *API) searchLabelNames(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 	searchResults := searchLabelNames(ctx, req.searcher, req.sp.matcherSets, req.hints)
-	streamSearchResults(ctx, api, w, searchResults, req.sp, func(sr storage.SearchResult) searchLabelNameResult {
+	streamSearchResults(ctx, api, w, searchResults, req.sp, req.cursor, func(sr storage.SearchResult) searchLabelNameResult {
 		result := searchLabelNameResult{Name: sr.Value}
 		if req.sp.includeScore {
 			score := sr.Score
@@ -971,9 +1201,12 @@ func (api *API) searchLabelValues(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if req.cursor != nil {
+		req.cursor.Label = labelName
+	}
 	ctx := r.Context()
 	searchResults := searchLabelValues(ctx, req.searcher, labelName, req.sp.matcherSets, req.hints)
-	streamSearchResults(ctx, api, w, searchResults, req.sp, func(sr storage.SearchResult) searchLabelValueResult {
+	streamSearchResults(ctx, api, w, searchResults, req.sp, req.cursor, func(sr storage.SearchResult) searchLabelValueResult {
 		result := searchLabelValueResult{Value: sr.Value}
 		if req.sp.includeScore {
 			score := sr.Score

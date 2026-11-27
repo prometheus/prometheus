@@ -779,9 +779,9 @@ These endpoints return newline-delimited JSON with content type
 - Zero or more **batch lines**, each with a `results` array and an optional
   `warnings` array.
 - The stream then ends with **either** a **trailer line** (`status`, `has_more`,
-  `returned`, optional `warnings`) **or** an **error line** (`status`,
-  `errorType`, `error`) if iteration failed mid-stream after the first batch was
-  sent.
+  `returned`, optional `next_cursor`, optional `warnings`) **or** an **error
+  line** (`status`, `errorType`, `error`) if iteration failed mid-stream after
+  the first batch was sent.
 
 The `returned` field in the trailer is the number of results in the response,
 across all batch lines.
@@ -808,10 +808,32 @@ Clients must tolerate an abrupt EOF without a trailer (for example, on
 transport failure or server shutdown) and must ignore unknown fields in the
 trailer for forward compatibility.
 
-The `has_more` field in the trailer is informational only: this version of
-the API does not provide a pagination cursor. To retrieve more results, raise
-`limit` (subject to the operator-configured `--web.search.max-limit`) or narrow
-the request via `match[]`. A future version of the API may add a cursor.
+When `has_more` is `true` and the results are in alphabetical order (`sort_by`
+is unset or `alpha`), the trailer also has a `next_cursor` string. To get the
+next page, send it back as the `cursor` parameter, with no other parameters:
+
+```bash
+curl -g 'http://localhost:9090/api/v1/search/label_values?cursor=<next_cursor>'
+```
+
+A cursor holds every parameter of the search that returned it, including the
+resolved `start` and `end`, so it is only valid for that search and on the same
+endpoint. The pages do not come from one snapshot of the data. The cursor keeps
+the resolved `start` and `end` of the first page. The in-memory head still
+returns every value it holds when its data overlaps that range. A value that
+appears after a page and sorts after its last result can be on a later page. A
+value that appears after a page and sorts before its last result is not on a
+later page. A request that sends `cursor` with any
+other parameter fails with HTTP 400. The cursor is opaque and unsigned: the
+server parses each field again with the same validation as a fresh request, so
+a cursor fails if the operator lowered `--web.search.max-limit` below its
+`limit` after the server returned it. Cursors are limited to 16384 bytes. If a proxy limits the URL
+length, send the cursor in the body of a POST request. If the cursor for a
+search would be longer, the search holds text that is not valid UTF-8, or the
+last result of the page is an empty string, the trailer has no `next_cursor`
+and has a warning instead. `sort_by=score` has no cursor:
+to get more results, raise `limit` (subject to `--web.search.max-limit`) or
+narrow the request via `match[]`.
 
 Common URL query parameters:
 
@@ -841,6 +863,8 @@ Common URL query parameters:
   100.
 - `batch_size=<number>`: Preferred number of results per NDJSON batch.
   Optional. Default is 100. Clamped to 1000 and the effective result limit.
+- `cursor=<string>`: The `next_cursor` of the previous page. Optional. It must
+  be the only parameter.
 
 The `start` and `end` parameters narrow results to the selected time window.
 Results may include values from series active slightly outside that window,
@@ -849,6 +873,8 @@ because Prometheus stores data in fixed-size blocks (typically 2 hours each).
 If `--enable-feature=metadata-default-time-range` is set and `start` or `end` is
 omitted, a default time range applies and the response contains a warning. See
 [Metadata default time range](../feature_flags.md#metadata-default-time-range).
+A page that you get with a `cursor` uses the range of the first page and has no
+such warning.
 
 Additional parameters for `/api/v1/search/metric_names`:
 
@@ -880,7 +906,8 @@ Additional parameters for `/api/v1/search/label_names`:
 
 Additional parameters for `/api/v1/search/label_values`:
 
-- `label=<label_name>`: Label name whose values should be searched. Required.
+- `label=<label_name>`: Label name whose values should be searched. Required
+  unless `cursor` is set.
 - `sort_by=<alpha | score>`
 
 A `search_expr` expression combines terms with `NOT`, `AND`, `OR`, and

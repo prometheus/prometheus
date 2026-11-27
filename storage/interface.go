@@ -358,6 +358,15 @@ type LabelHints struct {
 	// ValueFilter applies Limit to the unfiltered values, so the caller can
 	// receive fewer matching values than exist.
 	ValueFilter func(value string) bool
+
+	// StartAfter, when non-empty, restricts label values to those lexically
+	// greater than StartAfter, and Limit and LimitSmallest then count only
+	// those values. The TSDB IndexReader implementations honour it, and
+	// tsdb.IndexReader requires an implementation that applies Limit to
+	// also apply StartAfter. Other readers, and label name reads, can ignore
+	// it and still apply Limit from the first value, so only set it when the
+	// reader is known to honour it.
+	StartAfter string
 }
 
 // AllowsEarlyStop reports whether a read may stop as soon as it holds Limit
@@ -366,16 +375,27 @@ func (h *LabelHints) AllowsEarlyStop() bool {
 	return h != nil && h.Limit > 0 && !h.LimitSmallest
 }
 
-// ApplyLimit reduces values to at most Limit entries. It keeps the lexically
-// smallest values when LimitSmallest is set, and otherwise the leading ones. A
-// nil receiver, and a Limit of zero or less, both leave values unchanged.
+// ApplyLimit drops the values at or before StartAfter, then reduces values to
+// at most Limit entries. It keeps the lexically smallest values when
+// LimitSmallest is set, and otherwise the leading ones. A nil receiver leaves
+// values unchanged, and so does an empty StartAfter with a Limit of zero or
+// less.
 //
 // The limited result set is returned, along with a bool which indicates if the result
 // has re-used the same input slice or if a newly allocated slice has been created.
 //
 // Do not mutate the returned slice if the returned allocated=false.
 func (h *LabelHints) ApplyLimit(values []string) (limited []string, allocated bool) {
-	if h == nil || h.Limit <= 0 || len(values) <= h.Limit {
+	if h == nil {
+		return values, false
+	}
+	if h.StartAfter != "" {
+		if h.Limit > 0 && h.LimitSmallest {
+			return smallestNValuesAfter(values, h.Limit, h.StartAfter), true
+		}
+		return valuesGreaterThan(values, h.StartAfter, h.Limit), true
+	}
+	if h.Limit <= 0 || len(values) <= h.Limit {
 		return values, false
 	}
 	if h.LimitSmallest {
@@ -399,6 +419,13 @@ type SearchHints struct {
 	// OrderBy selects the ordering of results. The zero value is
 	// OrderByValueAsc, which matches the natural index order.
 	OrderBy Ordering
+
+	// ResumeAfter, when non-empty, restricts results to the values that come
+	// after it in OrderBy order: greater values for OrderByValueAsc, smaller
+	// values for OrderByValueDesc. ResumeAfter itself is excluded. Limit
+	// counts only the values after ResumeAfter. It is ignored for
+	// OrderByScoreDesc. Every Searcher must apply it, see Searcher.
+	ResumeAfter string
 }
 
 // SearchResult represents a single search result with its relevance score.
@@ -417,6 +444,9 @@ type SearchResult struct {
 //
 // For a given Value and SearchHints.Filter, Score must be deterministic
 // and identical across Searcher implementations.
+//
+// Every implementation must apply SearchHints.ResumeAfter, because the
+// search API pages with it and does not check the results again.
 type Searcher interface {
 	// SearchLabelNames returns an iterator over label names matching the search criteria.
 	// Results include relevance scores based on the Filter.

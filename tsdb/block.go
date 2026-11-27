@@ -64,10 +64,14 @@ type IndexReader interface {
 	// beyond the lifetime of the index reader.
 	Symbols() index.StringIter
 
-	// SortedLabelValues returns sorted possible label values.
+	// SortedLabelValues returns sorted possible label values. An
+	// implementation that applies hints.Limit must also apply
+	// hints.StartAfter, because the search API pages with both.
 	SortedLabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error)
 
-	// LabelValues returns possible label values which may not be sorted.
+	// LabelValues returns possible label values which may not be sorted. An
+	// implementation that applies hints.Limit must also apply
+	// hints.StartAfter, because the search API pages with both.
 	LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error)
 
 	// Postings returns the postings list iterator for the label pairs.

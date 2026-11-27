@@ -290,6 +290,7 @@ func commonSearchParams() []*v3.Parameter {
 		queryParamWithExample("sort_by", "Sort mode. Supported values are alpha and score.", false, enumStringSchema("alpha", "score"), nil),
 		queryParamWithExample("sort_dir", "Sort direction. Only valid with sort_by=alpha. Supported values are asc and dsc.", false, enumStringSchema("asc", "dsc"), nil),
 		queryParamWithExample("include_score", "Include the relevance score in each result.", false, booleanSchema(), []example{{"example", true}}),
+		queryParamWithExample("cursor", "The next_cursor from the trailer of the previous page. It must be the only parameter, and it is only valid for the search that returned it.", false, stringSchema(), nil),
 	}
 }
 
@@ -368,7 +369,7 @@ func (b *OpenAPIBuilder) searchLabelNamesPath() *v3.PathItem {
 
 func (b *OpenAPIBuilder) searchLabelValuesPath() *v3.PathItem {
 	params := append([]*v3.Parameter{
-		queryParamWithExample("label", "Label name whose values should be searched.", true, stringSchema(), []example{{"example", "instance"}}),
+		queryParamWithExample("label", "Label name whose values should be searched. Required unless cursor is set.", false, stringSchema(), []example{{"example", "instance"}}),
 		queryParamWithExample("match[]", "Series selector argument used to scope label value discovery.", false, base.CreateSchemaProxy(&base.Schema{
 			Type:  []string{"array"},
 			Items: &base.DynamicValue[*base.SchemaProxy, bool]{A: stringSchema()},
