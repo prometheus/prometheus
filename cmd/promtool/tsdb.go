@@ -785,7 +785,7 @@ func formatSeriesSet(ss storage.SeriesSet) error {
 			return it.Err()
 		}
 	}
-	return nil
+	return ss.Err()
 }
 
 // openMetricsEscaper escapes a label value or a quoted name as required by the
@@ -851,7 +851,7 @@ func formatSeriesSetLabelsToJSON(ss storage.SeriesSet) error {
 			seriesCache[s] = struct{}{}
 		}
 	}
-	return nil
+	return ss.Err()
 }
 
 func formatSeriesSetOpenMetrics(ss storage.SeriesSet) error {
@@ -861,13 +861,23 @@ func formatSeriesSetOpenMetrics(ss storage.SeriesSet) error {
 		metricName := lbs.Get(labels.MetricName)
 		lbs = lbs.DropReserved(func(n string) bool { return n == labels.MetricName })
 		it := series.Iterator(nil)
-		for it.Next() == chunkenc.ValFloat {
-			ts, val := it.At()
-			fmt.Printf("%s %g %.3f\n", CondensedString(metricName, lbs), val, float64(ts)/1000)
+		for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
+			switch valType {
+			case chunkenc.ValFloat:
+				ts, val := it.At()
+				fmt.Printf("%s %g %.3f\n", CondensedString(metricName, lbs), val, float64(ts)/1000)
+			case chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
+				return fmt.Errorf("unsupported sample type %s", valType.String())
+			default:
+				return fmt.Errorf("unknown sample type %s", valType.String())
+			}
 		}
 		if it.Err() != nil {
 			return it.Err()
 		}
+	}
+	if err := ss.Err(); err != nil {
+		return err
 	}
 	fmt.Println("# EOF")
 	return nil
