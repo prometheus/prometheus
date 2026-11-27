@@ -463,6 +463,72 @@ func TestOTLPWriteHandler(t *testing.T) {
 		require.Len(t, res[0].Exemplars, 2)
 	})
 
+	t.Run("attributes that are not a valid label set are rejected as a bad request", func(t *testing.T) {
+		for _, tc := range []struct {
+			name     string
+			strategy otlptranslator.TranslationStrategyOption
+			key      string
+			value    string
+			expected string
+		}{
+			{
+				name:     "empty attribute key",
+				strategy: otlptranslator.NoTranslation,
+				key:      "",
+				value:    "v",
+				expected: `invalid label name ""`,
+			},
+			{
+				name:     "empty attribute key with the default strategy",
+				strategy: otlptranslator.UnderscoreEscapingWithSuffixes,
+				key:      "",
+				value:    "v",
+				expected: `invalid label name ""`,
+			},
+			{
+				name:     "attribute key that is not valid UTF-8",
+				strategy: otlptranslator.NoTranslation,
+				key:      "bad\xff\xfename",
+				value:    "v",
+				expected: "invalid label name",
+			},
+			{
+				name:     "attribute value that is not valid UTF-8",
+				strategy: otlptranslator.UnderscoreEscapingWithSuffixes,
+				key:      "okname",
+				value:    "bad\xff\xfevalue",
+				expected: `invalid value "bad\xff\xfevalue" for label "okname"`,
+			},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				request := pmetricotlp.NewExportRequest()
+				m := request.Metrics().ResourceMetrics().AppendEmpty().ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
+				m.SetName("test_gauge")
+				dp := m.SetEmptyGauge().DataPoints().AppendEmpty()
+				dp.SetTimestamp(pcommon.NewTimestampFromTime(ts))
+				dp.SetIntValue(1)
+				dp.Attributes().PutStr(tc.key, tc.value)
+
+				buf, err := request.MarshalProto()
+				require.NoError(t, err)
+				req, err := http.NewRequest("", "", bytes.NewReader(buf))
+				require.NoError(t, err)
+				req.Header.Set("Content-Type", "application/x-protobuf")
+
+				appendable := teststorage.NewAppendable()
+				handler := NewOTLPWriteHandler(slog.New(slog.DiscardHandler), nil, appendable, func() config.Config {
+					return config.Config{OTLPConfig: config.OTLPConfig{TranslationStrategy: tc.strategy}}
+				}, OTLPOptions{})
+				recorder := httptest.NewRecorder()
+				handler.ServeHTTP(recorder, req)
+
+				require.Equal(t, http.StatusBadRequest, recorder.Code)
+				require.Contains(t, recorder.Body.String(), tc.expected)
+				require.Empty(t, appendable.ResultSamples())
+			})
+		}
+	})
+
 	t.Run("concurrent requests", func(t *testing.T) {
 		handler, payload := newOTLPWriteHandlerFixture(t)
 

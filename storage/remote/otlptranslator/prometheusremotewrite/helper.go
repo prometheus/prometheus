@@ -62,6 +62,58 @@ const (
 	defaultLookbackDelta = 5 * time.Minute
 )
 
+// ErrInvalidLabels is returned when OTLP attributes do not form a valid
+// Prometheus label set. It is wrapped in the error returned by FromMetrics so
+// that callers can tell input that no retry can make acceptable apart from a
+// server-side failure.
+var ErrInvalidLabels = errors.New("invalid labels")
+
+// validateLabelName returns an error if name cannot be stored as a label name.
+// Only names that bypass buildLabelName need this, the sanitized ones are valid
+// by construction.
+func validateLabelName(name string) error {
+	if !model.UTF8Validation.IsValidLabelName(name) {
+		return fmt.Errorf("%w: invalid label name %q", ErrInvalidLabels, name)
+	}
+	return nil
+}
+
+// validateLabelValue returns an error if value cannot be stored as the value of
+// the label name. No path in this package sanitizes values, so every value that
+// reaches the builder has to be checked. The value of __name__ is checked with
+// validateMetricName instead, and only where the final name is set: a __name__
+// attribute is always overwritten by the metric name, so applying the metric
+// name rules to the attribute value would reject input that produces a valid
+// series.
+func validateLabelValue(name, value string) error {
+	if !model.LabelValue(value).IsValid() {
+		return fmt.Errorf("%w: invalid value %q for label %q", ErrInvalidLabels, value, name)
+	}
+	return nil
+}
+
+// validateMetricName returns an error if name cannot be stored as the value of
+// the __name__ label.
+func validateMetricName(name string) error {
+	if !model.UTF8Validation.IsValidMetricName(name) {
+		return fmt.Errorf("%w: invalid metric name %q", ErrInvalidLabels, name)
+	}
+	return nil
+}
+
+// validateLabels returns an error if ls cannot be part of the label set of a
+// series. It is meant for label sets that are built once per resource or per
+// scope, where the cost of walking the whole set is spread over the datapoints
+// they are merged into.
+func validateLabels(ls labels.Labels) error {
+	return ls.Validate(func(l labels.Label) error {
+		if err := validateLabelName(l.Name); err != nil {
+			return err
+		}
+		return validateLabelValue(l.Name, l.Value)
+	})
+}
+
 // reservedLabelNames contains label names that should be filtered from
 // OTLP attributes because they are set separately (via extras parameter).
 // Allowing these through could create duplicate labels.
@@ -92,12 +144,35 @@ func (c *PrometheusConverter) createAttributes(
 
 	// XXX: Should we always drop service namespace/service name/service instance ID from the labels
 	// (as they get mapped to other Prometheus labels)?
+	var attrErr error
 	attributes.Range(func(key string, value pcommon.Value) bool {
-		if !slices.Contains(ignoreAttrs, key) {
-			c.scratchBuilder.Add(key, value.AsString())
+		if slices.Contains(ignoreAttrs, key) {
+			return true
 		}
+		// When UTF-8 is allowed the key becomes the label name unchanged,
+		// bypassing buildLabelName below, so it has to be a valid label name
+		// on its own. A blank one in particular breaks the labels.Labels
+		// invariants, and panics in Labels.Get with the dedupelabels build
+		// before this function returns. A blank key is checked here under
+		// every strategy, because buildLabelName rejects it with an error
+		// that does not identify the input as the cause, which answers the
+		// request with 500 rather than 400.
+		if settings.AllowUTF8 || key == "" {
+			if attrErr = validateLabelName(key); attrErr != nil {
+				return false
+			}
+		}
+		v := value.AsString()
+		if attrErr = validateLabelValue(key, v); attrErr != nil {
+			return false
+		}
+		c.scratchBuilder.Add(key, v)
 		return true
 	})
+	if attrErr != nil {
+		return labels.EmptyLabels(), attrErr
+	}
+
 	c.scratchBuilder.Sort()
 	sortedLabels := c.scratchBuilder.Labels()
 
@@ -168,7 +243,11 @@ func (c *PrometheusConverter) createAttributes(
 			c.builder.Set(model.MetricTypeLabel, strings.ToLower(string(meta.Type)))
 		}
 		if meta.Unit != "" {
-			c.builder.Set(model.MetricUnitLabel, unitNamer.Build(meta.Unit))
+			unit := unitNamer.Build(meta.Unit)
+			if err := validateLabelValue(model.MetricUnitLabel, unit); err != nil {
+				return labels.EmptyLabels(), err
+			}
+			c.builder.Set(model.MetricUnitLabel, unit)
 		}
 	}
 
@@ -188,6 +267,13 @@ func (c *PrometheusConverter) createAttributes(
 			if err != nil {
 				return labels.EmptyLabels(), err
 			}
+		}
+		if name == model.MetricNameLabel {
+			if err := validateMetricName(extras[i+1]); err != nil {
+				return labels.EmptyLabels(), err
+			}
+		} else if err := validateLabelValue(name, extras[i+1]); err != nil {
+			return labels.EmptyLabels(), err
 		}
 		c.builder.Set(name, extras[i+1])
 	}
