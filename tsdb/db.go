@@ -1762,7 +1762,12 @@ func (db *DB) compactOOO(dest string, oooHead *OOOCompactionHead) (_ []ulid.ULID
 
 	meta := &BlockMeta{}
 	meta.Compaction.SetOutOfOrder()
-	for t := blockSize * (oooHeadMint / blockSize); t <= oooHeadMaxt; t += blockSize {
+	// Floor division so negative timestamps (e.g. -1) align to the preceding block boundary.
+	firstBlockMin := blockSize * (oooHeadMint / blockSize)
+	if oooHeadMint < 0 && oooHeadMint%blockSize != 0 {
+		firstBlockMin -= blockSize
+	}
+	for t := firstBlockMin; t <= oooHeadMaxt; t += blockSize {
 		mint, maxt := t, t+blockSize
 		// Block intervals are half-open: [b.MinTime, b.MaxTime). Block intervals are always +1 than the total samples it includes.
 		uids, err := db.compactor.Write(dest, oooHead.CloneForTimeRange(mint, maxt-1), mint, maxt, meta)

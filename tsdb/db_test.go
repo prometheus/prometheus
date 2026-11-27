@@ -373,6 +373,44 @@ func TestDBSnapshotWithOOOHead(t *testing.T) {
 	require.Equal(t, expected, gotLive)
 }
 
+func TestDBSnapshotWithNegativeTimestampOOOHead(t *testing.T) {
+	t.Parallel()
+
+	opts := DefaultOptions()
+	opts.OutOfOrderTimeWindow = 300 * time.Minute.Milliseconds()
+
+	db := newTestDB(t, withOpts(opts))
+	db.DisableCompactions()
+
+	s := labels.FromStrings("__name__", "metric_neg_ooo")
+	ctx := context.Background()
+
+	app := db.AppenderV2(ctx)
+	_, err := app.Append(0, s, 0, 0, 1.0, nil, nil, storage.AOptions{})
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	// Append negative OOO timestamp not aligned on chunkRange boundary.
+	app = db.AppenderV2(ctx)
+	_, err = app.Append(0, s, 0, -1, 2.0, nil, nil, storage.AOptions{})
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	snapDir := t.TempDir()
+	require.NoError(t, db.Snapshot(snapDir, true))
+
+	snapDB := newTestDB(t, withDir(snapDir))
+	q, err := snapDB.Querier(math.MinInt64, math.MaxInt64)
+	require.NoError(t, err)
+	got := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "__name__", "metric_neg_ooo"))
+	require.Equal(t, map[string][]chunks.Sample{
+		s.String(): {
+			sample{0, -1, 2.0, nil, nil},
+			sample{0, 0, 1.0, nil, nil},
+		},
+	}, got)
+}
+
 // TestTombstoneCleanFail tests that a failing TombstoneClean doesn't leave any blocks behind.
 // When TombstoneClean errors the original block that should be rebuilt doesn't get deleted so
 // if TombstoneClean leaves any blocks behind these will overlap.
