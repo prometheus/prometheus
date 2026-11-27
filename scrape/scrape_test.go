@@ -1522,6 +1522,64 @@ func testScrapeLoopStop(t *testing.T, appV2 bool) {
 	}
 }
 
+func TestAlignScrapeTime(t *testing.T) {
+	const (
+		interval  = 10 * time.Second
+		tolerance = 2 * time.Millisecond
+	)
+	anchor := time.Date(2026, 11, 20, 12, 0, 0, 0, time.UTC)
+
+	for _, tc := range []struct {
+		name       string
+		scrapeTime time.Time
+		wantTime   time.Time
+		wantAnchor time.Time
+	}{
+		{
+			name:       "on the grid point",
+			scrapeTime: anchor.Add(interval),
+			wantTime:   anchor.Add(interval),
+			wantAnchor: anchor.Add(interval),
+		},
+		{
+			name:       "late within tolerance",
+			scrapeTime: anchor.Add(interval + time.Millisecond),
+			wantTime:   anchor.Add(interval),
+			wantAnchor: anchor.Add(interval),
+		},
+		{
+			name:       "late beyond tolerance",
+			scrapeTime: anchor.Add(interval + 3*time.Millisecond),
+			wantTime:   anchor.Add(interval + 3*time.Millisecond),
+			wantAnchor: anchor.Add(interval),
+		},
+		{
+			name:       "early within tolerance",
+			scrapeTime: anchor.Add(interval - time.Millisecond),
+			wantTime:   anchor.Add(interval),
+			wantAnchor: anchor.Add(interval),
+		},
+		{
+			name:       "early beyond tolerance",
+			scrapeTime: anchor.Add(interval - 3*time.Millisecond),
+			wantTime:   anchor.Add(interval - 3*time.Millisecond),
+			wantAnchor: anchor,
+		},
+		{
+			name:       "skipped tick",
+			scrapeTime: anchor.Add(2*interval + time.Millisecond),
+			wantTime:   anchor.Add(2 * interval),
+			wantAnchor: anchor.Add(2 * interval),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			gotTime, gotAnchor := alignScrapeTime(tc.scrapeTime, anchor, interval, tolerance)
+			require.Equal(t, tc.wantTime, gotTime)
+			require.Equal(t, tc.wantAnchor, gotAnchor)
+		})
+	}
+}
+
 func TestScrapeLoopRun(t *testing.T) {
 	foreachAppendable(t, func(t *testing.T, appV2 bool) {
 		testScrapeLoopRun(t, appV2)

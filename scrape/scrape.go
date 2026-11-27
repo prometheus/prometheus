@@ -2116,6 +2116,29 @@ func (sl *scrapeLoop) getScrapeOffset() time.Duration {
 	return sl.initialScrapeOffset + offset
 }
 
+// alignScrapeTime aligns scrapeTime to the scrape interval grid anchored at
+// alignedScrapeTime if it is within tolerance of a grid point on either side.
+// It returns the aligned scrape time and the updated anchor, which moves
+// forward when a tick was skipped or snapped to the next grid point.
+func alignScrapeTime(scrapeTime, alignedScrapeTime time.Time, interval, tolerance time.Duration) (time.Time, time.Time) {
+	// For some reason, a tick might have been skipped, in which case we
+	// would call alignedScrapeTime.Add(interval) multiple times.
+	for scrapeTime.Sub(alignedScrapeTime) >= interval {
+		alignedScrapeTime = alignedScrapeTime.Add(interval)
+	}
+	// Align the scrape time if we are within the tolerance boundaries. A tick
+	// can arrive before its grid point when the anchor is taken just after the
+	// ticker was reset.
+	d := scrapeTime.Sub(alignedScrapeTime)
+	if d >= -tolerance && d <= tolerance {
+		scrapeTime = alignedScrapeTime
+	} else if interval-d <= tolerance {
+		alignedScrapeTime = alignedScrapeTime.Add(interval)
+		scrapeTime = alignedScrapeTime
+	}
+	return scrapeTime, alignedScrapeTime
+}
+
 func (sl *scrapeLoop) run(errc chan<- error) {
 	var (
 		last   time.Time
@@ -2166,15 +2189,7 @@ func (sl *scrapeLoop) run(errc chan<- error) {
 		if AlignScrapeTimestamps {
 			// Tolerance is clamped to maximum 1% of the scrape interval.
 			tolerance := min(sl.interval/100, ScrapeTimestampTolerance)
-			// For some reason, a tick might have been skipped, in which case we
-			// would call alignedScrapeTime.Add(interval) multiple times.
-			for scrapeTime.Sub(alignedScrapeTime) >= sl.interval {
-				alignedScrapeTime = alignedScrapeTime.Add(sl.interval)
-			}
-			// Align the scrape time if we are in the tolerance boundaries.
-			if scrapeTime.Sub(alignedScrapeTime) <= tolerance {
-				scrapeTime = alignedScrapeTime
-			}
+			scrapeTime, alignedScrapeTime = alignScrapeTime(scrapeTime, alignedScrapeTime, sl.interval, tolerance)
 		}
 
 		last = sl.scrapeAndReport(last, scrapeTime, errc)
