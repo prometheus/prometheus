@@ -287,3 +287,14 @@ func TestMemTombstonesConcurrency(t *testing.T) {
 	}()
 	wg.Wait()
 }
+
+func BenchmarkTruncateBefore(b *testing.B) {
+	stones := NewMemTombstones()
+	for ref := storage.SeriesRef(1); ref <= 10000; ref++ {
+		stones.AddInterval(ref, Interval{1, 2}, Interval{10, 20}, Interval{30, 40}, Interval{50, 60})
+	}
+	b.ReportAllocs()
+	for b.Loop() {
+		stones.TruncateBefore(0)
+	}
+}
