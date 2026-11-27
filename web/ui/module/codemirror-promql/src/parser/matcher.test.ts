@@ -126,6 +126,39 @@ describe('labelMatchersToString test', () => {
       ] as Matcher[],
       result: 'rate{labelName2=~"label.+",labelName3!~"label.+"}',
     },
+    {
+      title: 'quotes a UTF-8 label name',
+      metricName: 'http_requests_total',
+      labelName: 'code',
+      matchers: [
+        {
+          type: EqlSingle,
+          name: 'service.name',
+          value: 'api',
+        },
+      ] as Matcher[],
+      result: 'http_requests_total{"service.name"="api"}',
+    },
+    {
+      title: 'puts a UTF-8 metric name inside the braces',
+      metricName: 'http.server.duration',
+      labelName: 'code',
+      matchers: [
+        {
+          type: EqlSingle,
+          name: 'job',
+          value: 'api',
+        },
+      ] as Matcher[],
+      result: '{"http.server.duration",job="api"}',
+    },
+    {
+      title: 'quotes a UTF-8 metric name without matchers',
+      metricName: 'http.server.duration',
+      labelName: undefined,
+      matchers: undefined,
+      result: '{"http.server.duration"}',
+    },
   ];
 
   testCases.forEach((value) => {

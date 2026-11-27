@@ -94,12 +94,23 @@ export function buildLabelMatchers(labelMatchers: SyntaxNode[], state: EditorSta
   return matchers;
 }
 
+const legacyMetricNameRe = /^[a-zA-Z_:][a-zA-Z0-9_:]*$/;
+const legacyLabelNameRe = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
+
+// Names outside the legacy charset (e.g. "service.name" with UTF-8 support) must be quoted
+// in a selector. The names come from the editor, so a quoted name is already escaped.
+function quoteLabelName(name: string): string {
+  return legacyLabelNameRe.test(name) ? name : `"${name}"`;
+}
+
 export function labelMatchersToString(metricName: string, matchers?: Matcher[], labelName?: string): string {
+  // A metric name outside the legacy charset can't prefix the braces: it goes inside them, quoted.
+  const quotedMetricName = metricName !== '' && !legacyMetricNameRe.test(metricName);
   if (!matchers || matchers.length === 0) {
-    return metricName;
+    return quotedMetricName ? `{"${metricName}"}` : metricName;
   }
 
-  let matchersAsString = '';
+  let matchersAsString = quotedMetricName ? `"${metricName}"` : '';
   for (const matcher of matchers) {
     if (matcher.name === labelName || matcher.value === '') {
       continue;
@@ -121,12 +132,12 @@ export function labelMatchersToString(metricName: string, matchers?: Matcher[], 
       default:
         type = '=';
     }
-    const m = `${matcher.name}${type}"${matcher.value}"`;
+    const m = `${quoteLabelName(matcher.name)}${type}"${matcher.value}"`;
     if (matchersAsString === '') {
       matchersAsString = m;
     } else {
       matchersAsString = `${matchersAsString},${m}`;
     }
   }
-  return `${metricName}{${matchersAsString}}`;
+  return quotedMetricName ? `{${matchersAsString}}` : `${metricName}{${matchersAsString}}`;
 }
