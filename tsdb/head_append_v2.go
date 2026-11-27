@@ -302,6 +302,7 @@ func (a *headAppenderV2) appendFloat(s *memSeries, st, t int64, v float64, fastR
 	b := a.getCurrentBatch(stFloat, s.ref)
 	b.floats = append(b.floats, record.RefSample{Ref: s.ref, ST: a.zeroOrST(st), T: t, V: v})
 	b.floatSeries = append(b.floatSeries, s)
+	a.trackStaleFloat(s.ref, v)
 	return s, nil
 }
 

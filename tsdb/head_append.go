@@ -372,6 +372,11 @@ const (
 	stCustomBucketHistogram                        // Native integer histograms with custom bucket boundaries. Goes to `histograms`.
 	stFloatHistogram                               // Native float histograms. Goes to `floatHistograms`.
 	stCustomBucketFloatHistogram                   // Native float histograms with custom bucket boundaries. Goes to `floatHistograms`.
+	// stStaleFloat is only used in typesInBatch. It marks a series that received a float staleness
+	// marker as its first sample in the batch. commitFloats might turn that marker into a
+	// histogram staleness marker and commit it after all histograms in the batch, so any later
+	// sample for the series has to go into a new batch to keep the commit order.
+	stStaleFloat
 )
 
 // appendBatch is used to partition all the appended data into batches that are
@@ -529,7 +534,20 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 		V:   v,
 	})
 	b.floatSeries = append(b.floatSeries, s)
+	a.trackStaleFloat(s.ref, v)
 	return storage.SeriesRef(s.ref), nil
+}
+
+// trackStaleFloat records a float staleness marker in typesInBatch if it is
+// the first sample of its series in the current batch, so that any later
+// sample of that series starts a new batch. See stStaleFloat.
+func (a *headAppenderBase) trackStaleFloat(ref chunks.HeadSeriesRef, v float64) {
+	if !value.IsStaleNaN(v) {
+		return
+	}
+	if _, ok := a.typesInBatch[ref]; !ok {
+		a.typesInBatch[ref] = stStaleFloat
+	}
 }
 
 // AppendSTZeroSample appends synthetic zero sample for st timestamp. It returns
@@ -1631,10 +1649,10 @@ func (a *headAppenderBase) commitFloats(b *appendBatch, acc *appenderCommitConte
 			// histograms (or float histograms) in the same batch,
 			// to be committed later in commitHistograms (or
 			// commitFloatHistograms). The latter is fine because we
-			// know there is no other histogram (or float histogram)
-			// sample for this same series in this same batch
-			// (because any such sample would have triggered a new
-			// batch).
+			// know there is no later sample for this same series in
+			// this same batch (because the staleness marker is
+			// tracked as stStaleFloat, so any such sample would have
+			// triggered a new batch).
 			switch {
 			case series.lastHistogramValue != nil:
 				b.histograms = append(b.histograms, record.RefHistogramSample{
