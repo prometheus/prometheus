@@ -93,19 +93,20 @@ func (a Annotations) AsStrings(query string, maxWarnings, maxInfos int) (warning
 	warnSkipped := 0
 	infoSkipped := 0
 	for _, err := range a {
+		s := err.Error()
 		if anErr, ok := errors.AsType[annoError](err); ok {
-			anErr.SetQuery(query)
+			s = anErr.Render(query)
 		}
 		switch {
 		case errors.Is(err, PromQLInfo):
 			if maxInfos == 0 || len(infos) < maxInfos {
-				infos = append(infos, err.Error())
+				infos = append(infos, s)
 			} else {
 				infoSkipped++
 			}
 		default:
 			if maxWarnings == 0 || len(warnings) < maxWarnings {
-				warnings = append(warnings, err.Error())
+				warnings = append(warnings, s)
 			} else {
 				warnSkipped++
 			}
@@ -176,10 +177,14 @@ type annoError interface {
 	error
 	// Necessary so we can use errors.Is() to disambiguate between warning and info.
 	Unwrap() error
-	// Necessary when we want to show position info. Also, this is only called at the end when we call
-	// AsStrings(), so before that we deduplicate based on the raw error string when query is empty,
-	// and the full error string with details will only be shown in the end when query is set.
-	SetQuery(string)
+	// Render returns the annotation as it is shown to the user: the message, any details
+	// accumulated by merging, and the position of the expression that caused it. The query
+	// is needed to turn the position into a line and column. Error() stays the raw message,
+	// so that annotations are deduplicated and merged on a key that does not change.
+	// Without a query, Render returns only the raw message, so that callers that render
+	// annotations before all of them are merged, for example to send them on as strings,
+	// give the same string for each copy of an annotation.
+	Render(query string) string
 	// We can define custom merge functions to merge individual annotations of the same type if they have
 	// the same raw error string.
 	Merge(error) error
@@ -188,28 +193,33 @@ type annoError interface {
 type annoErr struct {
 	PositionRange posrange.PositionRange
 	Err           error
-	Query         string
 }
 
 func (e *annoErr) Error() string {
-	if e.Query == "" {
-		return e.Err.Error()
-	}
-	return fmt.Sprintf("%s (%s)", e.Err, e.PositionRange.StartPosInput(e.Query, 0))
+	return e.Err.Error()
+}
+
+func (e *annoErr) Render(query string) string {
+	return e.Err.Error() + renderPosition(e.PositionRange, query)
 }
 
 func (e *annoErr) Unwrap() error {
 	return e.Err
 }
 
-func (e *annoErr) SetQuery(query string) {
-	e.Query = query
-}
-
 // We do not merge generic annotations, instead we just ignore the provided error
 // and return the original.
 func (e *annoErr) Merge(_ error) error {
 	return e
+}
+
+// renderPosition returns the " (line:col)" suffix for an annotation, or an empty
+// string when there is no query to compute it from.
+func renderPosition(pos posrange.PositionRange, query string) string {
+	if query == "" {
+		return ""
+	}
+	return fmt.Sprintf(" (%s)", pos.StartPosInput(query, 0))
 }
 
 func maybeAddMetricName(anno error, metricName string) error {
@@ -323,27 +333,26 @@ func NewPossibleNonCounterLabelInfo(metricName, typeLabel string, pos posrange.P
 type histogramQuantileForcedMonotonicityErr struct {
 	PositionRange                 posrange.PositionRange
 	Err                           error
-	Query                         string
 	minTs, maxTs                  int64
 	minBucket, maxBucket, maxDiff float64
 	count                         int
 }
 
 func (e *histogramQuantileForcedMonotonicityErr) Error() string {
-	if e.Query == "" {
+	return e.Err.Error()
+}
+
+func (e *histogramQuantileForcedMonotonicityErr) Render(query string) string {
+	if query == "" {
 		return e.Err.Error()
 	}
 	startTime := time.Unix(e.minTs/1000, 0).UTC().Format(time.RFC3339)
 	endTime := time.Unix(e.maxTs/1000, 0).UTC().Format(time.RFC3339)
-	return fmt.Sprintf("%s, from buckets %g to %g, with a max diff of %.2g, over %d samples from %s to %s (%s)", e.Err, e.minBucket, e.maxBucket, e.maxDiff, e.count+1, startTime, endTime, e.PositionRange.StartPosInput(e.Query, 0))
+	return fmt.Sprintf("%s, from buckets %g to %g, with a max diff of %.2g, over %d samples from %s to %s", e.Err, e.minBucket, e.maxBucket, e.maxDiff, e.count+1, startTime, endTime) + renderPosition(e.PositionRange, query)
 }
 
 func (e *histogramQuantileForcedMonotonicityErr) Unwrap() error {
 	return e.Err
-}
-
-func (e *histogramQuantileForcedMonotonicityErr) SetQuery(query string) {
-	e.Query = query
 }
 
 func (e *histogramQuantileForcedMonotonicityErr) Merge(other error) error {
@@ -492,28 +501,27 @@ func NewMismatchedCustomBucketsHistogramsInfo(pos posrange.PositionRange, operat
 type startTimeOverlapErr struct {
 	PositionRange posrange.PositionRange
 	Err           error
-	Query         string
 	metricName    string
 	count         int
 }
 
 func (e *startTimeOverlapErr) Error() string {
-	if e.Query == "" {
-		// Don't include count when query is empty to allow proper deduplication.
-		return fmt.Sprintf("%s for metric %q", e.Err, e.metricName)
+	// Don't include count, to allow proper deduplication.
+	return fmt.Sprintf("%s for metric %q", e.Err, e.metricName)
+}
+
+func (e *startTimeOverlapErr) Render(query string) string {
+	if query == "" {
+		return e.Error()
 	}
 	if e.count > 1 {
-		return fmt.Sprintf("%s for metric %q (%d occurrences) (%s)", e.Err, e.metricName, e.count, e.PositionRange.StartPosInput(e.Query, 0))
+		return fmt.Sprintf("%s (%d occurrences)", e.Error(), e.count) + renderPosition(e.PositionRange, query)
 	}
-	return fmt.Sprintf("%s for metric %q (%s)", e.Err, e.metricName, e.PositionRange.StartPosInput(e.Query, 0))
+	return e.Error() + renderPosition(e.PositionRange, query)
 }
 
 func (e *startTimeOverlapErr) Unwrap() error {
 	return e.Err
-}
-
-func (e *startTimeOverlapErr) SetQuery(query string) {
-	e.Query = query
 }
 
 func (e *startTimeOverlapErr) Merge(other error) error {

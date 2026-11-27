@@ -1248,10 +1248,10 @@ func (ev *evalCmd) checkAnnotations(expr string, annos annotations.Annotations) 
 		return err
 	}
 	if ev.expectedCmds[NoWarn] != nil && len(warnings) > 0 {
-		return fmt.Errorf("unexpected warning annotations evaluating query %q (line %d): %v", expr, ev.line, annos.AsErrors())
+		return fmt.Errorf("unexpected warning annotations evaluating query %q (line %d): %v", expr, ev.line, warnings)
 	}
 	if ev.expectedCmds[NoInfo] != nil && len(infos) > 0 {
-		return fmt.Errorf("unexpected info annotations evaluating query %q (line %d): %v", expr, ev.line, annos.AsErrors())
+		return fmt.Errorf("unexpected info annotations evaluating query %q (line %d): %v", expr, ev.line, infos)
 	}
 	return nil
 }
