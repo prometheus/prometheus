@@ -2986,6 +2986,9 @@ var FunctionCalls = map[string]FunctionCall{
 	"hour":                         funcHour,
 	"idelta":                       funcIdelta,
 	"increase":                     funcIncrease,
+	"correlation_over_time":        nil, // evalCorrelationOverTime not called via this map.
+	"regression_over_time":         nil, // evalRegressionOverTime not called via this map.
+	"lm_over_time":                 nil, // evalLMOverTime not called via this map.
 	"info":                         nil,
 	"integral":                     funcIntegral,
 	"irate":                        funcIrate,
@@ -3167,6 +3170,30 @@ func createLabelsForAbsentFunction(expr parser.Expr) labels.Labels {
 
 func stringFromArg(e parser.Expr) string {
 	return e.(*parser.StringLiteral).Val
+}
+
+// parseEnum resolves s against valid, whose first entry is the default and is
+// also selected by "". ok is false for any other value.
+func parseEnum(s string, valid []string) (string, bool) {
+	if s == "" {
+		return valid[0], true
+	}
+	return s, slices.Contains(valid, s)
+}
+
+// enumArg resolves the optional string option at e.Args[idx] with parseEnum.
+// For an unknown value it adds newWarning's annotation to ws and returns
+// ok=false.
+func enumArg(e *parser.Call, idx int, valid []string, newWarning func(string, posrange.PositionRange) error, ws *annotations.Annotations) (string, bool) {
+	if len(e.Args) <= idx {
+		return valid[0], true
+	}
+	s := stringFromArg(e.Args[idx])
+	v, ok := parseEnum(s, valid)
+	if !ok {
+		ws.Add(newWarning(s, e.Args[idx].PositionRange()))
+	}
+	return v, ok
 }
 
 func stringSliceFromArgs(args parser.Expressions) []string {

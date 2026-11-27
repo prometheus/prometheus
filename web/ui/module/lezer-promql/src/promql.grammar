@@ -156,6 +156,7 @@ FunctionIdentifier {
   Clamp |
   ClampMax |
   ClampMin |
+  CorrelationOverTime |
   Cos |
   Cosh |
   CountOverTime |
@@ -187,6 +188,7 @@ FunctionIdentifier {
   LabelReplace |
   LabelJoin |
   LastOverTime |
+  LmOverTime |
   Ln |
   Log10 |
   Log2 |
@@ -205,6 +207,7 @@ FunctionIdentifier {
   QuantileOverTime |
   Rad |
   Rate |
+  RegressionOverTime |
   Resets |
   Round |
   Scalar |
@@ -462,6 +465,7 @@ durationPrimary[@inline] {
   Clamp { condFn<"clamp"> }
   ClampMax { condFn<"clamp_max"> }
   ClampMin { condFn<"clamp_min"> }
+  CorrelationOverTime { condFn<"correlation_over_time"> }
   Cos { condFn<"cos">}
   Cosh { condFn<"cosh">}
   CountOverTime { condFn<"count_over_time"> }
@@ -493,6 +497,7 @@ durationPrimary[@inline] {
   LabelReplace { condFn<"label_replace"> }
   LabelJoin { condFn<"label_join"> }
   LastOverTime {condFn<"last_over_time">}
+  LmOverTime { condFn<"lm_over_time"> }
   Ln { condFn<"ln"> }
   Log10 { condFn<"log10"> }
   Log2 { condFn<"log2"> }
@@ -512,6 +517,7 @@ durationPrimary[@inline] {
   QuantileOverTime { condFn<"quantile_over_time"> }
   Rad { condFn<"rad"> }
   Rate { condFn<"rate"> }
+  RegressionOverTime { condFn<"regression_over_time"> }
   Resets { condFn<"resets"> }
   Round { condFn<"round"> }
   Scalar { condFn<"scalar"> }

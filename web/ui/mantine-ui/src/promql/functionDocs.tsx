@@ -694,6 +694,136 @@ const funcDocs: Record<string, React.ReactNode> = {
       </ul>
     </>
   ),
+  correlation_over_time: (
+    <>
+      <p>
+        <strong>
+          This function has to be enabled via the{" "}
+          <a href="../feature_flags.md#experimental-promql-functions">feature flag</a>
+          <code>--enable-feature=promql-experimental-functions</code>.
+        </strong>
+      </p>
+
+      <p>
+        <code>
+          correlation_over_time(a range-vector, b range-vector, method=&quot;pearson&quot; string, on=&quot;&quot;
+          string)
+        </code>
+        returns the correlation coefficient between paired float samples of <code>a</code> and
+        <code>b</code> over the given range, per matched series pair. Unpaired series are silently dropped. At each
+        evaluation step, only samples whose timestamps appear in both range windows are correlated. Each result carries
+        the labels of its <code>a</code>
+        series, minus <code>__name__</code>.
+      </p>
+
+      <p>
+        <code>on</code> sets the matching key, like the binary-operator <code>on()</code> clause:{" "}
+        <code>&quot;&quot;</code> (the default) matches on all labels except <code>__name__</code>; a label list such as
+        <code>&quot;job,instance&quot;</code> (optionally in parentheses) matches on exactly those labels; and{" "}
+        <code>&quot;()&quot;</code> matches on the empty label set, so every series matches every other. A malformed
+        value, such as <code>&quot;(job&quot;</code>, yields an empty result plus a PromQL warning annotation.
+      </p>
+
+      <p>
+        The optional <code>method</code> string selects the coefficient:
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>
+              <code>method</code>
+            </th>
+            <th>meaning</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          <tr>
+            <td>
+              <code>&quot;pearson&quot;</code>
+            </td>
+            <td>Pearson product-moment (the default)</td>
+          </tr>
+
+          <tr>
+            <td>
+              <code>&quot;spearman&quot;</code>
+            </td>
+            <td>Spearman rank, with average-rank ties</td>
+          </tr>
+
+          <tr>
+            <td>
+              <code>&quot;kendall&quot;</code>
+            </td>
+            <td>Kendall tau-b</td>
+          </tr>
+        </tbody>
+      </table>
+      <p>
+        An empty <code>method</code> behaves like omitting the argument. An unknown method name yields an empty result
+        plus a PromQL warning annotation.
+      </p>
+
+      <p>
+        Pearson and Spearman are computed in a single Kahan-compensated pass. Kendall is the naive O(n²) implementation,
+        which is acceptable for the range sizes typical of Prometheus queries but can be expensive for very long
+        windows.
+      </p>
+
+      <p>
+        Returns <code>NaN</code> for a step when the paired window has fewer than 2 samples or the variance is zero
+        (constant input, single distinct value, or all-tied pairs for Kendall). Histogram samples are skipped and do not
+        contribute to the correlation.
+      </p>
+
+      <p>
+        Several <code>a</code> series may pair with one <code>b</code> series. When more than one <code>b</code> series
+        matches the same key, the pairing is ambiguous: that pair is skipped (not picked arbitrarily) and a PromQL
+        warning annotation is emitted once.
+      </p>
+
+      <p>
+        For example, to surface request-error-rate and request-latency series whose per-minute behaviour over the past
+        hour moves together (potentially the same upstream problem causing both):
+      </p>
+
+      <pre>
+        <code>
+          correlation_over_time( rate(http_request_errors_total[1m])[1h:1m], histogram_quantile(0.99,
+          rate(http_request_duration_seconds_bucket[1m]))[1h:1m] ) &gt; 0.8
+        </code>
+      </pre>
+
+      <p>
+        <code>on</code> lets the two sides carry different extra labels — for example, errors labeled by{" "}
+        <code>code</code> and latency labeled by <code>quantile</code>, correlated per
+        <code>job</code>/<code>instance</code> regardless. Since <code>on</code> is positional, <code>method</code> has
+        to be given too (<code>&quot;&quot;</code> or <code>&quot;pearson&quot;</code> for the default):
+      </p>
+
+      <pre>
+        <code>
+          correlation_over_time( rate(http_request_errors_total[1m])[1h:1m],
+          rate(http_request_duration_seconds_sum[1m])[1h:1m], &quot;pearson&quot;, &quot;job,instance&quot; ) &gt; 0.8
+        </code>
+      </pre>
+
+      <p>
+        <code>&quot;()&quot;</code> ranks many candidate series against one target in a single call. For example, to
+        list the five services whose error rate moved most closely with p99 latency over the past six hours:
+      </p>
+
+      <pre>
+        <code>
+          topk(5, correlation_over_time( sum by (service) (rate(http_request_errors_total[1m]))[6h:1m],
+          histogram_quantile(0.99, sum by (le) (rate(http_request_duration_seconds_bucket[1m])))[6h:1m],
+          &quot;pearson&quot;, &quot;()&quot; ) )
+        </code>
+      </pre>
+    </>
+  ),
   cos: (
     <>
       <p>The trigonometric functions work in radians. They ignore histogram samples in the input vector.</p>
@@ -2147,6 +2277,168 @@ const funcDocs: Record<string, React.ReactNode> = {
       </p>
     </>
   ),
+  lm_over_time: (
+    <>
+      <p>
+        <strong>
+          This function has to be enabled via the{" "}
+          <a href="../feature_flags.md#experimental-promql-functions">feature flag</a>
+          <code>--enable-feature=promql-experimental-functions</code>.
+        </strong>
+      </p>
+
+      <p>
+        <code>
+          lm_over_time(method string, y range-vector, X range-vector, labelName string, on string, lambda=0 scalar,
+          halflife=0 scalar)
+        </code>
+        fits a multiple linear regression of the response series <code>y</code> on the predictor series <code>X</code>{" "}
+        at each evaluation step, and returns the fitted coefficients. It is the multivariate generalization of
+        <a href="#regression_over_time">
+          <code>regression_over_time()</code>
+        </a>
+        : <code>labelName</code> is the pivot that reshapes <code>X</code> into a design matrix whose columns are the
+        distinct values of that label. <code>on</code> must be given (pass <code>&quot;&quot;</code> for &ldquo;no
+        restriction&rdquo;) whenever <code>lambda</code> or
+        <code>halflife</code> are supplied, mirroring <code>labelName</code>&rsquo;s own required-but-defaultable
+        convention.
+      </p>
+
+      <p>
+        <code>method</code> selects the estimator:
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>
+              <code>method</code>
+            </th>
+            <th>meaning</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          <tr>
+            <td>
+              <code>&quot;lm&quot;</code>
+            </td>
+            <td>ordinary least squares</td>
+          </tr>
+
+          <tr>
+            <td>
+              <code>&quot;ridge&quot;</code>
+            </td>
+            <td>
+              L2-penalized least squares; requires <code>lambda &gt; 0</code> (intercept unpenalized)
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <p>
+        The base method may be followed by one or more comma-separated flags, which compose (for example{" "}
+        <code>&quot;ridge,diff,wls&quot;</code>):
+      </p>
+
+      <ul>
+        <li>
+          <code>,diff</code> — fit on the <strong>first differences</strong> (Δ-on-Δ) of <code>y</code> and{" "}
+          <code>X</code> instead of their levels. Differencing removes a shared time trend, so the coefficients and{" "}
+          <code>(r2)</code> reflect step-to-step co-movement rather than a common drift — use it when both series trend
+          together and a levels fit would report a spuriously strong relationship.
+        </li>
+        <li>
+          <code>,wls</code> — <strong>weighted least squares</strong> with exponential time-decay weights, so recent
+          samples influence the fit more than old ones (a better fit for monitoring, where the current relationship
+          matters most). The decay <code>halflife</code>
+          is given as the last scalar argument, in seconds; a sample of age <code>t</code> gets weight{" "}
+          <code>0.5^(t/halflife)</code>. The half-life must be <code>&gt; 0</code>, otherwise the fit falls back to
+          unweighted with a warning. <code>,wls</code> currently applies only when a<code>labelName</code> pivot is
+          given (not the bivariate case). The reported <code>(r2)</code> is measured against the unweighted
+          observations.
+        </li>
+      </ul>
+
+      <p>
+        Predictor series are grouped by the <code>on</code> key, which works as for
+        <a href="#correlation_over_time">
+          <code>correlation_over_time()</code>
+        </a>{" "}
+        except that the default also ignores <code>labelName</code>; <code>&quot;()&quot;</code> puts every{" "}
+        <code>X</code> series into one group, which then needs a single <code>y</code> series. Each group is one
+        independent regression, and its distinct <code>labelName</code> values become the design-matrix columns. The
+        response series is matched to a group by those same grouping labels. Each emitted series carries the
+        group&rsquo;s labels (just the <code>on</code> labels when <code>on</code> is given) with
+        <code>labelName</code> set to the predictor&rsquo;s value — or to the reserved value
+        <code>(intercept)</code> for the intercept term — and its value is the fitted coefficient. Each group also emits
+        a <code>(r2)</code> series carrying the coefficient of determination (the fraction of the response variance
+        explained), so a meaningful fit can be told apart from a spurious one that the coefficients alone would hide; it
+        is
+        <code>NaN</code> when the fit is undefined.
+      </p>
+
+      <p>
+        Two ambiguity cases are skipped (with a warning) rather than resolved arbitrarily: more than one response series
+        matching the same group, and two predictor series in the same group ending up with the same{" "}
+        <code>labelName</code> pivot value (which would otherwise produce two design-matrix columns with the same
+        header) — the latter typically happens once <code>on</code> drops the label that used to distinguish them.
+      </p>
+
+      <p>
+        When <code>labelName</code> is empty, the function degenerates to the bivariate case and returns the regression
+        slope per matched pair, matching <code>regression_over_time</code>
+        with its default (slope) output.
+      </p>
+
+      <p>
+        The <code>&quot;lm&quot;</code> fit is solved with a <strong>rank-revealing</strong> column-pivoted Householder
+        QR decomposition, which is numerically stable for the near-collinear predictors common in metrics (for example
+        CPU modes). When the design is rank deficient — a collinear or near-constant predictor, such as a request verb
+        sitting at 0 req/s — the solver drops only the offending column (its coefficient is <code>NaN</code>) and still
+        solves for the remaining predictors, emitting a PromQL info annotation that names what was dropped. This means
+        one degenerate predictor no longer turns the whole model into <code>NaN</code>; the good predictors keep their
+        coefficients. A step returns all-<code>NaN</code> coefficients only when there are fewer samples than columns.
+        (The <code>&quot;ridge&quot;</code> method is full rank by construction and always solves every column.) Groups
+        whose predictor cardinality exceeds the supported maximum, or that contain a predictor whose pivot value
+        collides with <code>(intercept)</code>, are skipped with a warning. Histogram samples are ignored.
+      </p>
+
+      <p>
+        Each group needs exactly one <code>y</code> series and, for every <code>labelName</code> value, exactly one{" "}
+        <code>X</code> series. Shape both sides with aggregations to get there. For example, to estimate how much each
+        non-idle CPU mode contributes to request latency over the past hour, per instance:
+      </p>
+
+      <pre>
+        <code>
+          lm_over_time( &quot;lm&quot;, max by (instance) (request_latency_p99)[1h:1m], sum by (instance, mode)
+          (rate(node_cpu_seconds_total{"{"}mode!=&quot;idle&quot;{"}"}[1m]))[1h:1m], &quot;mode&quot;, &quot;&quot; )
+        </code>
+      </pre>
+
+      <p>
+        The <code>sum by (instance, mode)</code> matters: <code>node_cpu_seconds_total</code> has one series per CPU
+        core, so without it every group would hold several <code>X</code> series per mode and be skipped as ambiguous.
+        With the default <code>on</code>, both sides group on what is left after dropping <code>__name__</code> and{" "}
+        <code>mode</code>, here just <code>instance</code>.
+      </p>
+
+      <p>
+        <code>on</code> lets <code>y</code> carry extra labels that <code>X</code> doesn&rsquo;t — for example, a{" "}
+        <code>y</code>
+        recording rule that adds a <code>team</code> label the exporter&rsquo;s CPU metrics don&rsquo;t have — and still
+        group by <code>instance</code>, as long as there is one <code>y</code> series per instance:
+      </p>
+
+      <pre>
+        <code>
+          lm_over_time( &quot;lm&quot;, request_latency_p99[1h:1m], sum by (instance, mode) (rate(node_cpu_seconds_total
+          {"{"}mode!=&quot;idle&quot;{"}"}[1m]))[1h:1m], &quot;mode&quot;, &quot;instance&quot; )
+        </code>
+      </pre>
+    </>
+  ),
   ln: (
     <>
       <p>
@@ -3005,6 +3297,169 @@ const funcDocs: Record<string, React.ReactNode> = {
         <code>rate()</code> first, then aggregate. Otherwise <code>rate()</code> cannot detect counter resets when your
         target restarts.
       </p>
+    </>
+  ),
+  regression_over_time: (
+    <>
+      <p>
+        <strong>
+          This function has to be enabled via the{" "}
+          <a href="../feature_flags.md#experimental-promql-functions">feature flag</a>
+          <code>--enable-feature=promql-experimental-functions</code>.
+        </strong>
+      </p>
+
+      <p>
+        <code>
+          regression_over_time(y range-vector, x range-vector, output=&quot;slope&quot; string,
+          link=&quot;identity&quot; string, on=&quot;&quot; string)
+        </code>
+        fits a least-squares regression of the dependent series <code>y</code> on the independent series <code>x</code>{" "}
+        over the given range, per matched series pair, and returns the selected scalar. Unpaired series are silently
+        dropped. At each evaluation step, only samples whose timestamps appear in both range windows are used. Each
+        result carries the labels of its <code>y</code> series, minus <code>__name__</code>.
+      </p>
+
+      <p>
+        <code>on</code> sets the matching key, like the binary-operator <code>on()</code> clause:{" "}
+        <code>&quot;&quot;</code> (the default) matches on all labels except <code>__name__</code>; a label list such as
+        <code>&quot;job,instance&quot;</code> (optionally in parentheses) matches on exactly those labels; and{" "}
+        <code>&quot;()&quot;</code> matches on the empty label set, so every series matches every other. A malformed
+        value, such as <code>&quot;(job&quot;</code>, yields an empty result plus a PromQL warning annotation.
+      </p>
+
+      <p>
+        Several <code>y</code> series may pair with one <code>x</code> series. When more than one <code>x</code> series
+        matches the same key, the pairing is ambiguous: that pair is skipped (not picked arbitrarily) and a PromQL
+        warning annotation is emitted once.
+      </p>
+
+      <p>
+        This generalises{" "}
+        <a href="#correlation_over_time">
+          <code>correlation_over_time()</code>
+        </a>
+        : where correlation returns the unitless association coefficient <code>r</code>, regression returns the
+        predictive line itself (<code>slope = r · σy/σx</code>) and, optionally, a forecast. It is the closed-form,
+        Gaussian-family special case of a count time-series GLM (see the{" "}
+        <a href="https://cran.r-project.org/package=tscount">
+          <code>tscount</code> package
+        </a>
+        ); the iterative maximum-likelihood fit of the full GLM is intentionally not implemented.
+      </p>
+
+      <p>
+        The optional <code>output</code> string selects what is returned:
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>
+              <code>output</code>
+            </th>
+            <th>meaning</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          <tr>
+            <td>
+              <code>&quot;slope&quot;</code>
+            </td>
+            <td>
+              slope <code>β₁</code> (the default)
+            </td>
+          </tr>
+
+          <tr>
+            <td>
+              <code>&quot;intercept&quot;</code>
+            </td>
+            <td>
+              intercept <code>β₀</code>
+            </td>
+          </tr>
+
+          <tr>
+            <td>
+              <code>&quot;prediction&quot;</code>
+            </td>
+            <td>
+              prediction <code>ŷ</code> at the most recent <code>x</code> in the window
+            </td>
+          </tr>
+
+          <tr>
+            <td>
+              <code>&quot;r2&quot;</code>
+            </td>
+            <td>
+              coefficient of determination <code>r²</code>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <p>
+        The optional <code>link</code> string selects the link function:
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>
+              <code>link</code>
+            </th>
+            <th>meaning</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          <tr>
+            <td>
+              <code>&quot;identity&quot;</code>
+            </td>
+            <td>
+              the default: fits <code>y ≈ β₀ + β₁·x</code>
+            </td>
+          </tr>
+
+          <tr>
+            <td>
+              <code>&quot;log&quot;</code>
+            </td>
+            <td>
+              fits <code>ln(y) ≈ β₀ + β₁·x</code>, i.e. <code>y ≈ exp(β₀)·exp(β₁·x)</code>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <p>
+        An empty <code>output</code> or <code>link</code> behaves like omitting it. An unknown name yields an empty
+        result plus a PromQL warning annotation listing the valid names. The arguments are positional, so to set{" "}
+        <code>on</code> pass <code>output</code> and <code>link</code> too (<code>&quot;&quot;</code>
+        keeps their defaults).
+      </p>
+
+      <p>
+        The log link suits non-negative, count-like series. Its slope, intercept and
+        <code>r²</code> are reported on the natural-log scale, while the prediction is back-transformed with{" "}
+        <code>exp</code>. Samples with non-positive <code>y</code> cannot be log-transformed and are dropped, with a
+        PromQL info annotation.
+      </p>
+
+      <p>
+        Returns <code>NaN</code> for a step when the paired window has fewer than 2 samples or when <code>x</code> has
+        zero variance. Histogram samples are skipped and do not contribute.
+      </p>
+
+      <p>For example, to estimate how much CPU each unit of request rate costs, fitted over the past hour:</p>
+
+      <pre>
+        <code>
+          regression_over_time( rate(process_cpu_seconds_total[1m])[1h:1m], rate(http_requests_total[1m])[1h:1m] )
+        </code>
+      </pre>
     </>
   ),
   resets: (

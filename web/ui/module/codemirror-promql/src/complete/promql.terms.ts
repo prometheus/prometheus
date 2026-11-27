@@ -164,6 +164,12 @@ export const functionIdentifierTerms = [
     type: 'function',
   },
   {
+    label: 'correlation_over_time',
+    detail: 'function',
+    info: 'Compute the correlation coefficient between two range vectors over time',
+    type: 'function',
+  },
+  {
     label: 'cos',
     detail: 'function',
     info: 'Calculate the cosine, in radians, for input series',
@@ -362,6 +368,12 @@ export const functionIdentifierTerms = [
     type: 'function',
   },
   {
+    label: 'lm_over_time',
+    detail: 'function',
+    info: 'Fit a multiple linear regression of one range vector on another, pivoted by a label',
+    type: 'function',
+  },
+  {
     label: 'ln',
     detail: 'function',
     info: 'Calculate natural logarithm of input series',
@@ -475,6 +487,12 @@ export const functionIdentifierTerms = [
     label: 'rate',
     detail: 'function',
     info: 'Calculate per-second increase over a range vector (for counters)',
+    type: 'function',
+  },
+  {
+    label: 'regression_over_time',
+    detail: 'function',
+    info: 'Fit a least-squares regression of one range vector on another over time',
     type: 'function',
   },
   {
