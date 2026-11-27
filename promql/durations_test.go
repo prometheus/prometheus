@@ -286,6 +286,15 @@ func TestCalculateDuration(t *testing.T) {
 			errorMessage: "duration is NaN or infinite",
 		},
 		{
+			name: "positive sub-millisecond duration",
+			expr: &parser.DurationExpr{
+				LHS: &parser.NumberLiteral{Val: 0.001},
+				RHS: &parser.NumberLiteral{Val: 4},
+				Op:  parser.DIV,
+			},
+			errorMessage: "duration must be greater than 0",
+		},
+		{
 			name:         "duration exceeds time.Duration range",
 			expr:         &parser.NumberLiteral{Val: 1e10},
 			errorMessage: "duration is out of range",

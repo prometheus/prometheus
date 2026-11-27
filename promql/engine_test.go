@@ -4719,6 +4719,20 @@ func TestPreprocessExpr(t *testing.T) {
 		}
 	})
 
+	t.Run("reject duration expressions evaluating to zero", func(t *testing.T) {
+		for _, input := range []string{
+			"foo[(1ms/4)]",
+			"foo[1m:(1ms/4)]",
+		} {
+			t.Run(input, func(t *testing.T) {
+				expr, err := testParser.ParseExpr(input)
+				require.NoError(t, err)
+				_, err = promql.PreprocessExpr(expr, time.Unix(1000, 0), time.Unix(9999, 0), time.Minute)
+				require.ErrorContains(t, err, "duration must be greater than 0")
+			})
+		}
+	})
+
 	t.Run("wrap step-invariant expressions", func(t *testing.T) {
 		startTime := time.Unix(1000, 0)
 		endTime := time.Unix(9999, 0)

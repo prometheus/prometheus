@@ -5280,11 +5280,6 @@ var testExpr = []struct {
 				Err:           errors.New(`division by zero`),
 				Query:         `foo[step()/0d]`,
 			},
-			ParseErr{
-				PositionRange: posrange.PositionRange{Start: 0, End: 0}, // FIXME: this position looks wrong.
-				Err:           errors.New(`duration must be greater than 0`),
-				Query:         `foo[step()/0d]`,
-			},
 		},
 	},
 	{
@@ -5294,11 +5289,6 @@ var testExpr = []struct {
 			ParseErr{
 				PositionRange: posrange.PositionRange{Start: 6, End: 7},
 				Err:           errors.New(`division by zero`),
-				Query:         `foo[5s/0d]`,
-			},
-			ParseErr{
-				PositionRange: posrange.PositionRange{Start: 0, End: 0}, // FIXME: this position looks wrong.
-				Err:           errors.New(`duration must be greater than 0`),
 				Query:         `foo[5s/0d]`,
 			},
 		},
@@ -5322,10 +5312,6 @@ var testExpr = []struct {
 				PositionRange: posrange.PositionRange{Start: 6, End: 7},
 				Err:           errors.New(`modulo by zero`),
 				Query:         `foo[5s%0d]`,
-			},
-			ParseErr{
-				Err:   errors.New(`duration must be greater than 0`),
-				Query: `foo[5s%0d]`,
 			},
 		},
 	},
