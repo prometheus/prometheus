@@ -228,7 +228,7 @@ Like the scalar functions, `min_of` and `max_of` ignore a `NaN` argument if the
 other argument is not `NaN`. If both arguments are `NaN`, the result is `NaN`.
 A duration expression whose final result is `NaN` or infinite is rejected.
 
-**Note**: Duration expressions are not supported in the [`@` modifier](#modifier).
+**Note**: Duration expressions are not supported in the [`@` modifier](#-modifier).
 
 Examples of equivalent durations:
 
@@ -258,7 +258,7 @@ query's evaluation timestamp (in the case of an
 [instant query](api.md#instant-queries))
 or the current step within the query (in the case of a
 [range query](api.md#range-queries)).
-The [`@` modifier](#modifier) allows overriding the timestamp relative to which
+The [`@` modifier](#-modifier) allows overriding the timestamp relative to which
 the selection takes place. Time series are only returned if their most recent sample is less than the [lookback period](#staleness) ago.
 
 This example selects all time series that have the `http_requests_total` metric
