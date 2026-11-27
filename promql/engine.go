@@ -2796,10 +2796,14 @@ func (ev *evaluator) eval(ctx context.Context, expr parser.Expr) (parser.Value, 
 			}
 
 			// Does not have a matrix argument.
-			return ev.rangeEval(ctx, nil, func(v []Vector, _ Matrix, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-				vec, annos := call(v, nil, e.Args, enh)
-				return vec, warnings.Merge(annos)
+			// rangeEval merges the annotations of each step. Do not also merge them into warnings
+			// in the callback: rangeEval would then merge the total of the earlier steps again on
+			// each step, and the counts in mergeable annotations, such as the histogram_quantile
+			// forced monotonicity info, would be wrong.
+			mat, ws := ev.rangeEval(ctx, nil, func(v []Vector, _ Matrix, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+				return call(v, nil, e.Args, enh)
 			}, e.Args...)
+			return mat, warnings.Merge(ws)
 		}
 
 		// Evaluate any non-matrix arguments.
