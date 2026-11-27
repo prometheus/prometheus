@@ -126,12 +126,15 @@ func (h *headIndexReader) PostingsForAllLabelValues(ctx context.Context, name st
 	return h.head.postings.PostingsForAllLabelValues(ctx, name)
 }
 
-func (h *headIndexReader) SortedPostings(p index.Postings) index.Postings {
+func (h *headIndexReader) SortedPostings(ctx context.Context, p index.Postings) index.Postings {
 	series := make([]*memSeries, 0, 128)
 
 	notFoundSeriesCount := 0
 	// Fetch all the series only once.
-	for p.Next() {
+	for i := 0; p.Next(); i++ {
+		if i%checkContextEveryNIterations == 0 && ctx.Err() != nil {
+			return index.ErrPostings(ctx.Err())
+		}
 		s := h.head.series.getByID(chunks.HeadSeriesRef(p.At()))
 		if s == nil {
 			notFoundSeriesCount++
@@ -160,7 +163,7 @@ func (h *headIndexReader) SortedPostings(p index.Postings) index.Postings {
 
 // ShardedPostings implements IndexReader. This function returns an failing postings list if sharding
 // has not been enabled in the Head.
-func (h *headIndexReader) ShardedPostings(p index.Postings, shardIndex, shardCount uint64) index.Postings {
+func (h *headIndexReader) ShardedPostings(ctx context.Context, p index.Postings, shardIndex, shardCount uint64) index.Postings {
 	if !h.head.opts.EnableSharding {
 		return index.ErrPostings(errors.New("sharding is disabled"))
 	}
@@ -168,7 +171,10 @@ func (h *headIndexReader) ShardedPostings(p index.Postings, shardIndex, shardCou
 	out := make([]storage.SeriesRef, 0, 128)
 	notFoundSeriesCount := 0
 
-	for p.Next() {
+	for i := 0; p.Next(); i++ {
+		if i%checkContextEveryNIterations == 0 && ctx.Err() != nil {
+			return index.ErrPostings(ctx.Err())
+		}
 		s := h.head.series.getByID(chunks.HeadSeriesRef(p.At()))
 		if s == nil {
 			notFoundSeriesCount++
@@ -338,14 +344,14 @@ func (h *Head) filterSeriesAndSortPostings(p index.Postings, keep func(*memSerie
 // SortedPostings returns the provided postings sorted by labels.
 // This implementation expects the input postings to be the one returned by headStaleIndexReader.Postings() with AllPostingsKey,
 // and will return the pre-sorted postings by labels in that case.
-func (h *headSelectedSeriesIndexReader) SortedPostings(p index.Postings) index.Postings {
+func (h *headSelectedSeriesIndexReader) SortedPostings(ctx context.Context, p index.Postings) index.Postings {
 	switch p.(type) {
 	case allSelectedSeriesPostings:
 		// This is the marker we expect.
 		return index.NewListPostings(h.selectedSeriesRefs.sortedByLabels)
 	default:
 		// This is not expected, but implementing it is easy: just delegate to headIndexReader's logic.
-		return h.headIndexReader.SortedPostings(p)
+		return h.headIndexReader.SortedPostings(ctx, p)
 	}
 }
 

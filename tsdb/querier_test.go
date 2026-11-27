@@ -2608,7 +2608,7 @@ func (m mockIndex) Postings(ctx context.Context, name string, values ...string) 
 	return index.Merge(ctx, res...), nil
 }
 
-func (m mockIndex) SortedPostings(p index.Postings) index.Postings {
+func (m mockIndex) SortedPostings(_ context.Context, p index.Postings) index.Postings {
 	ep, err := index.ExpandPostings(p)
 	if err != nil {
 		return index.ErrPostings(fmt.Errorf("expand postings: %w", err))
@@ -2640,7 +2640,7 @@ func (m mockIndex) PostingsForAllLabelValues(ctx context.Context, name string) i
 	return index.Merge(ctx, res...)
 }
 
-func (m mockIndex) ShardedPostings(p index.Postings, shardIndex, shardCount uint64) index.Postings {
+func (m mockIndex) ShardedPostings(_ context.Context, p index.Postings, shardIndex, shardCount uint64) index.Postings {
 	out := make([]storage.SeriesRef, 0, 128)
 
 	for p.Next() {
@@ -3607,11 +3607,11 @@ func (mockMatcherIndex) Postings(context.Context, string, ...string) (index.Post
 	return index.EmptyPostings(), nil
 }
 
-func (mockMatcherIndex) SortedPostings(index.Postings) index.Postings {
+func (mockMatcherIndex) SortedPostings(context.Context, index.Postings) index.Postings {
 	return index.EmptyPostings()
 }
 
-func (mockMatcherIndex) ShardedPostings(ps index.Postings, _, _ uint64) index.Postings {
+func (mockMatcherIndex) ShardedPostings(_ context.Context, ps index.Postings, _, _ uint64) index.Postings {
 	return ps
 }
 
@@ -4179,11 +4179,11 @@ func (mockReaderOfLabels) Postings(context.Context, string, ...string) (index.Po
 	panic("Postings called")
 }
 
-func (mockReaderOfLabels) ShardedPostings(index.Postings, uint64, uint64) index.Postings {
+func (mockReaderOfLabels) ShardedPostings(context.Context, index.Postings, uint64, uint64) index.Postings {
 	panic("Postings called")
 }
 
-func (mockReaderOfLabels) SortedPostings(index.Postings) index.Postings {
+func (mockReaderOfLabels) SortedPostings(context.Context, index.Postings) index.Postings {
 	panic("SortedPostings called")
 }
 
