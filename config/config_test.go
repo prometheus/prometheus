@@ -2825,6 +2825,10 @@ var expectedErrors = []struct {
 		errMsg:   "invalid compression type foo provided, valid options: gzip",
 	},
 	{
+		filename: "tracing_invalid_sampling_fraction.bad.yml",
+		errMsg:   "tracing sampling_fraction must be between 0 and 1, got 50",
+	},
+	{
 		filename: "uyuni_no_server.bad.yml",
 		errMsg:   "Uyuni SD configuration requires server host",
 	},
@@ -3938,6 +3942,31 @@ remote_write:
 			require.Len(t, cfg.RemoteWriteConfigs, 1)
 			require.Equal(t, tc.expectMode, cfg.RemoteWriteConfigs[0].Mode)
 			require.Equal(t, tc.expectSendNativeHistograms, cfg.RemoteWriteConfigs[0].SendNativeHistograms)
+		})
+	}
+}
+
+func TestTracingSamplingFractionValidation(t *testing.T) {
+	for _, tc := range []struct {
+		fraction string
+		errMsg   string
+	}{
+		{fraction: "0"},
+		{fraction: "0.25"},
+		{fraction: "1"},
+		{fraction: "-0.1", errMsg: "tracing sampling_fraction must be between 0 and 1, got -0.1"},
+		{fraction: "1.5", errMsg: "tracing sampling_fraction must be between 0 and 1, got 1.5"},
+		{fraction: ".nan", errMsg: "tracing sampling_fraction must be between 0 and 1, got NaN"},
+		{fraction: ".inf", errMsg: "tracing sampling_fraction must be between 0 and 1, got +Inf"},
+	} {
+		t.Run(tc.fraction, func(t *testing.T) {
+			var cfg TracingConfig
+			err := yaml.UnmarshalStrict([]byte("endpoint: localhost:4317\nsampling_fraction: "+tc.fraction+"\n"), &cfg)
+			if tc.errMsg == "" {
+				require.NoError(t, err)
+				return
+			}
+			require.EqualError(t, err, tc.errMsg)
 		})
 	}
 }
