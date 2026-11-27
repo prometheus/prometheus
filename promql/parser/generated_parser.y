@@ -425,7 +425,8 @@ grouping_label_list:
 
 grouping_label  : maybe_label
                         {
-                        if !model.UTF8Validation.IsValidLabelName($1.Val) || labelNameRequiresQuoting($1.Val) {
+                        // Keep accepting unquoted colons, which grouping labels allowed before unquoted UTF-8 names.
+                        if !model.UTF8Validation.IsValidLabelName($1.Val) {
                                 yylex.(*parser).addParseErrf($1.PositionRange(),"invalid label name for grouping: %q", $1.Val)
                         }
                         $$ = $1

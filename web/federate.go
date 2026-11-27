@@ -370,6 +370,23 @@ func makeClassicHistogram(h *histogram.FloatHistogram) *dto.Histogram {
 			CumulativeCountFloat: proto.Float64(cumulativeCount),
 		}
 	}
+	// Add the overflow bucket beyond the last custom value, if any.
+	for bucketAvailable && int(bucketIter.At().Index) < len(h.CustomValues) {
+		bucketAvailable = bucketIter.Next()
+	}
+	if bucketAvailable {
+		cumulativeCount += bucketIter.At().Count
+	}
+	// The count of a float histogram resulting from PromQL operations (e.g.
+	// sum(rate(...))) is calculated independently from its buckets, so
+	// floating point errors can make it marginally smaller than the sum of
+	// the buckets. As the +Inf bucket is implied by the count, the resulting
+	// classic histogram would not be cumulative, and converting it back into
+	// an NHCB would yield a negative +Inf bucket. Use the sum of the buckets
+	// as the count in that case.
+	if cumulativeCount > h.Count {
+		result.SampleCountFloat = proto.Float64(cumulativeCount)
+	}
 	// Note that we do not add the +Inf bucket explicitly. In the protobuf
 	// exposition format, it is optional. For other exposition formats, the
 	// code converting the protobuf created here into the actual exposition

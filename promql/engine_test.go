@@ -832,6 +832,89 @@ func TestEngineShutdown(t *testing.T) {
 	require.ErrorAs(t, res2.Err, &e, "expected cancellation error but got: %s", res2.Err)
 }
 
+func TestFastPathCancellationWithoutBudget(t *testing.T) {
+	stor := promqltest.LoadedStorage(t, `
+load 10s
+  metric{a="1"} 1+1x300
+  metric{a="2"} 1+1x300
+`)
+	engine := promqltest.NewTestEngineWithOpts(t, promql.EngineOpts{
+		MaxSamples:         promqltest.DefaultMaxSamplesPerQuery,
+		Timeout:            10 * time.Second,
+		UseStartTimestamps: false,
+		Parser:             parser.NewParser(promqltest.TestParserOpts),
+	})
+
+	// Test both timestamp() and disabled start_timestamp(): when UseStartTimestamps
+	// is false, start_timestamp emits no samples so MaxSamples cannot bound the step
+	// loop, making periodic context cancellation checks the only exit path.
+	cases := []struct {
+		name            string
+		expr            string
+		end             time.Time // Zero value runs an instant query at Unix(0, 0).
+		wantSamplesRead int64
+	}{
+		{
+			name:            "periodic check/timestamp",
+			expr:            `timestamp(metric{a="1"})`,
+			end:             time.Unix(3000, 0),
+			wantSamplesRead: 1023, // Stops at step 1023 (step&1023 == 1023) before reading step 1023.
+		},
+		{
+			name:            "periodic check/disabled start_timestamp",
+			expr:            `start_timestamp(metric{a="1"})`,
+			end:             time.Unix(3000, 0),
+			wantSamplesRead: 1023,
+		},
+		{
+			name:            "per-series check/timestamp",
+			expr:            `timestamp(metric)`,
+			end:             time.Unix(20, 0),
+			wantSamplesRead: 21, // Completes series 1 (21 steps) and cancels before iterating series 2.
+		},
+		{
+			// Instant queries skip execEvalStmt's post-eval contextDone check, so only
+			// evalInPlaceFloatUnary's per-series check catches cancellation after the child read.
+			name:            "per-series check/abs",
+			expr:            `abs(metric{a="1"})`,
+			wantSamplesRead: 1,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+
+			counted := &sampleReadQueryable{Queryable: stor}
+			counted.onRead = func() {
+				if counted.reads == 1 {
+					cancel()
+				}
+			}
+
+			var (
+				q   promql.Query
+				err error
+			)
+			if tc.end.IsZero() {
+				q, err = engine.NewInstantQuery(ctx, counted, nil, tc.expr, time.Unix(0, 0))
+			} else {
+				q, err = engine.NewRangeQuery(ctx, counted, nil, tc.expr, time.Unix(0, 0), tc.end, time.Second)
+			}
+			require.NoError(t, err)
+			t.Cleanup(q.Close)
+
+			res := q.Exec(ctx)
+			var canceled promql.ErrQueryCanceled
+			require.ErrorAs(t, res.Err, &canceled)
+			// Verify evaluation actually halted inside the loop rather than completing
+			// and being caught by execEvalStmt's post-eval contextDone check.
+			require.Equal(t, tc.wantSamplesRead, q.Stats().Samples.SamplesRead)
+		})
+	}
+}
+
 func TestEngineEvalStmtTimestamps(t *testing.T) {
 	storage := promqltest.LoadedStorage(t, `
 load 10s
@@ -1019,7 +1102,7 @@ load 10s
 			// timestamp function has a special handling.
 			Query:        "timestamp(metricWith1SampleEvery10Seconds)",
 			Start:        time.Unix(21, 0),
-			PeakSamples:  2,
+			PeakSamples:  1,
 			TotalSamples: 1, // 1 sample / 10 seconds
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				21000: 1,
@@ -1032,8 +1115,21 @@ load 10s
 		{
 			Query:        "timestamp(metricWith1HistogramEvery10Seconds)",
 			Start:        time.Unix(21, 0),
-			PeakSamples:  2,
+			PeakSamples:  1,
 			TotalSamples: 1, // 1 float sample (because of timestamp) / 10 seconds
+			TotalSamplesPerStep: stats.TotalSamplesPerStep{
+				21000: 1,
+			},
+			SamplesRead: 1,
+			SamplesReadPerStep: stats.TotalSamplesPerStep{
+				21000: 1,
+			},
+		},
+		{
+			Query:        "start_timestamp(metricWith1SampleEvery10Seconds)",
+			Start:        time.Unix(21, 0),
+			PeakSamples:  1,
+			TotalSamples: 1,
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				21000: 1,
 			},
@@ -1437,7 +1533,7 @@ load 10s
 			Start:        time.Unix(201, 0),
 			End:          time.Unix(220, 0),
 			Interval:     5 * time.Second,
-			PeakSamples:  5,
+			PeakSamples:  4,
 			TotalSamples: 4, // 1 sample per query * 4 steps
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				201000: 1,
@@ -1459,7 +1555,7 @@ load 10s
 			Start:        time.Unix(201, 0),
 			End:          time.Unix(220, 0),
 			Interval:     5 * time.Second,
-			PeakSamples:  5,
+			PeakSamples:  4,
 			TotalSamples: 4, // 1 sample per query * 4 steps
 			TotalSamplesPerStep: stats.TotalSamplesPerStep{
 				201000: 1,
@@ -1473,6 +1569,114 @@ load 10s
 				206000: 1,
 				211000: 1,
 				216000: 1,
+			},
+		},
+		{
+			Query:        "start_timestamp(metricWith1SampleEvery10Seconds)",
+			Start:        time.Unix(201, 0),
+			End:          time.Unix(220, 0),
+			Interval:     5 * time.Second,
+			PeakSamples:  4,
+			TotalSamples: 4,
+			TotalSamplesPerStep: stats.TotalSamplesPerStep{
+				201000: 1,
+				206000: 1,
+				211000: 1,
+				216000: 1,
+			},
+			SamplesRead: 4,
+			SamplesReadPerStep: stats.TotalSamplesPerStep{
+				201000: 1,
+				206000: 1,
+				211000: 1,
+				216000: 1,
+			},
+		},
+		{
+			Query:        "start_timestamp(metricWith1HistogramEvery10Seconds)",
+			Start:        time.Unix(201, 0),
+			End:          time.Unix(220, 0),
+			Interval:     5 * time.Second,
+			PeakSamples:  4,
+			TotalSamples: 4,
+			TotalSamplesPerStep: stats.TotalSamplesPerStep{
+				201000: 1,
+				206000: 1,
+				211000: 1,
+				216000: 1,
+			},
+			SamplesRead: 4,
+			SamplesReadPerStep: stats.TotalSamplesPerStep{
+				201000: 1,
+				206000: 1,
+				211000: 1,
+				216000: 1,
+			},
+		},
+		{
+			// inPlaceFloatUnaryFuncs evaluates in place on the child Matrix without a second Matrix allocation.
+			Query:        "abs(metricWith1SampleEvery10Seconds)",
+			Start:        time.Unix(201, 0),
+			End:          time.Unix(220, 0),
+			Interval:     5 * time.Second,
+			PeakSamples:  4,
+			TotalSamples: 4,
+			TotalSamplesPerStep: stats.TotalSamplesPerStep{
+				201000: 1,
+				206000: 1,
+				211000: 1,
+				216000: 1,
+			},
+			SamplesRead: 4,
+			SamplesReadPerStep: stats.TotalSamplesPerStep{
+				201000: 1,
+				206000: 1,
+				211000: 1,
+				216000: 1,
+			},
+		},
+		{
+			// Dropping histogram samples in inPlaceFloatUnaryFuncs reclaims currentSamples before evaluating RHS.
+			Query:        "abs(metricWith1HistogramEvery10Seconds) or metricWith1SampleEvery10Seconds",
+			Start:        time.Unix(201, 0),
+			End:          time.Unix(220, 0),
+			Interval:     5 * time.Second,
+			PeakSamples:  52,
+			TotalSamples: 56,
+			TotalSamplesPerStep: stats.TotalSamplesPerStep{
+				201000: 14,
+				206000: 14,
+				211000: 14,
+				216000: 14,
+			},
+			SamplesRead: 56,
+			SamplesReadPerStep: stats.TotalSamplesPerStep{
+				201000: 14,
+				206000: 14,
+				211000: 14,
+				216000: 14,
+			},
+		},
+		{
+			// Evaluating abs() on the RHS retains LHS samples in currentSamples reconciliation.
+			Query:        "metricWith1SampleEvery10Seconds + abs(metricWith1SampleEvery10Seconds)",
+			Start:        time.Unix(201, 0),
+			End:          time.Unix(220, 0),
+			Interval:     5 * time.Second,
+			PeakSamples:  14,
+			TotalSamples: 8,
+			TotalSamplesPerStep: stats.TotalSamplesPerStep{
+				201000: 2,
+				206000: 2,
+				211000: 2,
+				216000: 2,
+			},
+			SamplesRead: 8,
+			SamplesReadPerStep: stats.TotalSamplesPerStep{
+				201000: 2,
+				206000: 2,
+				211000: 2,
+				216000: 2,
 			},
 		},
 		{
@@ -2354,6 +2558,31 @@ load 10s
 			Query:      "max_over_time(metricWith1HistogramEvery10Seconds[61s])[20s:5s]",
 			MaxSamples: 91,
 			Start:      time.Unix(201, 0),
+		},
+		{
+			// abs() reconciles currentSamples after absent_over_time synthesizes points.
+			Query:      "abs(absent_over_time(nonexistent[10s]))",
+			MaxSamples: 5,
+			Start:      time.Unix(0, 0),
+			End:        time.Unix(4, 0),
+			Interval:   time.Second,
+		},
+		{
+			// abs() on the RHS retains prior LHS samples when reconciling currentSamples.
+			Query:      "bigmetric or abs(absent_over_time(nonexistent[10s]))",
+			MaxSamples: 33,
+			Start:      time.Unix(0, 0),
+			End:        time.Unix(4, 0),
+			Interval:   time.Second,
+		},
+		{
+			// Dropping smoothed histograms in abs() must not underflow currentSamples
+			// and bypass MaxSamples for subsequent sibling expressions.
+			Query:      "abs(metricWith1HistogramEvery10Seconds smoothed) or bigmetric",
+			MaxSamples: 2002,
+			Start:      time.Unix(0, 0),
+			End:        time.Unix(998, 0),
+			Interval:   2 * time.Second,
 		},
 	}
 
@@ -6792,11 +7021,16 @@ load 10s
 	t.Cleanup(func() { s.Close() })
 	engine := newQueryCostEngine(t)
 	for _, tc := range []struct {
-		query  string
-		reads  int64
-		totals []int64
+		query    string
+		enableST bool
+		reads    int64
+		totals   []int64
 	}{
 		{query: "metric", reads: 8, totals: []int64{2, 2, 2, 2}},
+		{query: "abs(metric)", reads: 8, totals: []int64{2, 2, 2, 2}},
+		{query: "timestamp(metric)", reads: 8, totals: []int64{2, 2, 2, 2}},
+		{query: "start_timestamp(metric)", reads: 8, totals: []int64{2, 2, 2, 2}},
+		{query: "start_timestamp(metric)", enableST: true, reads: 8, totals: []int64{2, 2, 2, 2}},
 		{query: "rate(metric[20s])", reads: 16, totals: []int64{4, 4, 4, 4}},
 		{query: "metric + metric @ 100", reads: 10, totals: []int64{4, 4, 4, 4}},
 		// All child reads count against the budget, but totals include only consumed windows.
@@ -6816,13 +7050,31 @@ load 10s
 		{query: "quantile_over_time(time() / 1000, metric[20s:10s] @ end())", reads: 4, totals: []int64{4, 4, 4, 4}},
 	} {
 		for _, perStep := range []bool{false, true} {
-			t.Run(fmt.Sprintf("%s/perStep=%t", tc.query, perStep), func(t *testing.T) {
+			name := fmt.Sprintf("%s/perStep=%t", tc.query, perStep)
+			if tc.enableST {
+				name += "/enableST=true"
+			}
+			t.Run(name, func(t *testing.T) {
 				engine.SetQueryLimits(0, uint64(tc.reads), 0)
-				opts := promql.NewPrometheusQueryOpts(perStep, 0, nil)
+				var useST *bool
+				if tc.enableST {
+					v := true
+					useST = &v
+				}
+				opts := promql.NewPrometheusQueryOpts(perStep, 0, useST)
 				q, err := engine.NewRangeQuery(context.Background(), s, opts, tc.query, time.Unix(100, 0), time.Unix(200, 0), 30*time.Second)
 				require.NoError(t, err)
 				defer q.Close()
-				require.NoError(t, q.Exec(context.Background()).Err)
+				res := q.Exec(context.Background())
+				require.NoError(t, res.Err)
+				if tc.enableST {
+					mat, err := res.Matrix()
+					require.NoError(t, err)
+					require.Len(t, mat, 2)
+					for _, series := range mat {
+						require.Len(t, series.Floats, 4)
+					}
+				}
 				st := q.Stats().Samples
 				series := int64(2)
 				if tc.query == "metric + metric @ 100" {

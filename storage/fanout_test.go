@@ -16,8 +16,11 @@ package storage_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strconv"
+	"strings"
 	"testing"
+	"unsafe"
 
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
@@ -705,6 +708,168 @@ func TestFanoutAppenderV2(t *testing.T) {
 			require.Nil(t, tt.secondary.PendingSamples())
 			testutil.RequireEqual(t, tt.expectSecondarySamples, tt.secondary.ResultSamples())
 			require.Nil(t, tt.secondary.RolledbackSamples())
+		})
+	}
+}
+
+func TestFanoutAppenderV2_CommitStats(t *testing.T) {
+	primaryStats := storage.CommitStats{DiscardedSamples: storage.DiscardedSampleStats{
+		SameTimestampSameValue: []storage.DiscardedSeriesSamples{{Labels: labels.FromStrings("source", "primary"), Count: 2}},
+	}}
+	secondaryStats := storage.CommitStats{DiscardedSamples: storage.DiscardedSampleStats{
+		SameTimestampDifferentValue: []storage.DiscardedSeriesSamples{{Labels: labels.FromStrings("source", "secondary"), Count: 3}},
+	}}
+
+	for _, tc := range []struct {
+		name             string
+		primaryReports   bool
+		secondaryReports bool
+		want             storage.CommitStats
+	}{
+		{name: "primary reports", primaryReports: true, want: primaryStats},
+		{name: "secondary does not contribute", primaryReports: true, secondaryReports: true, want: primaryStats},
+		{name: "primary does not report", secondaryReports: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var primary storage.AppendableV2 = teststorage.NewAppendable()
+			if tc.primaryReports {
+				primary = commitStatsAppendableV2{AppendableV2: primary, stats: primaryStats}
+			}
+			var secondary storage.AppendableV2 = teststorage.NewAppendable()
+			if tc.secondaryReports {
+				secondary = commitStatsAppendableV2{AppendableV2: secondary, stats: secondaryStats}
+			}
+
+			f := storage.NewFanout(nil, mockStorage{appV2: primary}, mockStorage{appV2: secondary})
+			app := f.AppenderV2(t.Context())
+			require.NoError(t, app.Commit())
+			reporter, ok := app.(storage.CommitStatsReporter)
+			require.True(t, ok)
+			require.Equal(t, tc.want, reporter.CommitStats())
+		})
+	}
+}
+
+type commitStatsAppendableV2 struct {
+	storage.AppendableV2
+	stats storage.CommitStats
+}
+
+func (a commitStatsAppendableV2) AppenderV2(ctx context.Context) storage.AppenderV2 {
+	return commitStatsAppenderV2{AppenderV2: a.AppendableV2.AppenderV2(ctx), stats: a.stats}
+}
+
+type commitStatsAppenderV2 struct {
+	storage.AppenderV2
+	stats storage.CommitStats
+}
+
+func (a commitStatsAppenderV2) CommitStats() storage.CommitStats {
+	return a.stats
+}
+
+type immutableStorage struct {
+	storage.Storage
+}
+
+type immutableAppender struct {
+	storage.Appender
+}
+
+func (a immutableAppender) GetRef(lset labels.Labels, hash uint64) (storage.SeriesRef, labels.Labels) {
+	if gr, ok := a.Appender.(storage.GetRef); ok {
+		return gr.GetRef(lset, hash)
+	}
+	return 0, labels.EmptyLabels()
+}
+
+func (immutableAppender) ImmutableGetRefLabels() bool { return true }
+
+type immutableAppenderV2 struct {
+	storage.AppenderV2
+}
+
+func (a immutableAppenderV2) GetRef(lset labels.Labels, hash uint64) (storage.SeriesRef, labels.Labels) {
+	if gr, ok := a.AppenderV2.(storage.GetRef); ok {
+		return gr.GetRef(lset, hash)
+	}
+	return 0, labels.EmptyLabels()
+}
+
+func (immutableAppenderV2) ImmutableGetRefLabels() bool { return true }
+
+func (s immutableStorage) Appender(ctx context.Context) storage.Appender {
+	return immutableAppender{Appender: s.Storage.Appender(ctx)}
+}
+
+func (s immutableStorage) AppenderV2(ctx context.Context) storage.AppenderV2 {
+	return immutableAppenderV2{AppenderV2: s.Storage.AppenderV2(ctx)}
+}
+
+func TestFanoutAppender_GetRef(t *testing.T) {
+	stored := labels.FromStrings(model.MetricNameLabel, "metric1", "job", "prometheus")
+	lookup := labels.FromStrings(model.MetricNameLabel, "metric1", "job", strings.Clone("prometheus"))
+	missing := labels.FromStrings(model.MetricNameLabel, "metric2", "job", "prometheus")
+	require.NotSame(t, unsafe.StringData(stored.Get("job")), unsafe.StringData(lookup.Get("job")))
+
+	db := teststorage.New(t)
+	app := db.AppenderV2(t.Context())
+	ref, err := app.Append(0, stored, 0, 1, 1, nil, nil, storage.AOptions{})
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	type immutableChecker interface {
+		ImmutableGetRefLabels() bool
+	}
+
+	for _, appV2 := range []bool{false, true} {
+		t.Run(fmt.Sprintf("appV2=%v", appV2), func(t *testing.T) {
+			for _, tc := range []struct {
+				name          string
+				primary       storage.Storage
+				lset          labels.Labels
+				wantRef       storage.SeriesRef
+				wantImmutable bool
+			}{
+				{name: "series in primary", primary: db, lset: lookup, wantRef: ref, wantImmutable: false},
+				{name: "series in immutable primary", primary: immutableStorage{Storage: db}, lset: lookup, wantRef: ref, wantImmutable: true},
+				{name: "series not in primary", primary: db, lset: missing, wantImmutable: false},
+				{
+					name:    "primary without GetRef",
+					primary: mockStorage{app: teststorage.NewAppendable(), appV2: teststorage.NewAppendable()},
+					lset:    lookup,
+				},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					f := storage.NewFanout(nil, tc.primary, mockStorage{app: teststorage.NewAppendable(), appV2: teststorage.NewAppendable()})
+					var fanoutApp any
+					if appV2 {
+						a := f.AppenderV2(t.Context())
+						t.Cleanup(func() { _ = a.Rollback() })
+						fanoutApp = a
+					} else {
+						a := f.Appender(t.Context())
+						t.Cleanup(func() { _ = a.Rollback() })
+						fanoutApp = a
+					}
+
+					gr, ok := fanoutApp.(storage.GetRef)
+					require.True(t, ok)
+					ic, ok := fanoutApp.(immutableChecker)
+					require.True(t, ok)
+					require.Equal(t, tc.wantImmutable, ic.ImmutableGetRefLabels())
+
+					gotRef, gotLset := gr.GetRef(tc.lset, tc.lset.Hash())
+					require.Equal(t, tc.wantRef, gotRef)
+					if tc.wantRef == 0 {
+						require.True(t, gotLset.IsEmpty())
+						return
+					}
+					testutil.RequireEqual(t, stored, gotLset)
+					require.Same(t, unsafe.StringData(stored.Get("job")), unsafe.StringData(gotLset.Get("job")))
+					require.NotSame(t, unsafe.StringData(lookup.Get("job")), unsafe.StringData(gotLset.Get("job")))
+				})
+			}
 		})
 	}
 }

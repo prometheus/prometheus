@@ -168,62 +168,7 @@ func TestDataNotAvailableAfterRollback_AppendV2(t *testing.T) {
 		require.Equal(t, map[string][]chunks.Sample{}, seriesSet)
 	}
 
-	sr, err := wlog.NewSegmentsReader(db.head.wal.Dir())
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, sr.Close())
-	}()
-
-	// Read records from WAL and check for expected count of series and samples.
-	var (
-		r   = wlog.NewReader(sr)
-		dec = record.NewDecoder(labels.NewSymbolTable(), promslog.NewNopLogger())
-
-		walSeriesCount, walSamplesCount, walHistogramCount, walFloatHistogramCount, walExemplarsCount int
-	)
-	for r.Next() {
-		rec := r.Record()
-		switch dec.Type(rec) {
-		case record.Series:
-			var series []record.RefSeries
-			series, err = dec.Series(rec, series)
-			require.NoError(t, err)
-			walSeriesCount += len(series)
-
-		case record.Samples, record.SamplesV2:
-			var samples []record.RefSample
-			samples, err = dec.Samples(rec, samples)
-			require.NoError(t, err)
-			walSamplesCount += len(samples)
-
-		case record.Exemplars:
-			var exemplars []record.RefExemplar
-			exemplars, err = dec.Exemplars(rec, exemplars)
-			require.NoError(t, err)
-			walExemplarsCount += len(exemplars)
-
-		case record.HistogramSamples, record.CustomBucketsHistogramSamples, record.HistogramSamplesV2:
-			var histograms []record.RefHistogramSample
-			histograms, err = dec.HistogramSamples(rec, histograms)
-			require.NoError(t, err)
-			walHistogramCount += len(histograms)
-
-		case record.FloatHistogramSamples, record.CustomBucketsFloatHistogramSamples, record.FloatHistogramSamplesV2:
-			var floatHistograms []record.RefFloatHistogramSample
-			floatHistograms, err = dec.FloatHistogramSamples(rec, floatHistograms)
-			require.NoError(t, err)
-			walFloatHistogramCount += len(floatHistograms)
-
-		default:
-		}
-	}
-
-	// Check that only series get stored after calling Rollback.
-	require.Equal(t, 3, walSeriesCount, "series should have been written to WAL")
-	require.Equal(t, 0, walSamplesCount, "samples should not have been written to WAL")
-	require.Equal(t, 0, walExemplarsCount, "exemplars should not have been written to WAL")
-	require.Equal(t, 0, walHistogramCount, "histograms should not have been written to WAL")
-	require.Equal(t, 0, walFloatHistogramCount, "float histograms should not have been written to WAL")
+	require.Empty(t, readTestWAL(t, db.head.wal.Dir()), "rollback must not write any WAL records")
 }
 
 func TestDBAppenderV2_AddRef(t *testing.T) {

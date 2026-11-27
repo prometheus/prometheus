@@ -741,7 +741,8 @@ flag](../feature_flags.md#experimental-promql-functions)
 `--enable-feature=promql-experimental-functions`.**
 
 `max_of(a scalar, b scalar)` returns the larger of the two scalar values `a`
-and `b`.
+and `b`. `NaN` is only returned if both `a` and `b` are `NaN`, like for
+the [`max` aggregation operator](operators.md#min-and-max).
 
 ## `min_of()`
 
@@ -750,7 +751,8 @@ flag](../feature_flags.md#experimental-promql-functions)
 `--enable-feature=promql-experimental-functions`.**
 
 `min_of(a scalar, b scalar)` returns the smaller of the two scalar values `a`
-and `b`.
+and `b`. `NaN` is only returned if both `a` and `b` are `NaN`, like for
+the [`min` aggregation operator](operators.md#min-and-max).
 
 ## `ln()`
 

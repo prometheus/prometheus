@@ -334,6 +334,12 @@ describe('analyzeCompletion test', () => {
       expectedContext: [{ kind: ContextKind.LabelName }],
     },
     {
+      title: 'continue to autocomplete a grouping label containing a colon',
+      expr: 'sum by (a:b)',
+      pos: 11,
+      expectedContext: [{ kind: ContextKind.LabelName }],
+    },
+    {
       title: 'continue to autocomplete QuotedLabelName in aggregate modifier',
       expr: 'sum by ("myL")',
       pos: 12, // cursor is between the bracket after the string myL
@@ -1796,6 +1802,11 @@ describe('autocomplete promQL test', () => {
           {
             label: 'quoted"value',
             apply: 'quoted\\"value',
+            type: 'text',
+          },
+          {
+            label: 'multi\nline',
+            apply: 'multi\\nline',
             type: 'text',
           },
         ],

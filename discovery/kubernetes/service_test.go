@@ -127,13 +127,15 @@ func makeLoadBalancerServiceFromIngress() *v1.Service {
 					Port:     int32(31900),
 				},
 			},
-			Type:      v1.ServiceTypeLoadBalancer,
-			ClusterIP: "10.0.0.1",
+			Type:           v1.ServiceTypeLoadBalancer,
+			LoadBalancerIP: "192.0.2.10",
+			ClusterIP:      "10.0.0.1",
 		},
 		Status: v1.ServiceStatus{
 			LoadBalancer: v1.LoadBalancerStatus{
 				Ingress: []v1.LoadBalancerIngress{
 					{IP: "192.168.1.15"},
+					{Hostname: "lb.example.com"},
 					{IP: "2001:db8::1"},
 				},
 			},
@@ -197,12 +199,13 @@ func TestServiceDiscoveryAdd(t *testing.T) {
 				Targets: []model.LabelSet{
 					{
 						"__meta_kubernetes_service_port_protocol": "TCP",
-						"__address__":                               "testservice-loadbalancer.default.svc:31900",
-						"__meta_kubernetes_service_type":            "LoadBalancer",
-						"__meta_kubernetes_service_port_name":       "testport",
-						"__meta_kubernetes_service_port_number":     "31900",
-						"__meta_kubernetes_service_cluster_ip":      "10.0.0.1",
-						"__meta_kubernetes_service_loadbalancer_ip": "127.0.0.1",
+						"__address__":                                "testservice-loadbalancer.default.svc:31900",
+						"__meta_kubernetes_service_type":             "LoadBalancer",
+						"__meta_kubernetes_service_port_name":        "testport",
+						"__meta_kubernetes_service_port_number":      "31900",
+						"__meta_kubernetes_service_cluster_ip":       "10.0.0.1",
+						"__meta_kubernetes_service_loadbalancer_ip":  "127.0.0.1",
+						"__meta_kubernetes_service_loadbalancer_ips": "",
 					},
 				},
 				Labels: model.LabelSet{
@@ -215,12 +218,13 @@ func TestServiceDiscoveryAdd(t *testing.T) {
 				Targets: []model.LabelSet{
 					{
 						"__meta_kubernetes_service_port_protocol": "TCP",
-						"__address__":                               "testservice-lb-ingress.default.svc:31900",
-						"__meta_kubernetes_service_type":            "LoadBalancer",
-						"__meta_kubernetes_service_port_name":       "testport",
-						"__meta_kubernetes_service_port_number":     "31900",
-						"__meta_kubernetes_service_cluster_ip":      "10.0.0.1",
-						"__meta_kubernetes_service_loadbalancer_ip": "192.168.1.15,2001:db8::1",
+						"__address__":                                "testservice-lb-ingress.default.svc:31900",
+						"__meta_kubernetes_service_type":             "LoadBalancer",
+						"__meta_kubernetes_service_port_name":        "testport",
+						"__meta_kubernetes_service_port_number":      "31900",
+						"__meta_kubernetes_service_cluster_ip":       "10.0.0.1",
+						"__meta_kubernetes_service_loadbalancer_ip":  "192.0.2.10",
+						"__meta_kubernetes_service_loadbalancer_ips": ",192.168.1.15,2001:db8::1,",
 					},
 				},
 				Labels: model.LabelSet{

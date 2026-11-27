@@ -1408,6 +1408,7 @@ remote_write:
 		configFile,
 		port,
 		fmt.Sprintf("--storage.tsdb.path=%s", tmpDir),
+		"--scrape.discovery-reload-interval=100ms",
 	)
 	require.NoError(t, prom.Start())
 

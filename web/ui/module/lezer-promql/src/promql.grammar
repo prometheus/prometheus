@@ -133,7 +133,7 @@ binModifiers {
 }
 
 GroupingLabels {
-  "(" ((LabelName | QuotedLabelName) ("," (LabelName | QuotedLabelName))* ","?)? ")"
+  "(" ((GroupingLabelName | QuotedLabelName) ("," (GroupingLabelName | QuotedLabelName))* ","?)? ")"
 }
 
 FunctionCall {
@@ -334,13 +334,20 @@ durationPrimary[@inline] {
 
 @skip { whitespace | LineComment }
 
+// Names take precedence over punctuation so metric names can start with a colon.
+@external tokens names from "./tokens" {
+  Identifier,
+  LabelName,
+  GroupingLabelName[@name=LabelName]
+}
+
 @tokens {
   whitespace { std.whitespace+ }
   LineComment { "#" ![\n]* }
 
   number {
-      (std.digit+ (("_")? std.digit)* ("." std.digit+ (("_")? std.digit)*)? | "." std.digit+ (("_")? std.digit)*) (("e" | "E") ("+" | "-")? std.digit+ (("_")? std.digit)*)? |
-      "0x" (std.digit | $[a-fA-F])+ | duration
+      (std.digit+ (("_")? std.digit)* ("." (std.digit+ (("_")? std.digit)*)?)? | "." std.digit+ (("_")? std.digit)*) (("e" | "E") ("+" | "-")? std.digit+ (("_")? std.digit)*)? |
+      "0" ("x" | "X") "_"? (std.digit | $[a-fA-F]) ("_"? (std.digit | $[a-fA-F]))* | duration
   }
   StringLiteral { // TODO: This is for JS, make this work for PromQL.
     '"' (![\\\n"] | "\\" _)* '"'? |
@@ -382,8 +389,6 @@ durationPrimary[@inline] {
   // Special Modifier
   At { "@" }
 }
-
-@external tokens names from "./tokens" { Identifier, LabelName }
 
 // Keywords
 
@@ -428,6 +433,10 @@ durationPrimary[@inline] {
   EndFn,
   AtStart,
   AtEnd,
+  DurationStep,
+  DurationRange,
+  DurationMinOf,
+  DurationMaxOf,
   Smoothed,
   Anchored,
   Fill,
@@ -529,7 +538,3 @@ durationPrimary[@inline] {
 
 // Conditional function names (only parsed as function names when used as such).
 condFn<term> { @extend<Identifier, term> }
-DurationStep { condFn<"step"> }
-DurationRange { condFn<"range"> }
-DurationMinOf { condFn<"min_of"> }
-DurationMaxOf { condFn<"max_of"> }

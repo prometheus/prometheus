@@ -170,16 +170,26 @@ global:
   # and underscores.
   [ metric_name_validation_scheme: <string> | default "utf8" ]
 
+  # Specifies the character escaping scheme that will be requested when scraping
+  # for metric and label names that do not conform to the legacy Prometheus
+  # character set. Available options are `allow-utf-8`, `underscores`, `dots`
+  # and `values`; see the `<scrape_config>` section below for what each one does.
+  # If this value is left blank, Prometheus will default to `allow-utf-8` if the
+  # global validation scheme is set to utf8, or `underscores` if it is set to
+  # `legacy`. Scrape configs that set neither option inherit this value.
+  # Scrape configs inheriting `allow-utf-8` must use the utf8 validation scheme.
+  [ metric_name_escaping_scheme: <string> | default "allow-utf-8" ]
+
   # If true, native histograms exposed by a target are recognized during
   # scraping and ingested as such. If false, any native parts of histograms
   # are ignored and only the classic parts are recognized (possibly as
   # a classic histogram with only the +Inf buckets if no explicit classic
   # buckets are part of the histogram).
-  [ scrape_native_histograms: <bool> | default = false ]
+  [ scrape_native_histograms: <boolean> | default = false ]
 
   # Specifies whether to convert scraped classic histograms into native
   # histograms with custom buckets.
-  [ convert_classic_histograms_to_nhcb: <bool> | default = false ]
+  [ convert_classic_histograms_to_nhcb: <boolean> | default = false ]
 
   # Specifies whether to additionally scrape the classic parts of a histogram,
   # even if it is also exposed with native parts or it is converted into a
@@ -557,6 +567,10 @@ triton_sd_configs:
 uyuni_sd_configs:
   [ - <uyuni_sd_config> ... ]
 
+# List of Vultr service discovery configurations.
+vultr_sd_configs:
+  [ - <vultr_sd_config> ... ]
+
 # List of labeled statically configured targets for this job.
 static_configs:
   [ - <static_config> ... ]
@@ -626,7 +640,9 @@ metric_relabel_configs:
 #     e.g. "U__my_2e_dotted_2e_name".
 # If this value is left blank, Prometheus will default to `allow-utf-8` if the
 # validation scheme for the current scrape config is set to utf8, or
-# `underscores` if the validation scheme is set to `legacy`.
+# `underscores` if the validation scheme is set to `legacy`. If neither this nor
+# `metric_name_validation_scheme` is set, the global `metric_name_escaping_scheme`
+# is used.
 [ metric_name_escaping_scheme: <string> | default "allow-utf-8" ]
 
 # Limit on total number of positive and negative buckets allowed in a single
@@ -681,11 +697,11 @@ metric_relabel_configs:
 # are ignored and only the classic parts are recognized (possibly as
 # a classic histogram with only the +Inf buckets if no explicit classic
 # buckets are part of the histogram).
-[ scrape_native_histograms: <bool> | default = <global.scrape_native_histograms> ]
+[ scrape_native_histograms: <boolean> | default = <global.scrape_native_histograms> ]
 
 # Specifies whether to convert classic histograms into native histograms with
 # custom buckets.
-[ convert_classic_histograms_to_nhcb: <bool> | default = <global.convert_classic_histograms_to_nhcb>]
+[ convert_classic_histograms_to_nhcb: <boolean> | default = <global.convert_classic_histograms_to_nhcb> ]
 
 # Specifies whether to additionally scrape the classic parts of a histogram,
 # even if it is also exposed with native parts or it is converted into a
@@ -724,7 +740,7 @@ basic_auth:
 # the configured credentials.
 authorization:
   # Sets the authentication type of the request.
-  [ type: <string> | default: Bearer ]
+  [ type: <string> | default = Bearer ]
   # Sets the credentials of the request. It is mutually exclusive with
   # `credentials_file`.
   [ credentials: <secret> ]
@@ -741,7 +757,7 @@ oauth2:
 [ follow_redirects: <boolean> | default = true ]
 
 # Whether to enable HTTP2.
-[ enable_http2: <boolean> | default: true ]
+[ enable_http2: <boolean> | default = true ]
 
 # Configures the request's TLS settings.
 tls_config:
@@ -754,7 +770,7 @@ tls_config:
 # contain port numbers.
 [ no_proxy: <string> ]
 # Use proxy URL indicated by environment variables (HTTP_PROXY, HTTPS_PROXY, NO_PROXY, and their lowercase versions)
-[ proxy_from_environment: <boolean> | default: false ]
+[ proxy_from_environment: <boolean> | default = false ]
 # Specifies headers to send to proxies during CONNECT requests.
 [ proxy_connect_header:
   [ <string>: [<secret>, ...] ] ]
@@ -889,7 +905,7 @@ tls_config:
 # contain port numbers.
 [ no_proxy: <string> ]
 # Use proxy URL indicated by environment variables (HTTP_PROXY, HTTPS_PROXY, NO_PROXY, and their lowercase versions)
-[ proxy_from_environment: <boolean> | default: false ]
+[ proxy_from_environment: <boolean> | default = false ]
 # Specifies headers to send to proxies during CONNECT requests.
 [ proxy_connect_header:
   [ <string>: [<secret>, ...] ] ]
@@ -1521,6 +1537,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_azure_machine_tag_<tagname>`: each tag value of the machine
 * `__meta_azure_machine_scale_set`: the name of the scale set which the vm is part of (this value is only set if you are using a [scale set](https://learn.microsoft.com/en-us/azure/virtual-machine-scale-sets/))
 * `__meta_azure_machine_size`: the machine size
+* `__meta_azure_machine_state`: the machine power state (`running`, `stopped`, `deallocated`, `starting`, `stopping`, `deallocating`, or empty if unavailable). Power states of virtual machines not in a uniform scale set are read with one subscription-wide request, so the label is empty if the credentials cannot list virtual machines in the subscription
 * `__meta_azure_subscription_id`: the subscription ID
 * `__meta_azure_tenant_id`: the tenant ID
 
@@ -1539,7 +1556,7 @@ See below for the configuration options for Azure discovery:
 # by the Azure Workload Identity webhook (AZURE_CLIENT_ID, AZURE_TENANT_ID and
 # AZURE_FEDERATED_TOKEN_FILE).
 # See https://learn.microsoft.com/en-us/azure/aks/workload-identity-overview
-[ authentication_method: <string> | default = OAuth]
+[ authentication_method: <string> | default = OAuth ]
 # The subscription ID. Always required.
 subscription_id: <string>
 # Optional tenant ID. Only required with authentication_method OAuth.
@@ -1584,7 +1601,8 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_consul_address`: the address of the target
 * `__meta_consul_dc`: the datacenter name for the target
 * `__meta_consul_health`: the health status of the service
-* `__meta_consul_partition`: the admin partition name where the service is registered
+* `__meta_consul_namespace`: the namespace where the service is registered (Consul Enterprise only)
+* `__meta_consul_partition`: the admin partition name where the service is registered (Consul Enterprise only)
 * `__meta_consul_metadata_<key>`: each node metadata key value of the target
 * `__meta_consul_node`: the node name defined for the target
 * `__meta_consul_service_address`: the service address of the target
@@ -1947,7 +1965,7 @@ names:
 [ type: <string> | default = 'SRV' ]
 
 # The port number used if the query type is not SRV.
-[ port: <int>]
+[ port: <int> ]
 
 # The time after which the provided names are refreshed.
 [ refresh_interval: <duration> | default = 30s ]
@@ -2150,7 +2168,7 @@ region: <string>
 
 # Whether the service discovery should list all instances for all projects.
 # It is only relevant for the 'instance' role and usually requires admin permissions.
-[ all_tenants: <boolean> | default: false ]
+[ all_tenants: <boolean> | default = false ]
 
 # Refresh interval to re-read the instance list.
 [ refresh_interval: <duration> | default = 60s ]
@@ -2183,11 +2201,11 @@ For OVHcloud's [public cloud instances](https://www.ovhcloud.com/en/public-cloud
 * `__meta_ovhcloud_vps_display_name`: the display name of the server
 * `__meta_ovhcloud_vps_ipv4`: the IPv4 of the server
 * `__meta_ovhcloud_vps_ipv6`: the IPv6 of the server
-* `__meta_ovhcloud_vps_keymap`: the KVM keyboard layout of the server
 * `__meta_ovhcloud_vps_maximum_additional_ip`: the maximum additional IPs of the server
 * `__meta_ovhcloud_vps_memory_limit`: the memory limit of the server
 * `__meta_ovhcloud_vps_memory`: the memory of the server
-* `__meta_ovhcloud_vps_monitoring_ip_blocks`: the monitoring IP blocks of the server
+* `__meta_ovhcloud_vps_model_name`: the model name of the server
+* `__meta_ovhcloud_vps_model_vcore`: the number of virtual cores of the server model
 * `__meta_ovhcloud_vps_name`: the name of the server
 * `__meta_ovhcloud_vps_netboot_mode`: the netboot mode of the server
 * `__meta_ovhcloud_vps_offer_type`: the offer type of the server
@@ -2364,6 +2382,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 
 * `__meta_gce_instance_id`: the numeric id of the instance
 * `__meta_gce_instance_name`: the name of the instance
+* `__meta_gce_instance_status`: the status of the instance
 * `__meta_gce_label_<labelname>`: each GCE label of the instance, with any unsupported characters converted to an underscore
 * `__meta_gce_machine_type`: full or partial URL of the machine type of the instance
 * `__meta_gce_metadata_<name>`: each metadata item of the instance
@@ -2427,6 +2446,7 @@ configuration file](/documentation/examples/prometheus-hetzner.yml).
 
 The following meta labels are available on all targets during [relabeling](#relabel_config):
 
+* `__meta_hetzner_role`: the role of the server (`hcloud` or `robot`)
 * `__meta_hetzner_server_id`: the ID of the server
 * `__meta_hetzner_server_name`: the name of the server
 * `__meta_hetzner_server_status`: the status of the server
@@ -2617,7 +2637,8 @@ Available meta labels:
 * `__meta_kubernetes_service_annotation_<annotationname>`: Each annotation from the service object.
 * `__meta_kubernetes_service_annotationpresent_<annotationname>`: "true" for each annotation of the service object.
 * `__meta_kubernetes_service_cluster_ip`: The cluster IP address of the service. (Does not apply to services of type ExternalName)
-* `__meta_kubernetes_service_loadbalancer_ip`: The IP address of the load balancer, taken from `status.loadBalancer.ingress` (comma-separated when there are multiple). Falls back to the deprecated `spec.loadBalancerIP`. (Applies to services of type LoadBalancer)
+* `__meta_kubernetes_service_loadbalancer_ip`: The IP address of the load balancer, taken from `spec.loadBalancerIP`. (Applies to services of type LoadBalancer; deprecated in favor of `__meta_kubernetes_service_loadbalancer_ips`)
+* `__meta_kubernetes_service_loadbalancer_ips`: Comma-separated list of the load balancer IP addresses, taken from `status.loadBalancer.ingress`, with surrounding commas (e.g. `,192.168.1.15,2001:db8::1,`). Empty when no ingress IPs are set. (Applies to services of type LoadBalancer)
 * `__meta_kubernetes_service_external_name`: The DNS name of the service. (Applies to services of type ExternalName)
 * `__meta_kubernetes_service_label_<labelname>`: Each label from the service object, with any unsupported characters converted to an underscore.
 * `__meta_kubernetes_service_labelpresent_<labelname>`: `true` for each label of the service object, with any unsupported characters converted to an underscore.
@@ -2993,7 +3014,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 ### `<marathon_sd_config>`
 
 Marathon SD configurations allow retrieving scrape targets using the
-[Marathon](https://mesosphere.github.io/marathon/) REST API. Prometheus
+[Marathon](https://github.com/d2iq-archive/marathon) REST API. Prometheus
 will periodically check the REST endpoint for currently running tasks and
 create a target group for every app that has at least one healthy task.
 
@@ -3019,12 +3040,12 @@ servers:
 [ refresh_interval: <duration> | default = 30s ]
 
 # Optional authentication information for token-based authentication
-# https://docs.mesosphere.com/1.11/security/ent/iam-api/#passing-an-authentication-token
+# https://web.archive.org/web/20190718110036/https://docs.mesosphere.com/1.11/security/ent/iam-api/#passing-an-authentication-token
 # It is mutually exclusive with `auth_token_file` and other authentication mechanisms.
 [ auth_token: <secret> ]
 
 # Optional authentication information for token-based authentication
-# https://docs.mesosphere.com/1.11/security/ent/iam-api/#passing-an-authentication-token
+# https://web.archive.org/web/20190718110036/https://docs.mesosphere.com/1.11/security/ent/iam-api/#passing-an-authentication-token
 # It is mutually exclusive with `auth_token` and other authentication mechanisms.
 [ auth_token_file: <filename> ]
 
@@ -3089,8 +3110,8 @@ The following meta labels are available on targets during [relabeling](#relabel_
 [ refresh_interval: <duration> | default = 60s ]
 [ region: <string> | default = global ]
 # The URL to connect to the API.
-[ server: <string> ]
-[ tag_separator: <string> | default = ,]
+[ server: <string> | default = http://localhost:4646 ]
+[ tag_separator: <string> | default = , ]
 
 # HTTP client settings, including authentication methods (such as basic auth and
 # authorization), proxy configurations, TLS options, custom HTTP headers, etc.
@@ -3207,7 +3228,7 @@ region: <string>
 # contain port numbers.
 [ no_proxy: <string> ]
 # Use proxy URL indicated by environment variables (HTTP_PROXY, HTTPS_PROXY, NO_PROXY, and their lowercase versions)
-[ proxy_from_environment: <boolean> | default: false ]
+[ proxy_from_environment: <boolean> | default = false ]
 # Specifies headers to send to proxies during CONNECT requests.
 [ proxy_connect_header:
   [ <string>: [<secret>, ...] ] ]
@@ -3216,7 +3237,7 @@ region: <string>
 [ follow_redirects: <boolean> | default = true ]
 
 # Whether to enable HTTP2.
-[ enable_http2: <boolean> | default: true ]
+[ enable_http2: <boolean> | default = true ]
 
 # Configures the TLS settings.
 tls_config:
@@ -3265,9 +3286,10 @@ scrape targets from various APIs.
 
 The following meta labels are available on targets during [relabeling](#relabel_config):
 
+* `__meta_stackit_project`: The ID of the project the server belongs to.
 * `__meta_stackit_availability_zone`: The availability zone of the server.
-* `__meta_stackit_label_<labelname>`: Each server label, with unsupported characters replaced by underscores.</labelname>
-* `__meta_stackit_labelpresent_<labelname>`: "true" for each label of the server, with unsupported characters replaced by underscores.</labelname>
+* `__meta_stackit_label_<labelname>`: Each server label, with unsupported characters replaced by underscores.
+* `__meta_stackit_labelpresent_<labelname>`: "true" for each label of the server, with unsupported characters replaced by underscores.
 * `__meta_stackit_private_ipv4_<networkname>`: the private ipv4 address of the server within a given network
 * `__meta_stackit_public_ipv4`: the public ipv4 address of the server
 * `__meta_stackit_id`: The ID of the target.
@@ -3283,10 +3305,10 @@ See below for the configuration options for STACKIT discovery:
 project: <string>
 
 # STACKIT region to use. No automatic discovery of the region is done.
-[ region : <string> | default = "eu01" ]
+[ region: <string> | default = "eu01" ]
 
 # Custom API endpoint to be used. Format scheme://host:port
-[ endpoint : <string>  ]
+[ endpoint: <string> ]
 
 # The port to scrape metrics from.
 [ port: <int> | default = 80 ]
@@ -3333,7 +3355,7 @@ From a given Service Account json
 properties can be mapped as:
 
 ```yaml
-stackit_sd_config:
+stackit_sd_configs:
 - oauth2:
     client_id: <credentials.sub>
     client_certificate_key: <credentials.privateKey>
@@ -3388,7 +3410,7 @@ account: <string>
 # The type of targets to discover, can be set to:
 # * "container" to discover virtual machines (SmartOS zones, lx/KVM/bhyve branded zones) running on Triton
 # * "cn" to discover compute nodes (servers/global zones) making up the Triton infrastructure
-[ role : <string> | default = "container" ]
+[ role: <string> | default = "container" ]
 
 # The DNS suffix which should be applied to target.
 dns_suffix: <string>
@@ -3846,6 +3868,21 @@ relabeling does not apply to automatically generated timeseries such as `up`.
 
 One use for this is to exclude time series that are too expensive to ingest.
 
+When `--enable-feature=metadata-relabeling` is enabled, the metric's metadata is
+exposed during metric relabeling via the reserved `__type__`, `__unit__`, and
+`__help__` labels. These labels can be read (for example, to drop or filter
+series by type or unit) and modified (for example, using `replace` to set or
+override a metric's type, unit, or help text). Replacing one of these labels
+with an empty value (`""`) clears that metadata field. `labeldrop` and
+`labelkeep` actions do not remove metric metadata. `__type__`, `__unit__`,
+and `__help__` are only exposed during relabeling and are not stored as series
+labels in TSDB unless `--enable-feature=type-and-unit-labels` is also enabled.
+When `--enable-feature=type-and-unit-labels` is set, `__type__` and `__unit__`
+are kept on the series while `__help__` remains metadata-only. While
+you can promote metadata to labels via relabeling (for example, targeting a new
+label without the `__` prefix), it is not recommended. Use the
+`type-and-unit-labels` feature instead.
+
 ### `<alert_relabel_configs>`
 
 Alert relabeling is applied to alerts before they are sent to the Alertmanager.
@@ -4095,8 +4132,9 @@ url: <string>
 # * `none`: default Remote-Write 2.0 behavior with no additional restrictions.
 # * `stateless`: appends `;mode=stateless` to the Content-Type header, defaults `send_native_histograms` to `true`,
 #   requires `--enable-feature=metadata-wal-records` or `--enable-feature=type-and-unit-labels`, and drops classic
-#   histogram float series, series with unspecified metadata type, and all exemplars (until sample-exemplar coalescing
-#   is implemented, as `stateless` mode forbids detached exemplars).
+#   histogram float series, series with unspecified metadata type, and detached exemplars without a matching live sample
+#   or histogram in the same shard batch; see `send_exemplars` for current limitations and
+#   https://github.com/prometheus/prometheus/issues/20289.
 # * `stateless-st`: appends `;mode=stateless-st` to the Content-Type header, includes all `stateless` rules,
 #   additionally requires `--enable-feature=st-storage`, and drops cumulative metrics missing a start timestamp.
 #
@@ -4125,7 +4163,13 @@ write_relabel_configs:
 [ name: <string> ]
 
 # Enables sending of exemplars over remote write. Note that exemplar storage itself must be enabled for exemplars to be scraped in the first place.
-# When `mode` is `stateless` or `stateless-st`, all exemplars are currently dropped until sample-exemplar coalescing is implemented.
+# When `mode` is `stateless` or `stateless-st`, exemplars are attached on a best-effort basis to matching series with
+# live samples or histograms in the same shard batch, and detached exemplars are dropped. Because TSDB and Agent write
+# samples/histograms and exemplars as separate WAL records, batch flushes at `queue_config.max_samples_per_send` or
+# `batch_send_deadline`, shard resharding, WAL replay filtering, or `sample_age_limit` expiration can separate an
+# exemplar from its sample and drop it as detached. Classic histograms converted via `convert_classic_histograms_to_nhcb`
+# also drop exemplars without an explicit timestamp at scrape time. End-to-end WAL correlation is tracked in
+# https://github.com/prometheus/prometheus/issues/20289.
 [ send_exemplars: <boolean> | default = false ]
 
 # Enables sending of native histograms, also known as sparse histograms, over remote write.
@@ -4253,7 +4297,7 @@ queue_config:
   # Minimum number of shards, i.e. amount of concurrency.
   [ min_shards: <int> | default = 1 ]
   # Maximum number of samples per send.
-  [ max_samples_per_send: <int> | default = 2000]
+  [ max_samples_per_send: <int> | default = 2000 ]
   # Maximum time a sample will wait for a send. The sample might wait less
   # if the buffer is full. Further time might pass due to potential retries.
   [ batch_send_deadline: <duration> | default = 5s ]
@@ -4281,7 +4325,7 @@ metadata_config:
   # How frequently metric metadata is sent to remote storage.
   [ send_interval: <duration> | default = 1m ]
   # Maximum number of samples per send.
-  [ max_samples_per_send: <int> | default = 2000]
+  [ max_samples_per_send: <int> | default = 2000 ]
 
 # EXPERIMENTAL: Converts native histograms with custom buckets (NHCB)
 # to classic histograms after applying write_relabel_configs. This enables
