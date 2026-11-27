@@ -665,6 +665,9 @@ func (s *chunkedSeriesSet) Next() bool {
 	if err == nil && len(res.ChunkedSeries) == 0 {
 		err = errors.New("remote read response contains no chunked series")
 	}
+	if err == nil && len(res.ChunkedSeries) > 1 {
+		err = fmt.Errorf("remote read response contains %d chunked series, expected exactly one", len(res.ChunkedSeries))
+	}
 	if err != nil {
 		if !errors.Is(err, io.EOF) {
 			s.err = err
