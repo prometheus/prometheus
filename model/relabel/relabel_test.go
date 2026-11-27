@@ -1244,6 +1244,11 @@ func TestRelabelWithMetadata(t *testing.T) {
 					Replacement: "__${1}__",
 					Action:      LabelMap,
 				},
+				{
+					Regex:       MustNewRegexp("__(type|unit|help)__"),
+					Replacement: "copied_${1}",
+					Action:      LabelMap,
+				},
 			},
 			output: labels.FromMap(map[string]string{
 				"__name__":  "http_requests_total",

@@ -19,7 +19,6 @@ package prometheusremotewrite
 import (
 	"context"
 	"errors"
-	"fmt"
 	"math"
 	"time"
 
@@ -300,7 +299,9 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 					//nolint:staticcheck // QF1001 Applying De Morgan’s law would make the conditions harder to read.
 					!(temporality == pmetric.AggregationTemporalityCumulative ||
 						(settings.AllowDeltaTemporality && temporality == pmetric.AggregationTemporalityDelta)) {
-					errs = errors.Join(errs, fmt.Errorf("invalid temporality and type combination for metric %q", metric.Name()))
+					// Drop only this metric. Returning an error would roll back
+					// the other metrics in the request as well.
+					annots.Add(newCategorizedWarningf(WarningCategoryInvalidTemporality, "invalid temporality and type combination for metric %q", metric.Name()))
 					continue
 				}
 

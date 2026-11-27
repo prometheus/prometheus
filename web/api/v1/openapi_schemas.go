@@ -919,6 +919,7 @@ func (b *OpenAPIBuilder) searchMetricNamesPostInputBodySchema() *base.SchemaProx
 	props := append([]schemaProp{
 		{"match[]", stringArraySchemaWithDescriptionAndExample("Form field: Series selector argument used to scope metric discovery.", []string{"{job=\"prometheus\"}"})},
 		{"search[]", stringArraySchemaWithDescriptionAndExample("Form field: One or more search terms matched against metric names (OR logic).", []string{"http_req"})},
+		{"search_expr", stringSchemaWithDescriptionAndExample("Form field: Boolean search expression matched against metric names. Supports AND, OR, NOT, parentheses and double-quoted terms. Mutually exclusive with search[].", "http AND NOT bucket")},
 	}, b.commonSearchPostProps()...)
 	props = append(props, schemaProp{"include_metadata", booleanSchemaWithDescription("Form field: Include metric metadata in each result.")})
 
@@ -934,6 +935,7 @@ func (b *OpenAPIBuilder) searchLabelNamesPostInputBodySchema() *base.SchemaProxy
 	props := append([]schemaProp{
 		{"match[]", stringArraySchemaWithDescriptionAndExample("Form field: Series selector argument used to scope label discovery.", []string{"{__name__=\"up\"}"})},
 		{"search[]", stringArraySchemaWithDescriptionAndExample("Form field: One or more search terms matched against label names (OR logic).", []string{"inst"})},
+		{"search_expr", stringSchemaWithDescriptionAndExample("Form field: Boolean search expression matched against label names. Supports AND, OR, NOT, parentheses and double-quoted terms. Mutually exclusive with search[].", "inst OR job")},
 	}, b.commonSearchPostProps()...)
 
 	return base.CreateSchemaProxy(&base.Schema{
@@ -949,6 +951,7 @@ func (b *OpenAPIBuilder) searchLabelValuesPostInputBodySchema() *base.SchemaProx
 		{"label", stringSchemaWithDescriptionAndExample("Form field: Label name whose values should be searched.", "instance")},
 		{"match[]", stringArraySchemaWithDescriptionAndExample("Form field: Series selector argument used to scope label value discovery.", []string{"up"})},
 		{"search[]", stringArraySchemaWithDescriptionAndExample("Form field: One or more search terms matched against label values (OR logic).", []string{"909"})},
+		{"search_expr", stringSchemaWithDescriptionAndExample("Form field: Boolean search expression matched against label values. Supports AND, OR, NOT, parentheses and double-quoted terms. Mutually exclusive with search[].", "909 AND NOT 9091")},
 	}, b.commonSearchPostProps()...)
 
 	return base.CreateSchemaProxy(&base.Schema{

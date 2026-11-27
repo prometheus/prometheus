@@ -15,7 +15,10 @@ package promql
 
 import (
 	"fmt"
+	"maps"
 	"math"
+	"slices"
+	"strconv"
 	"testing"
 
 	"github.com/prometheus/common/model"
@@ -23,7 +26,9 @@ import (
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
+	"github.com/prometheus/prometheus/schema"
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/kahansum"
 )
@@ -173,6 +178,92 @@ func TestInterpolateHistograms(t *testing.T) {
 			result, err := interpolateHistograms(tc.h1, tc.t1, tc.h2, tc.t2, tc.t, tc.isCounter, &annos, pos)
 			require.NoError(t, err)
 			require.Equal(t, tc.wantCount, result.Count)
+		})
+	}
+}
+
+func TestInPlaceFloatUnaryFuncsParity(t *testing.T) {
+	floatInputs := []float64{-2, -1, -0.5, math.Copysign(0, -1), 0, 0.5, 1, 2, math.NaN(), math.Inf(1), math.Inf(-1)}
+	metric := labels.FromStrings("__name__", "test_metric", "__type__", "gauge", "__unit__", "seconds", "k", "1")
+	strippedMetric := metric.DropReserved(schema.IsMetadataLabel)
+
+	inVec := make(Vector, 0, len(floatInputs)+1)
+	for _, v := range floatInputs {
+		inVec = append(inVec, Sample{Metric: metric, F: v})
+	}
+	inVec = append(inVec, Sample{Metric: metric, H: &histogram.FloatHistogram{Count: 1, Sum: 1}})
+
+	for _, name := range slices.Sorted(maps.Keys(inPlaceFloatUnaryFuncs)) {
+		fn := inPlaceFloatUnaryFuncs[name]
+		t.Run(name, func(t *testing.T) {
+			spec, ok := parser.Functions[name]
+			require.True(t, ok, "missing parser.Functions entry for %s", name)
+			require.Equal(t, []parser.ValueType{parser.ValueTypeVector}, spec.ArgTypes)
+			require.Equal(t, parser.ValueTypeVector, spec.ReturnType)
+			require.Zero(t, spec.Variadic)
+			require.NotContains(t, AtModifierUnsafeFunctions, name)
+
+			call := FunctionCalls[name]
+			require.NotNil(t, call, "missing FunctionCalls entry for %s", name)
+
+			for _, delayedNameRemoval := range []bool{false, true} {
+				t.Run("delayedNameRemoval="+strconv.FormatBool(delayedNameRemoval), func(t *testing.T) {
+					enh := &EvalNodeHelper{enableDelayedNameRemoval: delayedNameRemoval}
+					got, annos := call([]Vector{inVec}, nil, nil, enh)
+					require.Empty(t, annos)
+					require.Len(t, got, len(floatInputs))
+
+					wantMetric := strippedMetric
+					if delayedNameRemoval {
+						wantMetric = metric
+					}
+					for i, inF := range floatInputs {
+						wantF := fn(inF)
+						require.Nil(t, got[i].H)
+						require.True(t, got[i].DropName)
+						require.Equal(t, wantMetric, got[i].Metric)
+						if math.IsNaN(wantF) {
+							require.True(t, math.IsNaN(got[i].F), "input %v: expected NaN, got %v", inF, got[i].F)
+						} else {
+							require.Equal(t, math.Float64bits(wantF), math.Float64bits(got[i].F), "input %v", inF)
+						}
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestDirectTimestampFunctionCalls(t *testing.T) {
+	metric := labels.FromStrings("__name__", "test_metric", "__type__", "gauge", "__unit__", "seconds", "k", "1")
+	strippedMetric := metric.DropReserved(schema.IsMetadataLabel)
+	inVec := Vector{{Metric: metric, T: 12_500, F: 42}}
+
+	for _, delayedNameRemoval := range []bool{false, true} {
+		t.Run("delayedNameRemoval="+strconv.FormatBool(delayedNameRemoval), func(t *testing.T) {
+			wantMetric := strippedMetric
+			if delayedNameRemoval {
+				wantMetric = metric
+			}
+
+			got, annos := FunctionCalls["timestamp"]([]Vector{inVec}, nil, nil, &EvalNodeHelper{
+				enableDelayedNameRemoval: delayedNameRemoval,
+			})
+			require.Empty(t, annos)
+			require.Equal(t, Vector{{Metric: wantMetric, F: 12.5, DropName: true}}, got)
+
+			got, annos = FunctionCalls["start_timestamp"]([]Vector{inVec}, nil, nil, &EvalNodeHelper{
+				enableDelayedNameRemoval: delayedNameRemoval,
+				StartTimestamps:          &StartTimestamps{Floats: []int64{9_500}},
+			})
+			require.Empty(t, annos)
+			require.Equal(t, Vector{{Metric: wantMetric, F: 9.5, DropName: true}}, got)
+
+			got, annos = FunctionCalls["start_timestamp"]([]Vector{inVec}, nil, nil, &EvalNodeHelper{
+				enableDelayedNameRemoval: delayedNameRemoval,
+			})
+			require.Empty(t, annos)
+			require.Empty(t, got)
 		})
 	}
 }

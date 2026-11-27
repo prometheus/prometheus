@@ -105,9 +105,11 @@ func (p internalPrometheus) Run(ctx context.Context, opts sender.Options) error 
 var _ sender.Sender = internalPrometheus{}
 
 // senderSkip lists unimplemented SHOULD/MAY sender compliance checks to skip in TestMain:
-// - Stateless exemplar coalescing (https://github.com/prometheus/prometheus/pull/20070).
-// - Untyped metadata inference (https://github.com/prometheus/proposals/pull/104).
-const senderSkip = "TestRemoteWriteSender/.*/internal-prometheus/exemplars/rw2-stateless.*/(_present|exemplar_additional_labels)" +
+//   - The histogram_bucket_exemplars_present test exposes two classic bucket exemplars where the second omits an explicit
+//     timestamp, and expects at least two exemplars on the converted NHCB series, whereas scrape drops timestamp-less
+//     exemplars on native histograms.
+//   - Untyped metadata inference (https://github.com/prometheus/proposals/pull/104).
+const senderSkip = "TestRemoteWriteSender/.*/internal-prometheus/exemplars/rw2-stateless.*/histogram_bucket_exemplars_present" +
 	"|TestRemoteWriteSender/.*/internal-prometheus/metadata/rw2-stateless.*/untyped_metadata_inferred"
 
 // TestRemoteWriteSender runs remote write sender compliance tests defined in

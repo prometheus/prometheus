@@ -983,6 +983,12 @@ func (a *appenderBase) GetRef(lset labels.Labels, hash uint64) (storage.SeriesRe
 	return storage.SeriesRef(s.ref), s.lset
 }
 
+// ImmutableGetRefLabels reports that series labels in the agent DB are never
+// replaced after creation, as agent DB never rebuilds symbol tables.
+func (*appenderBase) ImmutableGetRefLabels() bool {
+	return true
+}
+
 func (a *appender) SetOptions(opts *storage.AppendOptions) {
 	a.hints = opts
 }

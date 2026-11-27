@@ -3,6 +3,7 @@
   "data": [
     "demo",
     "\\x2d",
-    "quoted\"value"
+    "quoted\"value",
+    "multi\nline"
   ]
 }

@@ -1055,12 +1055,13 @@ func TestTemporality(t *testing.T) {
 	ts := time.Unix(100, 0)
 
 	tests := []struct {
-		name            string
-		allowDelta      bool
-		convertToNHCB   bool
-		inputSeries     []pmetric.Metric
-		expectedSamples []sample
-		expectedError   string
+		name             string
+		allowDelta       bool
+		convertToNHCB    bool
+		inputSeries      []pmetric.Metric
+		expectedSamples  []sample
+		expectedWarnings []string
+		expectedError    string
 	}{
 		{
 			name:       "all cumulative when delta not allowed",
@@ -1108,7 +1109,7 @@ func TestTemporality(t *testing.T) {
 			expectedSamples: []sample{
 				createPromFloatSeries("test_metric_1", ts, model.MetricTypeCounter),
 			},
-			expectedError: `invalid temporality and type combination for metric "test_metric_2"`,
+			expectedWarnings: []string{`invalid temporality and type combination for metric "test_metric_2"`},
 		},
 		{
 			name:       "unspecified temporality not allowed",
@@ -1120,7 +1121,7 @@ func TestTemporality(t *testing.T) {
 			expectedSamples: []sample{
 				createPromFloatSeries("test_metric_1", ts, model.MetricTypeCounter),
 			},
-			expectedError: `invalid temporality and type combination for metric "test_metric_2"`,
+			expectedWarnings: []string{`invalid temporality and type combination for metric "test_metric_2"`},
 		},
 		{
 			name:       "cumulative histogram",
@@ -1154,7 +1155,7 @@ func TestTemporality(t *testing.T) {
 			expectedSamples: []sample{
 				createPromNativeHistogramSeries("test_histogram_2", histogram.UnknownCounterReset, ts, model.MetricTypeHistogram),
 			},
-			expectedError: `invalid temporality and type combination for metric "test_histogram_1"`,
+			expectedWarnings: []string{`invalid temporality and type combination for metric "test_histogram_1"`},
 		},
 		{
 			name:          "cumulative histogram with buckets",
@@ -1191,7 +1192,7 @@ func TestTemporality(t *testing.T) {
 			expectedSamples: []sample{
 				createPromNHCBSeries("test_histogram_2", histogram.UnknownCounterReset, ts, model.MetricTypeHistogram),
 			},
-			expectedError: `invalid temporality and type combination for metric "test_histogram_1"`,
+			expectedWarnings: []string{`invalid temporality and type combination for metric "test_histogram_1"`},
 		},
 		{
 			name:          "delta histogram with buckets and convertToNHCB=false when not allowed",
@@ -1201,8 +1202,8 @@ func TestTemporality(t *testing.T) {
 				createOtelExplicitHistogram("test_histogram_1", pmetric.AggregationTemporalityDelta, ts),
 				createOtelExplicitHistogram("test_histogram_2", pmetric.AggregationTemporalityCumulative, ts),
 			},
-			expectedSamples: createPromClassicHistogramSeries("test_histogram_2", ts, model.MetricTypeHistogram),
-			expectedError:   `invalid temporality and type combination for metric "test_histogram_1"`,
+			expectedSamples:  createPromClassicHistogramSeries("test_histogram_2", ts, model.MetricTypeHistogram),
+			expectedWarnings: []string{`invalid temporality and type combination for metric "test_histogram_1"`},
 		},
 		{
 			name:          "delta histogram with buckets and convertToNHCB=false when allowed",
@@ -1260,12 +1261,14 @@ func TestTemporality(t *testing.T) {
 				ConvertHistogramsToNHCB: tc.convertToNHCB,
 			}
 
-			_, err := c.FromMetrics(context.Background(), metrics, settings)
+			annots, err := c.FromMetrics(context.Background(), metrics, settings)
 			if tc.expectedError != "" {
 				require.EqualError(t, err, tc.expectedError)
 			} else {
 				require.NoError(t, err)
 			}
+			ws, _ := annots.AsStrings("", 0, 0)
+			require.ElementsMatch(t, tc.expectedWarnings, ws)
 			require.NoError(t, app.Commit())
 			// Every expected native histogram here must be one the appender would
 			// accept; otherwise the expectation is unreachable.

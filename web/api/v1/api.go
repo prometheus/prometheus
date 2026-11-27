@@ -302,6 +302,11 @@ type API struct {
 	// unset, so the API resolves per-query duration overrides against the same
 	// ceiling the engine uses.
 	queryTimeoutFlag time.Duration
+
+	// metadataDefaultTimeRange is the time range that the series, label and
+	// search endpoints apply when a request omits start or end. Zero disables
+	// it.
+	metadataDefaultTimeRange time.Duration
 }
 
 // NewAPI returns an initialized API type.
@@ -348,6 +353,7 @@ func NewAPI(
 	promqlParser parser.Parser,
 	enableQueryCost bool,
 	queryTimeoutFlag time.Duration,
+	metadataDefaultTimeRange time.Duration,
 ) *API {
 	a := &API{
 		QueryEngine:       qe,
@@ -386,6 +392,8 @@ func NewAPI(
 		lookbackDelta:       lookbackDelta,
 		enableQueryCost:     enableQueryCost,
 		queryTimeoutFlag:    queryTimeoutFlag,
+
+		metadataDefaultTimeRange: metadataDefaultTimeRange,
 
 		remoteReadHandler: remote.NewReadHandler(logger, registerer, q, configFunc, remoteReadSampleLimit, remoteReadConcurrencyLimit, remoteReadMaxBytesInFrame),
 	}
@@ -1412,6 +1420,7 @@ func (api *API) labelNames(r *http.Request) apiFuncResult {
 	if err != nil {
 		return invalidParamError(err, "end")
 	}
+	start, end, rangeWarning := api.applyMetadataDefaultTimeRange(r, start, end)
 
 	matcherSets, err := api.parseMatchersParam(r.Form["match[]"])
 	if err != nil {
@@ -1472,6 +1481,9 @@ func (api *API) labelNames(r *http.Request) apiFuncResult {
 		names = names[:limit]
 		warnings = warnings.Add(errors.New("results truncated due to limit"))
 	}
+	if rangeWarning != nil {
+		warnings.Add(rangeWarning)
+	}
 	return apiFuncResult{names, nil, warnings, nil}
 }
 
@@ -1500,6 +1512,7 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 	if err != nil {
 		return invalidParamError(err, "end")
 	}
+	start, end, rangeWarning := api.applyMetadataDefaultTimeRange(r, start, end)
 
 	matcherSets, err := api.parseMatchersParam(r.Form["match[]"])
 	if err != nil {
@@ -1570,6 +1583,9 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 		warnings = warnings.Add(errors.New("results truncated due to limit"))
 	}
 
+	if rangeWarning != nil {
+		warnings.Add(rangeWarning)
+	}
 	return apiFuncResult{vals, nil, warnings, closer}
 }
 
@@ -1619,6 +1635,7 @@ func (api *API) series(r *http.Request) (result apiFuncResult) {
 	if err != nil {
 		return invalidParamError(err, "end")
 	}
+	start, end, rangeWarning := api.applyMetadataDefaultTimeRange(r, start, end)
 
 	matcherSets, err := api.parseMatchersParam(r.Form["match[]"])
 	if err != nil {
@@ -1665,6 +1682,9 @@ func (api *API) series(r *http.Request) (result apiFuncResult) {
 	metrics := []labels.Labels{}
 
 	warnings := set.Warnings()
+	if rangeWarning != nil {
+		warnings.Add(rangeWarning)
+	}
 
 	i := 1
 	for set.Next() {
@@ -2895,6 +2915,29 @@ func getDefaultErrorCode(errType errorType) int {
 	default:
 		return http.StatusInternalServerError
 	}
+}
+
+// applyMetadataDefaultTimeRange replaces an omitted start or end with a range
+// of metadataDefaultTimeRange that ends at the given end, or at now when end
+// is also omitted. It returns a warning for the client when it changes the
+// range, and returns start and end unchanged when the feature is disabled.
+func (api *API) applyMetadataDefaultTimeRange(r *http.Request, start, end time.Time) (time.Time, time.Time, error) {
+	d := api.metadataDefaultTimeRange
+	if d <= 0 {
+		return start, end, nil
+	}
+	hasStart, hasEnd := r.FormValue("start") != "", r.FormValue("end") != ""
+	if hasStart && hasEnd {
+		return start, end, nil
+	}
+	if !hasEnd {
+		end = api.now()
+	}
+	if !hasStart {
+		start = end.Add(-d)
+	}
+	return start, end, fmt.Errorf("start or end not given, applied a default: start=%s, end=%s",
+		start.UTC().Format(time.RFC3339Nano), end.UTC().Format(time.RFC3339Nano))
 }
 
 func parseTimeParam(r *http.Request, paramName string, defaultValue time.Time) (time.Time, error) {

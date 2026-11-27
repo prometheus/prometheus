@@ -919,6 +919,69 @@ describe('promql operations', () => {
       ],
     },
     {
+      expr: 'vector(pi())',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [],
+    },
+    {
+      expr: 'histogram_quantile(pi() / 4, rate(some_metric[5m]))',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [],
+    },
+    {
+      expr: 'sum(pi())',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [
+        {
+          from: 4,
+          to: 8,
+          message: 'expected type vector in aggregation expression, got scalar',
+          severity: 'error',
+        },
+      ],
+    },
+    {
+      expr: 'cosh(1)',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [
+        {
+          from: 5,
+          to: 6,
+          message: 'expected type vector in call to function "cosh", got scalar',
+          severity: 'error',
+        },
+      ],
+    },
+    {
+      expr: 'sinh(1)',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [
+        {
+          from: 5,
+          to: 6,
+          message: 'expected type vector in call to function "sinh", got scalar',
+          severity: 'error',
+        },
+      ],
+    },
+    {
+      expr: 'histogram_quantiles(some_metric, "quantile", 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.99)',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [],
+    },
+    {
+      expr: 'histogram_quantiles(some_metric, "quantile", 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.99, 0.999)',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [
+        {
+          from: 0,
+          to: 102,
+          message: 'expected at most 12 argument(s) in call to "histogram_quantiles", got 13',
+          severity: 'error',
+        },
+      ],
+    },
+    {
       expr: 'rate(some_metric)',
       expectedValueType: ValueType.vector,
       expectedDiag: [

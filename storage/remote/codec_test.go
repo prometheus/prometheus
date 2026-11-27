@@ -1140,6 +1140,39 @@ func TestChunkedSeriesSet(t *testing.T) {
 		require.False(t, res)
 		require.ErrorContains(t, ss.Err(), "proto: illegal wireType 7")
 	})
+
+	t.Run("empty chunked series", func(t *testing.T) {
+		buf := &bytes.Buffer{}
+		w := NewChunkedWriter(buf, &mockFlusher{})
+
+		b, err := proto.Marshal(&prompb.ChunkedReadResponse{QueryIndex: 1})
+		require.NoError(t, err)
+		_, err = w.Write(b)
+		require.NoError(t, err)
+
+		respBody := newOneShotCloser(buf)
+		var cancelErr error
+		cancelCalls := 0
+		ss := NewChunkedSeriesSet(
+			NewChunkedReader(respBody, config.DefaultChunkedReadLimit, nil),
+			respBody,
+			0,
+			14000,
+			func(err error) {
+				cancelErr = err
+				cancelCalls++
+			},
+		)
+
+		require.False(t, ss.Next())
+		originalErr := ss.Err()
+		require.ErrorContains(t, originalErr, "remote read response contains no chunked series")
+		require.ErrorIs(t, cancelErr, originalErr)
+		require.True(t, respBody.(*oneShotCloser).closed)
+		require.False(t, ss.Next(), "Next() should still return false after the series set is exhausted")
+		require.ErrorIs(t, ss.Err(), originalErr, "Err() should preserve the original error after the series set is exhausted")
+		require.Equal(t, 1, cancelCalls, "cancel should only be called once after the series set is exhausted")
+	})
 }
 
 // mockFlusher implements http.Flusher.

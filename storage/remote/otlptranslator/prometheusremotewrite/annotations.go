@@ -29,6 +29,10 @@ const (
 	// WarningCategoryEmptyDataPoints is set when an OTLP metric has no data
 	// points and is dropped.
 	WarningCategoryEmptyDataPoints WarningCategory = "empty_data_points"
+	// WarningCategoryInvalidTemporality is set when an OTLP metric has an
+	// aggregation temporality that is not accepted, such as delta without
+	// native delta ingestion, and is dropped.
+	WarningCategoryInvalidTemporality WarningCategory = "invalid_temporality"
 	// WarningCategoryLabelNameCollision is set when two or more OTLP attribute
 	// names map to the same label name after sanitization and their values are
 	// concatenated.

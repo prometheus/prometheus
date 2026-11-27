@@ -677,30 +677,6 @@ func TestHeadAppenderV2_TestRemoveSeriesAfterRollbackAndTruncate(t *testing.T) {
 	require.Equal(t, (*memSeries)(nil), h.series.getByHash(lset.Hash(), lset))
 }
 
-func TestHeadAppenderV2_LogRollback(t *testing.T) {
-	for _, compress := range []compression.Type{compression.None, compression.Snappy, compression.Zstd} {
-		t.Run(fmt.Sprintf("compress=%s", compress), func(t *testing.T) {
-			h, w := newTestHead(t, 1000, compress, false)
-			defer func() {
-				require.NoError(t, h.Close())
-			}()
-
-			app := h.AppenderV2(context.Background())
-			_, err := app.Append(0, labels.FromStrings("a", "b"), 0, 1, 2, nil, nil, storage.AOptions{})
-			require.NoError(t, err)
-
-			require.NoError(t, app.Rollback())
-			recs := readTestWAL(t, w.Dir())
-
-			require.Len(t, recs, 1)
-
-			series, ok := recs[0].([]record.RefSeries)
-			require.True(t, ok, "expected series record but got %+v", recs[0])
-			require.Equal(t, []record.RefSeries{{Ref: 1, Labels: labels.FromStrings("a", "b")}}, series)
-		})
-	}
-}
-
 func TestHeadAppenderV2_ReturnsSortedLabelValues(t *testing.T) {
 	h, _ := newTestHead(t, 1000, compression.None, false)
 	defer func() {

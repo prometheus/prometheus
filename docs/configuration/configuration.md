@@ -1601,7 +1601,8 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_consul_address`: the address of the target
 * `__meta_consul_dc`: the datacenter name for the target
 * `__meta_consul_health`: the health status of the service
-* `__meta_consul_partition`: the admin partition name where the service is registered
+* `__meta_consul_namespace`: the namespace where the service is registered (Consul Enterprise only)
+* `__meta_consul_partition`: the admin partition name where the service is registered (Consul Enterprise only)
 * `__meta_consul_metadata_<key>`: each node metadata key value of the target
 * `__meta_consul_node`: the node name defined for the target
 * `__meta_consul_service_address`: the service address of the target
@@ -2200,11 +2201,11 @@ For OVHcloud's [public cloud instances](https://www.ovhcloud.com/en/public-cloud
 * `__meta_ovhcloud_vps_display_name`: the display name of the server
 * `__meta_ovhcloud_vps_ipv4`: the IPv4 of the server
 * `__meta_ovhcloud_vps_ipv6`: the IPv6 of the server
-* `__meta_ovhcloud_vps_keymap`: the KVM keyboard layout of the server
 * `__meta_ovhcloud_vps_maximum_additional_ip`: the maximum additional IPs of the server
 * `__meta_ovhcloud_vps_memory_limit`: the memory limit of the server
 * `__meta_ovhcloud_vps_memory`: the memory of the server
-* `__meta_ovhcloud_vps_monitoring_ip_blocks`: the monitoring IP blocks of the server
+* `__meta_ovhcloud_vps_model_name`: the model name of the server
+* `__meta_ovhcloud_vps_model_vcore`: the number of virtual cores of the server model
 * `__meta_ovhcloud_vps_name`: the name of the server
 * `__meta_ovhcloud_vps_netboot_mode`: the netboot mode of the server
 * `__meta_ovhcloud_vps_offer_type`: the offer type of the server
@@ -2381,6 +2382,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 
 * `__meta_gce_instance_id`: the numeric id of the instance
 * `__meta_gce_instance_name`: the name of the instance
+* `__meta_gce_instance_status`: the status of the instance
 * `__meta_gce_label_<labelname>`: each GCE label of the instance, with any unsupported characters converted to an underscore
 * `__meta_gce_machine_type`: full or partial URL of the machine type of the instance
 * `__meta_gce_metadata_<name>`: each metadata item of the instance
@@ -2444,6 +2446,7 @@ configuration file](/documentation/examples/prometheus-hetzner.yml).
 
 The following meta labels are available on all targets during [relabeling](#relabel_config):
 
+* `__meta_hetzner_role`: the role of the server (`hcloud` or `robot`)
 * `__meta_hetzner_server_id`: the ID of the server
 * `__meta_hetzner_server_name`: the name of the server
 * `__meta_hetzner_server_status`: the status of the server
@@ -2634,7 +2637,8 @@ Available meta labels:
 * `__meta_kubernetes_service_annotation_<annotationname>`: Each annotation from the service object.
 * `__meta_kubernetes_service_annotationpresent_<annotationname>`: "true" for each annotation of the service object.
 * `__meta_kubernetes_service_cluster_ip`: The cluster IP address of the service. (Does not apply to services of type ExternalName)
-* `__meta_kubernetes_service_loadbalancer_ip`: The IP address of the load balancer, taken from `status.loadBalancer.ingress` (comma-separated when there are multiple). Falls back to the deprecated `spec.loadBalancerIP`. (Applies to services of type LoadBalancer)
+* `__meta_kubernetes_service_loadbalancer_ip`: The IP address of the load balancer, taken from `spec.loadBalancerIP`. (Applies to services of type LoadBalancer; deprecated in favor of `__meta_kubernetes_service_loadbalancer_ips`)
+* `__meta_kubernetes_service_loadbalancer_ips`: Comma-separated list of the load balancer IP addresses, taken from `status.loadBalancer.ingress`, with surrounding commas (e.g. `,192.168.1.15,2001:db8::1,`). Empty when no ingress IPs are set. (Applies to services of type LoadBalancer)
 * `__meta_kubernetes_service_external_name`: The DNS name of the service. (Applies to services of type ExternalName)
 * `__meta_kubernetes_service_label_<labelname>`: Each label from the service object, with any unsupported characters converted to an underscore.
 * `__meta_kubernetes_service_labelpresent_<labelname>`: `true` for each label of the service object, with any unsupported characters converted to an underscore.
@@ -3282,9 +3286,10 @@ scrape targets from various APIs.
 
 The following meta labels are available on targets during [relabeling](#relabel_config):
 
+* `__meta_stackit_project`: The ID of the project the server belongs to.
 * `__meta_stackit_availability_zone`: The availability zone of the server.
-* `__meta_stackit_label_<labelname>`: Each server label, with unsupported characters replaced by underscores.</labelname>
-* `__meta_stackit_labelpresent_<labelname>`: "true" for each label of the server, with unsupported characters replaced by underscores.</labelname>
+* `__meta_stackit_label_<labelname>`: Each server label, with unsupported characters replaced by underscores.
+* `__meta_stackit_labelpresent_<labelname>`: "true" for each label of the server, with unsupported characters replaced by underscores.
 * `__meta_stackit_private_ipv4_<networkname>`: the private ipv4 address of the server within a given network
 * `__meta_stackit_public_ipv4`: the public ipv4 address of the server
 * `__meta_stackit_id`: The ID of the target.
@@ -4127,8 +4132,9 @@ url: <string>
 # * `none`: default Remote-Write 2.0 behavior with no additional restrictions.
 # * `stateless`: appends `;mode=stateless` to the Content-Type header, defaults `send_native_histograms` to `true`,
 #   requires `--enable-feature=metadata-wal-records` or `--enable-feature=type-and-unit-labels`, and drops classic
-#   histogram float series, series with unspecified metadata type, and all exemplars (until sample-exemplar coalescing
-#   is implemented, as `stateless` mode forbids detached exemplars).
+#   histogram float series, series with unspecified metadata type, and detached exemplars without a matching live sample
+#   or histogram in the same shard batch; see `send_exemplars` for current limitations and
+#   https://github.com/prometheus/prometheus/issues/20289.
 # * `stateless-st`: appends `;mode=stateless-st` to the Content-Type header, includes all `stateless` rules,
 #   additionally requires `--enable-feature=st-storage`, and drops cumulative metrics missing a start timestamp.
 #
@@ -4157,7 +4163,13 @@ write_relabel_configs:
 [ name: <string> ]
 
 # Enables sending of exemplars over remote write. Note that exemplar storage itself must be enabled for exemplars to be scraped in the first place.
-# When `mode` is `stateless` or `stateless-st`, all exemplars are currently dropped until sample-exemplar coalescing is implemented.
+# When `mode` is `stateless` or `stateless-st`, exemplars are attached on a best-effort basis to matching series with
+# live samples or histograms in the same shard batch, and detached exemplars are dropped. Because TSDB and Agent write
+# samples/histograms and exemplars as separate WAL records, batch flushes at `queue_config.max_samples_per_send` or
+# `batch_send_deadline`, shard resharding, WAL replay filtering, or `sample_age_limit` expiration can separate an
+# exemplar from its sample and drop it as detached. Classic histograms converted via `convert_classic_histograms_to_nhcb`
+# also drop exemplars without an explicit timestamp at scrape time. End-to-end WAL correlation is tracked in
+# https://github.com/prometheus/prometheus/issues/20289.
 [ send_exemplars: <boolean> | default = false ]
 
 # Enables sending of native histograms, also known as sparse histograms, over remote write.
