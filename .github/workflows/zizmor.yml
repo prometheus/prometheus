@@ -51,7 +51,7 @@ jobs:
 
       - name: Run zizmor
         id: zizmor
-        uses: zizmorcore/zizmor-action@85b2b9fb8e3325e7a23d7d0a9d7ba5ae0f999e3e # v0.7.1
+        uses: zizmorcore/zizmor-action@1b4550e929643b8b26a62303c6bd64814271a4f1 # v0.9.2
         with:
           advanced-security: false
           version: 1.31.1
