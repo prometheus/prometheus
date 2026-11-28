@@ -1,0 +1,45 @@
+{
+  "name": "prometheus",
+  "version": "1.0.0",
+  "description": "Agent skills for writing PromQL, recording and alerting rules with promtool tests, and prometheus.yml scrape and relabel configuration.",
+  "author": {
+    "name": "Prometheus",
+    "url": "https://prometheus.io/"
+  },
+  "homepage": "https://prometheus.io/",
+  "repository": "https://github.com/prometheus/prometheus",
+  "license": "Apache-2.0",
+  "keywords": [
+    "prometheus",
+    "promql",
+    "monitoring",
+    "alerting",
+    "recording-rules",
+    "promtool",
+    "observability",
+    "agent-skills"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Prometheus",
+    "shortDescription": "PromQL, rules and config",
+    "longDescription": "Skills for the Prometheus monitoring system, grounded in the docs in this repository. Covers writing and debugging PromQL (rate and aggregation order, vector matching, classic and native histograms, staleness, cheap queries, promtool query), recording and alerting rules with promtool check rules and promtool test rules, and prometheus.yml configuration (scrape configs, service discovery, relabel_configs vs metric_relabel_configs, agent mode, remote write) validated with promtool check config.",
+    "developerName": "Prometheus",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Interactive",
+      "Read",
+      "Write"
+    ],
+    "websiteURL": "https://prometheus.io/",
+    "supportURL": "https://prometheus.io/community/",
+    "defaultPrompt": [
+      "Write a PromQL query for p95 latency by route",
+      "Add an alert for this service and a promtool unit test",
+      "Review this scrape config's relabeling"
+    ],
+    "brandColor": "#E6522C",
+    "composerIcon": "./assets/logo.png",
+    "logo": "./assets/logo.png"
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "name": "prometheus",
+  "version": "1.0.0",
+  "description": "Agent skills for writing PromQL, recording and alerting rules with promtool tests, and prometheus.yml scrape and relabel configuration.",
+  "author": {
+    "name": "Prometheus",
+    "url": "https://prometheus.io/"
+  },
+  "homepage": "https://prometheus.io/",
+  "repository": "https://github.com/prometheus/prometheus",
+  "license": "Apache-2.0",
+  "keywords": [
+    "prometheus",
+    "promql",
+    "monitoring",
+    "alerting",
+    "recording-rules",
+    "promtool",
+    "observability",
+    "agent-skills"
+  ],
+  "skills": "./skills/"
+}
