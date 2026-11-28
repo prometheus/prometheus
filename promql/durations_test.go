@@ -151,6 +151,28 @@ func TestCalculateDuration(t *testing.T) {
 			allowedNegative: true,
 		},
 		{
+			name:     "largest representable whole millisecond",
+			expr:     &parser.NumberLiteral{Val: 9223372036.854},
+			expected: 9223372036854 * time.Millisecond,
+		},
+		{
+			name:            "smallest representable whole millisecond",
+			expr:            &parser.NumberLiteral{Val: -9223372036.854},
+			expected:        -9223372036854 * time.Millisecond,
+			allowedNegative: true,
+		},
+		{
+			name:         "rounding overflows positive duration",
+			expr:         &parser.NumberLiteral{Val: 9223372036.8547},
+			errorMessage: "duration is out of range",
+		},
+		{
+			name:            "rounding overflows negative duration",
+			expr:            &parser.NumberLiteral{Val: -9223372036.8547},
+			errorMessage:    "duration is out of range",
+			allowedNegative: true,
+		},
+		{
 			name: "subtraction",
 			expr: &parser.DurationExpr{
 				LHS: &parser.NumberLiteral{Val: 15},
